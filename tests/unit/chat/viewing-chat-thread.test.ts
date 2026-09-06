@@ -71,4 +71,19 @@ describe("viewing-chat-thread", () => {
       ),
     ).toBe(false);
   });
+
+  it("counts inbound system offer accept/reject when not viewing thread", () => {
+    expect(
+      shouldIncrementUnreadForInboundMessage(
+        {
+          isChatOpen: false,
+          activeRoomId: "",
+          mobileView: "LIST",
+        },
+        "room-1",
+        "system",
+        { countSystemTransaction: true },
+      ),
+    ).toBe(true);
+  });
 });

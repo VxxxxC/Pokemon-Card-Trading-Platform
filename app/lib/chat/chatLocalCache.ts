@@ -1,4 +1,5 @@
 import { CHAT_THREAD_PAGE_SIZE, isDbChatRoomId } from "@/app/lib/chat/constants";
+import { filterChatRoomsForViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
 import type { ChatPartnerPersona } from "@/app/lib/chat/partnerRoomKey";
 import type { ChatRoom, Message } from "@/app/store/useHkCardVaultStore";
 
@@ -92,7 +93,10 @@ export function readChatLocalCache(
       return null;
     }
 
-    return parsed.inbox.filter((room) => isDbChatRoomId(room.id));
+    return filterChatRoomsForViewerPersona(
+      parsed.inbox.filter((room) => isDbChatRoomId(room.id)),
+      persona,
+    );
   } catch {
     return null;
   }
@@ -112,7 +116,9 @@ export function writeChatLocalCache(
     return;
   }
 
-  const inbox = prepareRoomsForCache(chats);
+  const inbox = prepareRoomsForCache(
+    filterChatRoomsForViewerPersona(chats, persona),
+  );
   if (inbox.length === 0) {
     return;
   }

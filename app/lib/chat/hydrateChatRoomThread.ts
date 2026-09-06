@@ -25,7 +25,20 @@ import type { Message } from "@/app/store/useHkCardVaultStore";
 
 type HydrateChatRoomThreadOptions = {
   force?: boolean;
+  markRead?: boolean;
 };
+
+async function maybeMarkRoomRead(
+  roomId: string,
+  readAt: string | undefined,
+  markRead: boolean,
+): Promise<void> {
+  if (!markRead) {
+    return;
+  }
+
+  await persistMarkRoomReadAsync(roomId, readAt);
+}
 
 function getOldestPersistedTimestamp(
   messages: { id: string; timestamp: string }[],
@@ -54,6 +67,7 @@ async function populateOfferCardContextCache(messages: Message[]): Promise<void>
 async function syncChatRoomThreadDelta(
   roomId: string,
   sinceCreatedAt: string,
+  markRead: boolean,
 ): Promise<{ success: true } | { success: false; error: string }> {
   const deltaResult = await getChatRoomMessagesSince(roomId, sinceCreatedAt);
   if (!deltaResult.success) {
@@ -76,7 +90,7 @@ async function syncChatRoomThreadDelta(
     .chats.find((entry) => entry.id === roomId);
   const lastTs =
     updatedRoom?.messages.at(-1)?.timestamp ?? updatedRoom?.timestamp;
-  await persistMarkRoomReadAsync(roomId, lastTs);
+  await maybeMarkRoomRead(roomId, lastTs, markRead);
 
   return { success: true };
 }
@@ -89,6 +103,7 @@ export async function hydrateChatRoomThread(
     return { success: false, error: "請選擇有效的聊天室" };
   }
 
+  const markRead = options?.markRead ?? false;
   const room = useHkCardVaultStore
     .getState()
     .chats.find((entry) => entry.id === roomId);
@@ -97,7 +112,7 @@ export async function hydrateChatRoomThread(
     const persistedRoom = room!;
     const since = getLastPersistedMessageTimestamp(persistedRoom.messages);
     if (since) {
-      const deltaResult = await syncChatRoomThreadDelta(roomId, since);
+      const deltaResult = await syncChatRoomThreadDelta(roomId, since, markRead);
       if (deltaResult.success) {
         return { success: true };
       }
@@ -107,7 +122,7 @@ export async function hydrateChatRoomThread(
   if (!options?.force && !roomNeedsThreadHydration(room)) {
     const lastTs =
       room?.messages.at(-1)?.timestamp ?? room?.timestamp ?? undefined;
-    await persistMarkRoomReadAsync(roomId, lastTs);
+    await maybeMarkRoomRead(roomId, lastTs, markRead);
     return { success: true };
   }
 
@@ -126,7 +141,7 @@ export async function hydrateChatRoomThread(
 
   const lastTs =
     result.data.messages.at(-1)?.timestamp ?? result.data.timestamp;
-  await persistMarkRoomReadAsync(roomId, lastTs);
+  await maybeMarkRoomRead(roomId, lastTs, markRead);
 
   return { success: true };
 }

@@ -284,7 +284,11 @@ interface HkCardVaultStore {
     modifiedCount: number;
   }) => void;
 
-  appendRoomMessage: (roomId: string, message: Message) => void;
+  appendRoomMessage: (
+    roomId: string,
+    message: Message,
+    options?: { countAsUnread?: boolean },
+  ) => void;
 
   markRoomRead: (roomId: string) => void;
 
@@ -849,17 +853,20 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
       };
     }),
 
-  appendRoomMessage: (roomId, message) =>
+  appendRoomMessage: (roomId, message, options) =>
     set((state) => {
-      const shouldIncrementUnread = shouldIncrementUnreadForInboundMessage(
-        {
-          isChatOpen: state.isChatOpen,
-          activeRoomId: state.activeRoomId,
-          mobileView: state.mobileView,
-        },
-        roomId,
-        message.sender,
-      );
+      const viewState = {
+        isChatOpen: state.isChatOpen,
+        activeRoomId: state.activeRoomId,
+        mobileView: state.mobileView,
+      };
+      const shouldIncrementUnread =
+        options?.countAsUnread ??
+        shouldIncrementUnreadForInboundMessage(
+          viewState,
+          roomId,
+          message.sender,
+        );
 
       const chats = state.chats.map((room) => {
         if (room.id !== roomId) return room;

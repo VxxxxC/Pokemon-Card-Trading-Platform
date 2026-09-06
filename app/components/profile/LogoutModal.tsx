@@ -6,6 +6,7 @@ import { logout } from '@/app/actions/auth';
 import {
   clearChatLocalCacheOnLogout,
 } from '@/app/lib/hooks/useChatLocalCachePersistence';
+import { resetChatSessionState } from '@/app/lib/chat/resetChatSessionState';
 import { useCurrentUserId } from '@/app/lib/hooks/useCurrentUserId';
 import { useUIStore } from '@/app/store/useUIStore';
 
@@ -25,6 +26,7 @@ export function LogoutModal({ variant = "card" }: LogoutModalProps) {
   const handleLogout = useCallback(() => {
     startTransition(async () => {
       clearChatLocalCacheOnLogout(currentUserId);
+      resetChatSessionState();
       setUserAuthRole('GUEST');
       setIsOpen(false);
       await logout();

@@ -14,6 +14,7 @@ import { loadOlderChatRoomThread } from "@/app/lib/chat/hydrateChatRoomThread";
 import type { ChatRoom } from "@/app/store/useHkCardVaultStore";
 
 const SCROLL_EDGE_THRESHOLD_PX = 80;
+const INITIAL_SCROLL_MAX_FRAMES = 24;
 
 type UseChatThreadPaginationOptions = {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -22,6 +23,7 @@ type UseChatThreadPaginationOptions = {
   isThreadLoading: boolean;
   isChatOpen: boolean;
   messageCount: number;
+  threadHydrated: boolean;
 };
 
 export function useChatThreadPagination({
@@ -31,6 +33,7 @@ export function useChatThreadPagination({
   isThreadLoading,
   isChatOpen,
   messageCount,
+  threadHydrated,
 }: UseChatThreadPaginationOptions) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const stickToBottomRef = useRef(true);
@@ -40,19 +43,39 @@ export function useChatThreadPagination({
   const loadOlderRequestIdRef = useRef(0);
   const prevRoomIdRef = useRef(activeRoomId);
   const prevMessageCountRef = useRef(messageCount);
+  const prevThreadLoadingRef = useRef(isThreadLoading);
+  const prevThreadHydratedRef = useRef(threadHydrated);
+  const initialScrollRafRef = useRef<number | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const isNearBottom = useCallback(() => {
     const element = scrollRef.current;
     if (!element) {
-      return true;
+      return false;
     }
 
     const distanceFromBottom =
       element.scrollHeight - element.scrollTop - element.clientHeight;
     return distanceFromBottom < SCROLL_EDGE_THRESHOLD_PX;
   }, [scrollRef]);
+
+  const hasScrollableContent = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) {
+      return false;
+    }
+
+    return element.scrollHeight > element.clientHeight + 1;
+  }, [scrollRef]);
+
+  const canCompleteInitialScroll = useCallback(() => {
+    if (messageCount === 0) {
+      return true;
+    }
+
+    return hasScrollableContent() && isNearBottom();
+  }, [hasScrollableContent, isNearBottom, messageCount]);
 
   const scrollToBottom = useCallback(() => {
     const element = scrollRef.current;
@@ -64,21 +87,65 @@ export function useChatThreadPagination({
     bottomAnchorRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
   }, [scrollRef]);
 
-  const finishPendingInitialScroll = useCallback(() => {
-    if (isNearBottom()) {
-      pendingInitialScrollRef.current = false;
+  const cancelInitialScrollRaf = useCallback(() => {
+    if (initialScrollRafRef.current !== null) {
+      cancelAnimationFrame(initialScrollRafRef.current);
+      initialScrollRafRef.current = null;
     }
-  }, [isNearBottom]);
+  }, []);
 
-  const scheduleScrollToBottom = useCallback(() => {
+  const ensureInitialScrollToBottom = useCallback(() => {
+    cancelInitialScrollRaf();
+    pendingInitialScrollRef.current = true;
+    stickToBottomRef.current = true;
+
+    let attempts = 0;
+
+    const tick = () => {
+      attempts += 1;
+
+      const element = scrollRef.current;
+      if (element) {
+        scrollToBottom();
+      }
+
+      if (canCompleteInitialScroll()) {
+        pendingInitialScrollRef.current = false;
+        initialScrollRafRef.current = null;
+        return;
+      }
+
+      if (attempts >= INITIAL_SCROLL_MAX_FRAMES) {
+        if (messageCount === 0 || isNearBottom()) {
+          pendingInitialScrollRef.current = false;
+        }
+        initialScrollRafRef.current = null;
+        return;
+      }
+
+      initialScrollRafRef.current = requestAnimationFrame(tick);
+    };
+
+    initialScrollRafRef.current = requestAnimationFrame(tick);
+  }, [
+    cancelInitialScrollRaf,
+    canCompleteInitialScroll,
+    isNearBottom,
+    messageCount,
+    scrollRef,
+    scrollToBottom,
+  ]);
+
+  const scrollToBottomIfStuck = useCallback(() => {
+    if (!stickToBottomRef.current) {
+      return;
+    }
+
     requestAnimationFrame(() => {
       scrollToBottom();
-      requestAnimationFrame(() => {
-        scrollToBottom();
-        finishPendingInitialScroll();
-      });
+      requestAnimationFrame(scrollToBottom);
     });
-  }, [finishPendingInitialScroll, scrollToBottom]);
+  }, [scrollToBottom]);
 
   const updateStickToBottom = useCallback(() => {
     stickToBottomRef.current = isNearBottom();
@@ -160,6 +227,68 @@ export function useChatThreadPagination({
   ]);
 
   useEffect(() => {
+    return () => {
+      cancelInitialScrollRaf();
+    };
+  }, [cancelInitialScrollRaf]);
+
+  useEffect(() => {
+    if (prevThreadLoadingRef.current && !isThreadLoading) {
+      ensureInitialScrollToBottom();
+    }
+    prevThreadLoadingRef.current = isThreadLoading;
+  }, [ensureInitialScrollToBottom, isThreadLoading]);
+
+  useEffect(() => {
+    const wasHydrated = prevThreadHydratedRef.current;
+    prevThreadHydratedRef.current = threadHydrated;
+
+    if (threadHydrated && !wasHydrated && isChatOpen && !isThreadLoading) {
+      ensureInitialScrollToBottom();
+    }
+  }, [ensureInitialScrollToBottom, isChatOpen, isThreadLoading, threadHydrated]);
+
+  useEffect(() => {
+    if (!isChatOpen || isThreadLoading || !pendingInitialScrollRef.current) {
+      return;
+    }
+
+    const element = scrollRef.current;
+    if (!element) {
+      ensureInitialScrollToBottom();
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!pendingInitialScrollRef.current) {
+        return;
+      }
+
+      ensureInitialScrollToBottom();
+    });
+
+    observer.observe(element);
+    if (bottomAnchorRef.current) {
+      observer.observe(bottomAnchorRef.current);
+    }
+
+    ensureInitialScrollToBottom();
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    activeRoomId,
+    bottomAnchorRef,
+    ensureInitialScrollToBottom,
+    isChatOpen,
+    isThreadLoading,
+    messageCount,
+    scrollRef,
+    threadHydrated,
+  ]);
+
+  useEffect(() => {
     if (!isChatOpen) {
       return;
     }
@@ -169,6 +298,10 @@ export function useChatThreadPagination({
       stickToBottomRef.current = true;
       pendingInitialScrollRef.current = true;
       prevMessageCountRef.current = messageCount;
+
+      if (!isThreadLoading) {
+        ensureInitialScrollToBottom();
+      }
       return;
     }
 
@@ -178,15 +311,17 @@ export function useChatThreadPagination({
     }
 
     if (messageCount > prevMessageCountRef.current && stickToBottomRef.current) {
-      scheduleScrollToBottom();
+      scrollToBottomIfStuck();
     }
 
     prevMessageCountRef.current = messageCount;
   }, [
     activeRoomId,
+    ensureInitialScrollToBottom,
     isChatOpen,
+    isThreadLoading,
     messageCount,
-    scheduleScrollToBottom,
+    scrollToBottomIfStuck,
   ]);
 
   useLayoutEffect(() => {
@@ -203,6 +338,7 @@ export function useChatThreadPagination({
     isThreadLoading,
     messageCount,
     scrollToBottom,
+    threadHydrated,
   ]);
 
   useEffect(() => {
@@ -211,14 +347,15 @@ export function useChatThreadPagination({
     }
 
     if (pendingInitialScrollRef.current) {
-      scheduleScrollToBottom();
+      ensureInitialScrollToBottom();
     }
   }, [
     activeRoomId,
+    ensureInitialScrollToBottom,
     isChatOpen,
     isThreadLoading,
     messageCount,
-    scheduleScrollToBottom,
+    threadHydrated,
   ]);
 
   useEffect(() => {

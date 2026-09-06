@@ -6,6 +6,7 @@ import { AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { ensureChatRoom, getUserChatInboxLobby } from "@/app/actions/chat";
 import { readChatLocalCache } from "@/app/lib/chat/chatLocalCache";
+import { resetChatSessionState } from "@/app/lib/chat/resetChatSessionState";
 import { hydrateChatRoomThread } from "@/app/lib/chat/hydrateChatRoomThread";
 import {
   isDbChatRoomId,
@@ -19,8 +20,12 @@ import {
 } from "@/app/lib/chat/mergeChatRooms";
 import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
 import { roomMatchesViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
+import { isViewingChatThread } from "@/lib/chat/viewing-chat-thread";
 import { roomHasPersistedThreadTail } from "@/app/lib/chat/roomHydration";
-import { useChatLocalCachePersistence } from "@/app/lib/hooks/useChatLocalCachePersistence";
+import {
+  clearChatLocalCacheOnLogout,
+  useChatLocalCachePersistence,
+} from "@/app/lib/hooks/useChatLocalCachePersistence";
 import { useChatRoomRealtime } from "@/app/lib/hooks/useChatRoomRealtime";
 import { useCurrentUserId } from "@/app/lib/hooks/useCurrentUserId";
 import { useIsDesktopChat } from "@/app/lib/hooks/useIsDesktopChat";
@@ -54,6 +59,7 @@ export function GlobalChatOverlay() {
   const currentUserId = useCurrentUserId();
   const isDesktopChat = useIsDesktopChat();
   const inboxRequestIdRef = useRef(0);
+  const lobbySyncTailRef = useRef(Promise.resolve());
   const threadRequestIdRef = useRef(0);
   const lastLobbySyncAtRef = useRef(0);
   const markReadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,17 +74,49 @@ export function GlobalChatOverlay() {
     null,
   );
   const provisionAttemptedRef = useRef<Set<string>>(new Set());
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
+  const prevUserIdForLobbySyncRef = useRef<string | null | undefined>(undefined);
+  const forceThreadHydrateRef = useRef(false);
+  const currentUserIdRef = useRef<string | null>(currentUserId);
+  currentUserIdRef.current = currentUserId;
 
   useChatRoomRealtime({ enabled: Boolean(currentUserId) });
   useChatLocalCachePersistence(currentUserId, activeListingPersona);
 
   useEffect(() => {
+    const prevUserId = prevUserIdRef.current;
+    const userChanged =
+      prevUserId !== undefined && prevUserId !== currentUserId;
+
+    if (userChanged) {
+      resetChatSessionState();
+      cacheRestoreKeyRef.current = null;
+      lastLobbySyncAtRef.current = 0;
+      inboxRequestIdRef.current += 1;
+      lobbySyncTailRef.current = Promise.resolve();
+      threadRequestIdRef.current += 1;
+      provisionAttemptedRef.current.clear();
+      forceThreadHydrateRef.current = true;
+
+      if (prevUserId && !currentUserId) {
+        clearChatLocalCacheOnLogout(prevUserId);
+      }
+    }
+
+    prevUserIdRef.current = currentUserId;
+
     if (!currentUserId) {
       cacheRestoreKeyRef.current = null;
       return;
     }
 
     const restoreKey = `${currentUserId}:${activeListingPersona}`;
+
+    if (userChanged) {
+      cacheRestoreKeyRef.current = restoreKey;
+      return;
+    }
+
     if (cacheRestoreKeyRef.current === restoreKey) {
       return;
     }
@@ -86,7 +124,15 @@ export function GlobalChatOverlay() {
 
     const cached = readChatLocalCache(currentUserId, activeListingPersona);
     if (cached && cached.length > 0) {
-      setChats(cached);
+      setChats((currentRooms) => {
+        const otherPersonaRooms = currentRooms.filter(
+          (room) => !roomMatchesViewerPersona(room, activeListingPersona),
+        );
+        return mergeChatRoomsWithDb(otherPersonaRooms, cached, {
+          stripeRooms: true,
+          preferServerUnread: true,
+        });
+      });
     }
   }, [activeListingPersona, currentUserId, setChats]);
 
@@ -136,6 +182,7 @@ export function GlobalChatOverlay() {
       showLoading?: boolean;
       force?: boolean;
       backgroundRefresh?: boolean;
+      trigger?: string;
     }) => {
       const showLoading = options?.showLoading ?? false;
       const backgroundRefresh = options?.backgroundRefresh ?? false;
@@ -148,44 +195,77 @@ export function GlobalChatOverlay() {
         return;
       }
 
+      const syncUserId = currentUserIdRef.current;
+      if (!syncUserId) {
+        return;
+      }
+
       const requestId = ++inboxRequestIdRef.current;
 
-      if (showLoading) {
-        setInboxLoading(true);
-      }
-      if (backgroundRefresh) {
-        setIsLobbyRefreshing(true);
-      }
-
-      try {
-        const result = await getUserChatInboxLobby();
-
-        if (requestId !== inboxRequestIdRef.current) {
-          return;
+      const run = async () => {
+        if (showLoading) {
+          setInboxLoading(true);
+        }
+        if (backgroundRefresh) {
+          setIsLobbyRefreshing(true);
         }
 
-        if (!result.success) {
-          if (showLoading) {
-            toast.error(result.error);
-          }
-          return;
-        }
+        try {
+          const result = await getUserChatInboxLobby();
 
-        applyLobbyMerge(result.data);
-        lastLobbySyncAtRef.current = Date.now();
-      } finally {
-        if (requestId === inboxRequestIdRef.current) {
-          if (showLoading) {
-            setInboxLoading(false);
+          if (syncUserId !== currentUserIdRef.current) {
+            return;
           }
-          if (backgroundRefresh) {
-            setIsLobbyRefreshing(false);
+
+          if (!result.success) {
+            if (showLoading) {
+              toast.error(result.error);
+            }
+            return;
+          }
+
+          applyLobbyMerge(result.data);
+
+          if (result.data.length > 0) {
+            lastLobbySyncAtRef.current = Date.now();
+          }
+        } finally {
+          if (requestId === inboxRequestIdRef.current) {
+            if (showLoading) {
+              setInboxLoading(false);
+            }
+            if (backgroundRefresh) {
+              setIsLobbyRefreshing(false);
+            }
           }
         }
-      }
+      };
+
+      const queued = lobbySyncTailRef.current.then(run).catch(() => undefined);
+      lobbySyncTailRef.current = queued;
+      await queued;
     },
-    [applyLobbyMerge],
+    [activeListingPersona, applyLobbyMerge, currentUserId],
   );
+
+  useEffect(() => {
+    if (!currentUserId) {
+      prevUserIdForLobbySyncRef.current = currentUserId;
+      return;
+    }
+
+    const prevUserId = prevUserIdForLobbySyncRef.current;
+    const userChanged = prevUserId !== currentUserId;
+
+    void syncInboxLobby({
+      force: true,
+      showLoading: userChanged,
+      backgroundRefresh: !userChanged,
+      trigger: userChanged ? "userId-change" : "persona-or-remount",
+    });
+
+    prevUserIdForLobbySyncRef.current = currentUserId;
+  }, [activeListingPersona, currentUserId, syncInboxLobby]);
 
   const hydrateActiveThread = useCallback(async (roomId: string) => {
     if (!isDbChatRoomId(roomId)) {
@@ -204,7 +284,22 @@ export function GlobalChatOverlay() {
     }
 
     try {
-      const result = await hydrateChatRoomThread(roomId);
+      const shouldForceHydrate = forceThreadHydrateRef.current;
+      if (shouldForceHydrate) {
+        forceThreadHydrateRef.current = false;
+      }
+
+      const { isChatOpen, activeRoomId, mobileView } =
+        useHkCardVaultStore.getState();
+      const markRead = isViewingChatThread(
+        { isChatOpen, activeRoomId, mobileView },
+        roomId,
+      );
+
+      const result = await hydrateChatRoomThread(roomId, {
+        force: shouldForceHydrate,
+        markRead,
+      });
 
       if (requestId !== threadRequestIdRef.current) {
         return;
@@ -222,12 +317,20 @@ export function GlobalChatOverlay() {
     }
   }, []);
 
+  const prevChatOpenRef = useRef(isChatOpen);
+
   useEffect(() => {
-    if (!currentUserId || isChatOpen) {
+    const wasOpen = prevChatOpenRef.current;
+    prevChatOpenRef.current = isChatOpen;
+
+    if (!wasOpen || isChatOpen || !currentUserId) {
       return;
     }
 
-    void syncInboxLobby({ showLoading: false });
+    void syncInboxLobby({
+      showLoading: false,
+      trigger: "chat-closed",
+    });
   }, [currentUserId, isChatOpen, syncInboxLobby]);
 
   useEffect(() => {
@@ -248,7 +351,11 @@ export function GlobalChatOverlay() {
     }
 
     if (chatOpen) {
-      void syncInboxLobby({ force: true, backgroundRefresh: true });
+      void syncInboxLobby({
+        force: true,
+        backgroundRefresh: true,
+        trigger: "active-room-persona",
+      });
     }
   }, [
     activeListingPersona,
@@ -267,8 +374,10 @@ export function GlobalChatOverlay() {
     const hasCachedRooms = useHkCardVaultStore.getState().chats.length > 0;
 
     void syncInboxLobby({
+      force: true,
       showLoading: !hasCachedRooms,
       backgroundRefresh: hasCachedRooms,
+      trigger: "chat-open",
     });
   }, [isChatOpen, syncInboxLobby]);
 
@@ -351,7 +460,15 @@ export function GlobalChatOverlay() {
       return;
     }
 
-    const isViewingThread = isDesktopChat || mobileView === "CHAT";
+    if (threadLoadingRoomId === activeRoomId) {
+      return;
+    }
+
+    const { mobileView } = useHkCardVaultStore.getState();
+    const isViewingThread = isViewingChatThread(
+      { isChatOpen, activeRoomId, mobileView },
+      activeRoomId,
+    );
     if (!isViewingThread) {
       return;
     }
@@ -382,7 +499,14 @@ export function GlobalChatOverlay() {
         markReadTimerRef.current = null;
       }
     };
-  }, [activeRoomId, isChatOpen, isDesktopChat, mobileView, syncInboxLobby]);
+  }, [
+    activeRoomId,
+    isChatOpen,
+    isDesktopChat,
+    mobileView,
+    syncInboxLobby,
+    threadLoadingRoomId,
+  ]);
 
   return (
     <AnimatePresence mode="wait">

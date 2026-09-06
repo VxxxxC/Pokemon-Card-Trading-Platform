@@ -1,3 +1,5 @@
+import { isInboundTransactionSystemContent } from "@/app/lib/chat/realtimeChatMessages";
+
 const DESKTOP_CHAT_MEDIA_QUERY = "(min-width: 1024px)";
 
 export type ChatThreadViewState = {
@@ -34,10 +36,43 @@ export function shouldIncrementUnreadForInboundMessage(
   state: ChatThreadViewState,
   roomId: string,
   sender: "me" | "them" | "system",
+  options?: { countSystemTransaction?: boolean },
 ): boolean {
-  if (sender !== "them") {
+  if (isViewingChatThread(state, roomId)) {
     return false;
   }
 
-  return !isViewingChatThread(state, roomId);
+  if (sender === "me") {
+    return false;
+  }
+
+  if (sender === "them") {
+    return true;
+  }
+
+  return options?.countSystemTransaction === true;
+}
+
+export function shouldIncrementUnreadForInboundRealtimeRow(
+  state: ChatThreadViewState,
+  roomId: string,
+  row: {
+    sender_id: string;
+    content: string;
+  },
+  currentUserId: string,
+): boolean {
+  if (isViewingChatThread(state, roomId)) {
+    return false;
+  }
+
+  if (row.sender_id === currentUserId) {
+    return false;
+  }
+
+  if (isInboundTransactionSystemContent(row.content)) {
+    return true;
+  }
+
+  return true;
 }

@@ -168,6 +168,15 @@ export function decodeOfferRealtimeEvent(
   return null;
 }
 
+export function isInboundTransactionSystemContent(content: string): boolean {
+  return (
+    content === "SYSTEM_OFFER_ACCEPTED" ||
+    content === "SYSTEM_OFFER_REJECTED" ||
+    content === "SYSTEM_ORDER_COMPLETED" ||
+    content === "SYSTEM_ORDER_CANCELLED"
+  );
+}
+
 /** Initial buyer offer row — needs full thread hydrate for OfferCard rendering */
 export function isInitialOfferRealtimeMessage(
   row: RealtimeChatMessageRow,

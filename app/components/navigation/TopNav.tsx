@@ -10,7 +10,6 @@ import { useHkCardVaultStore } from "@/app/store/useHkCardVaultStore";
 import { useUIStore } from "@/app/store/useUIStore";
 import { getProfileHomePath } from "@/lib/auth/roles";
 import { isChatRoomId } from "@/app/lib/chat/constants";
-import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
 import { filterChatRoomsForViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
 import { useHasActiveAnnouncements } from "@/lib/announcements/use-has-active-announcements";
 import {
@@ -235,7 +234,6 @@ export function TopNav() {
                             setIsChatOpen(true);
                             setIsInboxOpen(false);
                             setActiveRoomId(room.id);
-                            persistMarkRoomReadAsync(room.id, room.timestamp);
                           }}
                           className="w-full text-left p-2.5 rounded-xl hover:bg-[#26211C] transition-all flex items-start gap-2.5 group border border-transparent"
                         >

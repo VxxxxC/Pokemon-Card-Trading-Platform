@@ -15,10 +15,10 @@ import { motion } from "framer-motion";
 import { IoChevronBack, IoSearchOutline } from "react-icons/io5";
 import { toast } from "sonner";
 import { sendMessage } from "@/app/actions/chat";
+import { refreshInboxLobbyInStore } from "@/lib/chat/refresh-inbox-lobby";
 import { isAmlSensitiveChatContent } from "@/app/lib/chat/realtimeChatMessages";
 import { filterRedundantOfferSystemMessages } from "@/app/lib/chat/filterRedundantOfferSystemMessages";
 import { isDbChatRoomId } from "@/app/lib/chat/constants";
-import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
 import { ChatUnreadDotInline } from "@/app/components/chat/ChatUnreadDot";
 import { SpecialTransactionMessage } from "./SpecialTransactionMessage";
 import { SystemOrderCompletedMessage } from "./SystemOrderCompletedMessage";
@@ -836,6 +836,7 @@ export function GlobalChatConsole({
       isThreadLoading,
       isChatOpen,
       messageCount: activeRoomMessageCount,
+      threadHydrated: activeRoom?.threadHydrated === true,
     });
 
   useEffect(() => {
@@ -902,6 +903,7 @@ export function GlobalChatConsole({
           timestamp: data.createdAt,
           type: "text",
         });
+        void refreshInboxLobbyInStore();
       })
       .catch((error) => {
         const msg =
@@ -1025,7 +1027,6 @@ export function GlobalChatConsole({
                   data-chat-room-id={room.id}
                   onClick={() => {
                     setActiveRoomId(room.id);
-                    void persistMarkRoomReadAsync(room.id, room.timestamp);
                   }}
                   className={
                     "w-full p-2 rounded-xl text-left flex items-center gap-2 transition-all focus:outline-none relative " +
@@ -1321,7 +1322,6 @@ export function GlobalChatConsole({
                     data-chat-room-id={room.id}
                     onClick={() => {
                       setActiveRoomId(room.id);
-                      void persistMarkRoomReadAsync(room.id, room.timestamp);
                       setMobileView("CHAT");
                     }}
                     className="w-full text-left p-3.5 rounded-2xl bg-[#26211C] border border-[rgba(237,232,224,0.04)] flex items-start gap-3.5 relative focus:outline-none"

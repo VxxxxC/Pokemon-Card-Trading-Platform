@@ -12,6 +12,7 @@ import {
 import {
   decodeOfferRealtimeEvent,
   getLastPersistedMessageTimestamp,
+  isInboundTransactionSystemContent,
   isInitialOfferRealtimeMessage,
   mapChatMessageRowToStoreMessage,
   parseModifyOfferPriceFromContent,
@@ -122,8 +123,34 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
       };
 
       if (isInitialOfferRealtimeMessage(row)) {
-        await enqueueRoomHydrate(row.room_id);
-        markActiveThreadReadIfNeeded();
+        const hadRoom = useHkCardVaultStore
+          .getState()
+          .chats.some((room) => room.id === row.room_id);
+
+        if (isActiveOpenThread) {
+          await enqueueRoomHydrate(row.room_id);
+          markActiveThreadReadIfNeeded();
+          return;
+        }
+
+        if (!hadRoom) {
+          await refreshInboxLobbyInStore();
+        } else {
+          const roomState = useHkCardVaultStore
+            .getState()
+            .chats.find((room) => room.id === row.room_id);
+          const sellerId =
+            roomState?.messages.find((message) => message.specialData?.sellerId)
+              ?.specialData?.sellerId ?? roomState?.partnerId;
+
+          const message = mapChatMessageRowToStoreMessage(
+            row,
+            currentUserId,
+            sellerId,
+          );
+          appendRoomMessage(row.room_id, message);
+        }
+
         return;
       }
 
@@ -150,7 +177,9 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
       const hadRoom = useHkCardVaultStore
         .getState()
         .chats.some((room) => room.id === row.room_id);
-      appendRoomMessage(row.room_id, message);
+      const countAsUnread =
+        isIncoming && isInboundTransactionSystemContent(row.content);
+      appendRoomMessage(row.room_id, message, { countAsUnread });
       if (!hadRoom) {
         await refreshInboxLobbyInStore();
       }
@@ -409,6 +438,7 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
       const nextUserId = session?.user?.id ?? null;
       if (!nextUserId) {
         currentUserIdRef.current = null;
+        void teardownChannel();
         return;
       }
 
