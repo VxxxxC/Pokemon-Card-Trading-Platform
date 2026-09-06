@@ -14,7 +14,7 @@ import { loadOlderChatRoomThread } from "@/app/lib/chat/hydrateChatRoomThread";
 import type { ChatRoom } from "@/app/store/useHkCardVaultStore";
 
 const SCROLL_EDGE_THRESHOLD_PX = 80;
-const INITIAL_SCROLL_MAX_FRAMES = 24;
+const INITIAL_SCROLL_MAX_FRAMES = 60;
 
 type UseChatThreadPaginationOptions = {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -22,6 +22,7 @@ type UseChatThreadPaginationOptions = {
   activeRoom: ChatRoom | null;
   isThreadLoading: boolean;
   isChatOpen: boolean;
+  isThreadPanelVisible: boolean;
   messageCount: number;
   threadHydrated: boolean;
 };
@@ -32,6 +33,7 @@ export function useChatThreadPagination({
   activeRoom,
   isThreadLoading,
   isChatOpen,
+  isThreadPanelVisible,
   messageCount,
   threadHydrated,
 }: UseChatThreadPaginationOptions) {
@@ -45,6 +47,8 @@ export function useChatThreadPagination({
   const prevMessageCountRef = useRef(messageCount);
   const prevThreadLoadingRef = useRef(isThreadLoading);
   const prevThreadHydratedRef = useRef(threadHydrated);
+  const prevChatOpenRef = useRef(isChatOpen);
+  const prevThreadPanelVisibleRef = useRef(isThreadPanelVisible);
   const initialScrollRafRef = useRef<number | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -52,6 +56,10 @@ export function useChatThreadPagination({
   const isNearBottom = useCallback(() => {
     const element = scrollRef.current;
     if (!element) {
+      return false;
+    }
+
+    if (element.scrollHeight <= element.clientHeight + 1) {
       return false;
     }
 
@@ -70,12 +78,26 @@ export function useChatThreadPagination({
   }, [scrollRef]);
 
   const canCompleteInitialScroll = useCallback(() => {
+    if (isThreadLoading) {
+      return false;
+    }
+
     if (messageCount === 0) {
-      return true;
+      return threadHydrated;
+    }
+
+    if (!threadHydrated) {
+      return false;
     }
 
     return hasScrollableContent() && isNearBottom();
-  }, [hasScrollableContent, isNearBottom, messageCount]);
+  }, [
+    hasScrollableContent,
+    isNearBottom,
+    isThreadLoading,
+    messageCount,
+    threadHydrated,
+  ]);
 
   const scrollToBottom = useCallback(() => {
     const element = scrollRef.current;
@@ -116,10 +138,10 @@ export function useChatThreadPagination({
       }
 
       if (attempts >= INITIAL_SCROLL_MAX_FRAMES) {
-        if (messageCount === 0 || isNearBottom()) {
+        initialScrollRafRef.current = null;
+        if (canCompleteInitialScroll()) {
           pendingInitialScrollRef.current = false;
         }
-        initialScrollRafRef.current = null;
         return;
       }
 
@@ -233,6 +255,33 @@ export function useChatThreadPagination({
   }, [cancelInitialScrollRaf]);
 
   useEffect(() => {
+    const wasOpen = prevChatOpenRef.current;
+    prevChatOpenRef.current = isChatOpen;
+
+    if (isChatOpen && !wasOpen && isThreadPanelVisible) {
+      pendingInitialScrollRef.current = true;
+      stickToBottomRef.current = true;
+      ensureInitialScrollToBottom();
+    }
+  }, [ensureInitialScrollToBottom, isChatOpen, isThreadPanelVisible]);
+
+  useEffect(() => {
+    const wasVisible = prevThreadPanelVisibleRef.current;
+    prevThreadPanelVisibleRef.current = isThreadPanelVisible;
+
+    if (isThreadPanelVisible && !wasVisible && isChatOpen && !isThreadLoading) {
+      pendingInitialScrollRef.current = true;
+      stickToBottomRef.current = true;
+      ensureInitialScrollToBottom();
+    }
+  }, [
+    ensureInitialScrollToBottom,
+    isChatOpen,
+    isThreadLoading,
+    isThreadPanelVisible,
+  ]);
+
+  useEffect(() => {
     if (prevThreadLoadingRef.current && !isThreadLoading) {
       ensureInitialScrollToBottom();
     }
@@ -243,13 +292,30 @@ export function useChatThreadPagination({
     const wasHydrated = prevThreadHydratedRef.current;
     prevThreadHydratedRef.current = threadHydrated;
 
-    if (threadHydrated && !wasHydrated && isChatOpen && !isThreadLoading) {
+    if (
+      threadHydrated &&
+      !wasHydrated &&
+      isChatOpen &&
+      isThreadPanelVisible &&
+      !isThreadLoading
+    ) {
       ensureInitialScrollToBottom();
     }
-  }, [ensureInitialScrollToBottom, isChatOpen, isThreadLoading, threadHydrated]);
+  }, [
+    ensureInitialScrollToBottom,
+    isChatOpen,
+    isThreadLoading,
+    isThreadPanelVisible,
+    threadHydrated,
+  ]);
 
   useEffect(() => {
-    if (!isChatOpen || isThreadLoading || !pendingInitialScrollRef.current) {
+    if (
+      !isChatOpen ||
+      !isThreadPanelVisible ||
+      isThreadLoading ||
+      !pendingInitialScrollRef.current
+    ) {
       return;
     }
 
@@ -264,7 +330,10 @@ export function useChatThreadPagination({
         return;
       }
 
-      ensureInitialScrollToBottom();
+      scrollToBottom();
+      if (canCompleteInitialScroll()) {
+        pendingInitialScrollRef.current = false;
+      }
     });
 
     observer.observe(element);
@@ -280,11 +349,14 @@ export function useChatThreadPagination({
   }, [
     activeRoomId,
     bottomAnchorRef,
+    canCompleteInitialScroll,
     ensureInitialScrollToBottom,
     isChatOpen,
     isThreadLoading,
+    isThreadPanelVisible,
     messageCount,
     scrollRef,
+    scrollToBottom,
     threadHydrated,
   ]);
 
@@ -325,7 +397,7 @@ export function useChatThreadPagination({
   ]);
 
   useLayoutEffect(() => {
-    if (!isChatOpen || isThreadLoading) {
+    if (!isChatOpen || !isThreadPanelVisible || isThreadLoading) {
       return;
     }
 
@@ -336,13 +408,14 @@ export function useChatThreadPagination({
     activeRoomId,
     isChatOpen,
     isThreadLoading,
+    isThreadPanelVisible,
     messageCount,
     scrollToBottom,
     threadHydrated,
   ]);
 
   useEffect(() => {
-    if (!isChatOpen || isThreadLoading) {
+    if (!isChatOpen || !isThreadPanelVisible || isThreadLoading) {
       return;
     }
 
@@ -354,6 +427,7 @@ export function useChatThreadPagination({
     ensureInitialScrollToBottom,
     isChatOpen,
     isThreadLoading,
+    isThreadPanelVisible,
     messageCount,
     threadHydrated,
   ]);

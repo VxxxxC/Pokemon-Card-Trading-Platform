@@ -861,7 +861,7 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
         mobileView: state.mobileView,
       };
       const shouldIncrementUnread =
-        options?.countAsUnread ??
+        options?.countAsUnread === true ||
         shouldIncrementUnreadForInboundMessage(
           viewState,
           roomId,

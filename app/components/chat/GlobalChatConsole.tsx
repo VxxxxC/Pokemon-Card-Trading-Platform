@@ -828,6 +828,10 @@ export function GlobalChatConsole({
   const isThreadLoading =
     Boolean(activeRoomId) && threadLoadingRoomId === activeRoomId;
 
+  const isThreadPanelVisible = isDesktopChat
+    ? Boolean(activeRoom)
+    : Boolean(activeRoom) && mobileView === "CHAT";
+
   const { loadingOlder, handleScroll, showAllHistoryLoaded, topSentinelRef, bottomAnchorRef } =
     useChatThreadPagination({
       scrollRef,
@@ -835,6 +839,7 @@ export function GlobalChatConsole({
       activeRoom,
       isThreadLoading,
       isChatOpen,
+      isThreadPanelVisible,
       messageCount: activeRoomMessageCount,
       threadHydrated: activeRoom?.threadHydrated === true,
     });

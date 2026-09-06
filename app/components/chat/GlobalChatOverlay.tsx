@@ -75,6 +75,7 @@ export function GlobalChatOverlay() {
   );
   const provisionAttemptedRef = useRef<Set<string>>(new Set());
   const prevUserIdRef = useRef<string | null | undefined>(undefined);
+  const prevPersonaRef = useRef(activeListingPersona);
   const prevUserIdForLobbySyncRef = useRef<string | null | undefined>(undefined);
   const forceThreadHydrateRef = useRef(false);
   const currentUserIdRef = useRef<string | null>(currentUserId);
@@ -125,16 +126,32 @@ export function GlobalChatOverlay() {
     const cached = readChatLocalCache(currentUserId, activeListingPersona);
     if (cached && cached.length > 0) {
       setChats((currentRooms) => {
-        const otherPersonaRooms = currentRooms.filter(
-          (room) => !roomMatchesViewerPersona(room, activeListingPersona),
+        const personaRooms = currentRooms.filter((room) =>
+          roomMatchesViewerPersona(room, activeListingPersona),
         );
-        return mergeChatRoomsWithDb(otherPersonaRooms, cached, {
+        return mergeChatRoomsWithDb(personaRooms, cached, {
           stripeRooms: true,
-          preferServerUnread: true,
+          preferServerUnread: false,
         });
       });
+    } else {
+      setChats((currentRooms) =>
+        currentRooms.filter((room) =>
+          roomMatchesViewerPersona(room, activeListingPersona),
+        ),
+      );
     }
   }, [activeListingPersona, currentUserId, setChats]);
+
+  useEffect(() => {
+    if (prevPersonaRef.current === activeListingPersona) {
+      return;
+    }
+
+    prevPersonaRef.current = activeListingPersona;
+    forceThreadHydrateRef.current = true;
+    threadRequestIdRef.current += 1;
+  }, [activeListingPersona]);
 
   const applyLobbyMerge = useCallback(
     (dbRooms: Parameters<typeof mergeChatRoomsWithDb>[1]) => {

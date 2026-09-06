@@ -179,7 +179,11 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
         .chats.some((room) => room.id === row.room_id);
       const countAsUnread =
         isIncoming && isInboundTransactionSystemContent(row.content);
-      appendRoomMessage(row.room_id, message, { countAsUnread });
+      appendRoomMessage(
+        row.room_id,
+        message,
+        countAsUnread ? { countAsUnread: true } : undefined,
+      );
       if (!hadRoom) {
         await refreshInboxLobbyInStore();
       }

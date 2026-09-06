@@ -3,6 +3,7 @@ import {
   isDbChatRoomId,
   isChatRoomId,
 } from "@/app/lib/chat/constants";
+import { resolveRoomViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
 import {
   buildPartnerRoomKey,
   type ChatPartnerPersona,
@@ -143,9 +144,7 @@ function mergeRoomMessages(
   const timestamp =
     messages.at(-1)?.timestamp ?? db.timestamp ?? local.timestamp;
 
-  const mergedUnread = preferServerUnread
-    ? db.unreadCount
-    : Math.max(local.unreadCount, db.unreadCount);
+  const mergedUnread = Math.max(local.unreadCount, db.unreadCount);
 
   return {
     ...db,
@@ -201,6 +200,10 @@ function finalizeCanonicalRoom(
 }
 
 function roomsSharePartnerIdentity(left: ChatRoom, right: ChatRoom): boolean {
+  if (resolveRoomViewerPersona(left) !== resolveRoomViewerPersona(right)) {
+    return false;
+  }
+
   const leftPartnerKey = buildPartnerRoomKey(
     left.partnerId,
     inferPartnerPersona(left),

@@ -11,14 +11,19 @@ import { generateDeterministicRoomId } from "@/app/lib/utils/chatUtils";
 const PARTNER_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 function makeRoom(
-  overrides: Partial<ChatRoom> & Pick<ChatRoom, "id" | "partnerPersona">,
+  overrides: Partial<ChatRoom> &
+    Pick<ChatRoom, "id" | "partnerPersona"> & {
+      viewerPersona?: ChatRoom["viewerPersona"];
+    },
 ): ChatRoom {
   const partnerPersona = overrides.partnerPersona ?? "member";
+  const viewerPersona = overrides.viewerPersona ?? "member";
 
   return {
     id: overrides.id,
     partnerId: overrides.partnerId ?? PARTNER_ID,
     partnerPersona,
+    viewerPersona,
     partnerName: overrides.partnerName ?? "Test Partner",
     partnerAvatarUrl: overrides.partnerAvatarUrl ?? "/asset/default-avator.webp",
     partnerTier:
@@ -66,6 +71,73 @@ describe("mergeChatRooms", () => {
     expect(merged.map((room) => room.id).sort()).toEqual(
       [memberRoom.id, merchantRoom.id].sort(),
     );
+  });
+
+  test("does not merge member-viewer and merchant-viewer rooms with the same partner name", () => {
+    const memberViewerRoom = makeRoom({
+      id: "11111111-1111-4111-8111-111111111111",
+      viewerPersona: "member",
+      partnerPersona: "merchant",
+      partnerName: "Same Partner",
+      lastMessage: "member-view thread",
+      messages: [
+        {
+          id: "member-msg",
+          sender: "them",
+          text: "member-view message",
+          timestamp: "2026-07-18T10:00:00.000Z",
+        },
+      ],
+    });
+    const merchantViewerRoom = makeRoom({
+      id: "22222222-2222-4222-8222-222222222222",
+      viewerPersona: "merchant",
+      partnerPersona: "member",
+      partnerName: "Same Partner",
+      lastMessage: "merchant-view thread",
+      messages: [
+        {
+          id: "merchant-msg",
+          sender: "them",
+          text: "merchant-view message",
+          timestamp: "2026-07-18T10:01:00.000Z",
+        },
+      ],
+    });
+
+    const merged = mergeChatRoomsWithDb(
+      [memberViewerRoom],
+      [merchantViewerRoom],
+    );
+
+    expect(merged).toHaveLength(2);
+    expect(
+      merged.find((room) => room.viewerPersona === "member")?.messages,
+    ).toHaveLength(1);
+    expect(
+      merged.find((room) => room.viewerPersona === "merchant")?.messages,
+    ).toHaveLength(1);
+  });
+
+  test("preserves local unread when lobby sync prefers server but server lags", () => {
+    const localRoom = makeRoom({
+      id: "11111111-1111-4111-8111-111111111111",
+      partnerPersona: "member",
+      viewerPersona: "merchant",
+      unreadCount: 1,
+    });
+    const dbRoom = makeRoom({
+      id: "11111111-1111-4111-8111-111111111111",
+      partnerPersona: "member",
+      viewerPersona: "merchant",
+      unreadCount: 0,
+    });
+
+    const merged = mergeChatRoomsWithDb([localRoom], [dbRoom], {
+      preferServerUnread: true,
+    });
+
+    expect(merged[0]?.unreadCount).toBe(1);
   });
 
   test("findRoomByPartnerId respects persona", () => {
