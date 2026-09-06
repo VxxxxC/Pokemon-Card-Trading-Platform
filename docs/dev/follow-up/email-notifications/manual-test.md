@@ -301,7 +301,7 @@ bun run test:email:phase6
 ```
 
 - [ ] E-REF-03
-- [ ] E-ACC-02
+- [x] E-ACC-02
 - [x] E-GRD-B2C-01
 - [ ] E-GRD-B2C-09
 - [ ] E-PAY-01
@@ -332,7 +332,7 @@ bun run test:email:phase6
 2. [x] **E-OFF-01** 叫價 → outbox + worker → 收信
 3. [x] **E-ORD-01** 付款成功 → buyer+seller outbox（Stripe test）
 4. [x] **E-ACC-03** forgot password 一輪
-5. [ ] Admin **E-MOD-06** 發送補充證據通知
+5. [x] Admin **E-MOD-06** 發送補充證據通知
 6. [ ] 任一 cron（如 `order-fulfillment-reminders`）→ outbox row
 
 ---
