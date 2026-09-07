@@ -55,6 +55,8 @@ bun run test:email:phase6
 
 ## 1. 共用：查 outbox + 跑 worker
 
+> Producer 驗證（12 項未 tick cron/action）：見 [trigger-verify.md](./trigger-verify.md) · `bun run test:email:triggers` · `bun run verify:email-triggers --list`
+
 ### SQL — 最近 outbox
 
 ```sql
@@ -139,7 +141,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 | E-ORD-02 | 待付款逾時 | `pending_payment` 商戶單過 48h **或** staging 觸發 cron | Buyer + Seller：`E-ORD-02` |
 
 - [x] E-ORD-01（需 Stripe webhook / test 卡）
-- [ ] E-ORD-02（可 `GET /api/cron/expire-merchant-pending-payment`）
+- [x] E-ORD-02（`expire-merchant-pending-payment` cron，2026-09-07 staging）
 
 ```bash
 curl -s -H "Authorization: Bearer $CRON_SECRET" \
@@ -175,7 +177,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 | E-OFF-05        | 出價失效          | Accept offer / buy now / 下架 listing                            | 其他 pending buyer：`E-OFF-05` |
 
 - [x] E-MOD-02
-- [ ] E-PAY-02
+- [x] E-PAY-02（`run-email-trigger-batch-c.ts`，2026-09-07）
 - [x] E-GRD-C2C-01 / 05 / 06 / 07
 - [x] E-GRD-B2C-02 / 05 / 06
 - [x] E-OFF-05
@@ -209,7 +211,7 @@ bun run test:email:phase3
 ```
 
 - [x] Phase 3 gate 全綠
-- [ ] 抽樣 2–3 條真 flow outbox + worker
+- [x] 抽樣 2–3 條真 flow outbox + worker（Batch A cron ×5 + worker sent，2026-09-07）
 
 ---
 
@@ -239,11 +241,11 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 bun run test:email:phase4
 ```
 
-- [ ] E-ORD-07
-- [ ] E-ORD-08
-- [ ] E-MCH-04
-- [ ] E-MOD-05
-- [ ] E-RWD-01
+- [x] E-ORD-07
+- [x] E-ORD-08
+- [x] E-MCH-04（idempotency 同日已 enqueue；cron `reminders:2`）
+- [x] E-MOD-05（`run-email-trigger-batch-b.ts`，2026-09-07）
+- [x] E-RWD-01（`run-email-trigger-batch-b.ts`，2026-09-07）
 - [x] E-RWD-02
 - [x] Phase 4 gate 全綠
 
@@ -276,8 +278,8 @@ bun run test:email:phase5
 ```
 
 - [x] E-MCH-06
-- [ ] E-ACC-08
-- [ ] E-ACC-09
+- [x] E-ACC-08（`sanction-expiry-notifications` cron，2026-09-07）
+- [x] E-ACC-09（`run-email-trigger-batch-b.ts`，2026-09-07）
 - [x] E-MOD-06
 - [x] Phase 5 gate 全綠
 
@@ -300,11 +302,11 @@ bun run test:email:phase5
 bun run test:email:phase6
 ```
 
-- [ ] E-REF-03
+- [x] E-REF-03（`run-email-trigger-batch-b.ts`，2026-09-07）
 - [x] E-ACC-02
 - [x] E-GRD-B2C-01
-- [ ] E-GRD-B2C-09
-- [ ] E-PAY-01
+- [x] E-GRD-B2C-09（`run-email-trigger-batch-c.ts`，2026-09-07）
+- [x] E-PAY-01（`run-email-trigger-batch-c.ts`，2026-09-07）
 - [x] E-ORD-P2P-01
 - [x] E-ORD-P2P-02
 - [x] E-ORD-09
@@ -333,7 +335,7 @@ bun run test:email:phase6
 3. [x] **E-ORD-01** 付款成功 → buyer+seller outbox（Stripe test）
 4. [x] **E-ACC-03** forgot password 一輪
 5. [x] Admin **E-MOD-06** 發送補充證據通知
-6. [ ] 任一 cron（如 `order-fulfillment-reminders`）→ outbox row
+6. [x] 任一 cron（`order-fulfillment-reminders` 等 Batch A）→ outbox row + worker
 
 ---
 
@@ -363,8 +365,8 @@ bun run test:email:phase6
 | App Phase 1–3 outbox 真 flow                        |      |        |
 | App Phase 4–6 outbox 真 flow                        |      |        |
 | E-MOD-06 admin UI                                   |      |        |
-| Cron reminders（ORD-07/08、MCH-04、RWD-02、ACC-08） |      |        |
-| Worker + Resend 真寄信抽樣                          |      |        |
+| Cron reminders（ORD-07/08、MCH-04、RWD-02、ACC-08） | 2026-09-07 | staging verify |
+| Worker + Resend 真寄信抽樣                          | 2026-09-07 | 5/5 sent       |
 
 **備註 / 失敗 event ID：**
 
