@@ -24,6 +24,63 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 import { processChatUnreadDigest } from "@/lib/notifications/process-chat-unread-digest";
 
+function createProfilesSelectMock(
+  overrides?: Partial<{
+    lastActiveAt: string | null;
+    pushChatDigest: boolean;
+    subscriptionRows: Array<{
+      user_id: string;
+      onesignal_subscription_id: string;
+    }>;
+  }>,
+) {
+  return vi.fn().mockImplementation((columns: string) => {
+    if (columns.includes("push_transactional")) {
+      return {
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: {
+              push_transactional: true,
+              push_market_alerts: true,
+              push_chat_digest: overrides?.pushChatDigest ?? true,
+              push_rewards: true,
+              email_transactional: true,
+              email_market_alerts: true,
+              email_rewards: true,
+            },
+            error: null,
+          }),
+        }),
+      };
+    }
+
+    if (columns === "id, last_active_at") {
+      return {
+        in: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "user-1",
+              last_active_at: overrides?.lastActiveAt ?? null,
+            },
+          ],
+          error: null,
+        }),
+      };
+    }
+
+    return {
+      in: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({
+          data:
+            overrides?.subscriptionRows ??
+            [{ user_id: "user-1", onesignal_subscription_id: "sub-1" }],
+          error: null,
+        }),
+      }),
+    };
+  });
+}
+
 describe("processChatUnreadDigest", () => {
   beforeEach(() => {
     rpcMock.mockReset();
@@ -43,24 +100,7 @@ describe("processChatUnreadDigest", () => {
     eqMock.mockResolvedValue({ error: null });
     updateMock.mockReturnValue({ eq: eqMock });
     fromMock.mockReturnValue({
-      select: vi.fn().mockImplementation((columns: string) => {
-        if (columns === "id, last_active_at") {
-          return {
-            in: vi.fn().mockResolvedValue({
-              data: [{ id: "user-1", last_active_at: null }],
-              error: null,
-            }),
-          };
-        }
-        return {
-          in: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({
-              data: [{ user_id: "user-1", onesignal_subscription_id: "sub-1" }],
-              error: null,
-            }),
-          }),
-        };
-      }),
+      select: createProfilesSelectMock(),
       update: updateMock,
     });
   });
@@ -93,20 +133,9 @@ describe("processChatUnreadDigest", () => {
       error: null,
     });
     fromMock.mockReturnValue({
-      select: vi.fn().mockImplementation((columns: string) => {
-        if (columns === "id, last_active_at") {
-          return {
-            in: vi.fn().mockResolvedValue({
-              data: [{ id: "user-1", last_active_at: null }],
-              error: null,
-            }),
-          };
-        }
-        return {
-          in: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
-          }),
-        };
+      select: createProfilesSelectMock({
+        lastActiveAt: null,
+        subscriptionRows: [],
       }),
       update: updateMock,
     });
@@ -124,28 +153,8 @@ describe("processChatUnreadDigest", () => {
       error: null,
     });
     fromMock.mockReturnValue({
-      select: vi.fn().mockImplementation((columns: string) => {
-        if (columns === "id, last_active_at") {
-          return {
-            in: vi.fn().mockResolvedValue({
-              data: [
-                {
-                  id: "user-1",
-                  last_active_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-                },
-              ],
-              error: null,
-            }),
-          };
-        }
-        return {
-          in: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({
-              data: [{ user_id: "user-1", onesignal_subscription_id: "sub-1" }],
-              error: null,
-            }),
-          }),
-        };
+      select: createProfilesSelectMock({
+        lastActiveAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       }),
       update: updateMock,
     });

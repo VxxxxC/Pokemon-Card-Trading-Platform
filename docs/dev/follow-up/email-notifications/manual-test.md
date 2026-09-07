@@ -355,12 +355,12 @@ bun run test:email:phase6
 
 | 項目                                                | 日期 | 測試人 |
 | --------------------------------------------------- | ---- | ------ |
-| `bun run test:email:phase1` 全綠                    |      |        |
-| `bun run test:email:phase2` 全綠                    |      |        |
-| `bun run test:email:phase3` 全綠                    |      |        |
-| `bun run test:email:phase4` 全綠                    |      |        |
-| `bun run test:email:phase5` 全綠                    |      |        |
-| `bun run test:email:phase6` 全綠                    |      |        |
+| `bun run test:email:phase1` 全綠                    | 2026-09-07 | local |
+| `bun run test:email:phase2` 全綠                    | 2026-09-07 | local |
+| `bun run test:email:phase3` 全綠                    | 2026-09-07 | local |
+| `bun run test:email:phase4` 全綠                    | 2026-09-07 | local |
+| `bun run test:email:phase5` 全綠                    | 2026-09-07 | local |
+| `bun run test:email:phase6` 全綠                    | 2026-09-07 | local |
 | Supabase Auth E-ACC-01 / 03                         |      |        |
 | App Phase 1–3 outbox 真 flow                        |      |        |
 | App Phase 4–6 outbox 真 flow                        |      |        |
