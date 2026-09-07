@@ -139,7 +139,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 | E-ORD-02 | 待付款逾時 | `pending_payment` 商戶單過 48h **或** staging 觸發 cron | Buyer + Seller：`E-ORD-02` |
 
 - [x] E-ORD-01（需 Stripe webhook / test 卡）
-- [ ] E-ORD-02（可 `GET /api/cron/expire-merchant-pending-payment`）
+- [x] E-ORD-02（可 `GET /api/cron/expire-merchant-pending-payment`）
 
 ```bash
 curl -s -H "Authorization: Bearer $CRON_SECRET" \
@@ -175,7 +175,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 | E-OFF-05        | 出價失效          | Accept offer / buy now / 下架 listing                            | 其他 pending buyer：`E-OFF-05` |
 
 - [x] E-MOD-02
-- [ ] E-PAY-02
+- [x] E-PAY-02
 - [x] E-GRD-C2C-01 / 05 / 06 / 07
 - [x] E-GRD-B2C-02 / 05 / 06
 - [x] E-OFF-05
@@ -239,11 +239,11 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 bun run test:email:phase4
 ```
 
-- [ ] E-ORD-07
-- [ ] E-ORD-08
-- [ ] E-MCH-04
+- [x] E-ORD-07
+- [x] E-ORD-08
+- [x] E-MCH-04
 - [ ] E-MOD-05
-- [ ] E-RWD-01
+- [x] E-RWD-01
 - [x] E-RWD-02
 - [x] Phase 4 gate 全綠
 
@@ -300,11 +300,11 @@ bun run test:email:phase5
 bun run test:email:phase6
 ```
 
-- [ ] E-REF-03
+- [x] E-REF-03
 - [x] E-ACC-02
 - [x] E-GRD-B2C-01
-- [ ] E-GRD-B2C-09
-- [ ] E-PAY-01
+- [x] E-GRD-B2C-09
+- [x] E-PAY-01
 - [x] E-ORD-P2P-01
 - [x] E-ORD-P2P-02
 - [x] E-ORD-09
@@ -333,7 +333,7 @@ bun run test:email:phase6
 3. [x] **E-ORD-01** 付款成功 → buyer+seller outbox（Stripe test）
 4. [x] **E-ACC-03** forgot password 一輪
 5. [x] Admin **E-MOD-06** 發送補充證據通知
-6. [ ] 任一 cron（如 `order-fulfillment-reminders`）→ outbox row
+6. [x] 任一 cron（如 `order-fulfillment-reminders`）→ outbox row
 
 ---
 
