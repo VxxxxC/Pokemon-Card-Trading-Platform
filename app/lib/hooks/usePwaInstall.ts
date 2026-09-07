@@ -66,10 +66,13 @@ if (typeof window !== "undefined") {
     "standalone" in window.navigator &&
     Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
 
-  // Check localStorage only after confirming client-side; standalone detection
-  // does not depend on localStorage so hydration stays consistent for PWA users.
-  const lsInstalled = localStorage.getItem(LS_INSTALLED_KEY) === "true";
-  isInstalled = byMedia || byNavigator || lsInstalled;
+  // Only treat the app as installed when actually running standalone.
+  // Stale `pwa_installed` in localStorage should not permanently hide the banner in a tab.
+  isInstalled = byMedia || byNavigator;
+
+  if (!isInstalled && localStorage.getItem(LS_INSTALLED_KEY) === "true") {
+    localStorage.removeItem(LS_INSTALLED_KEY);
+  }
 
   // Read cooling flag so we can distinguish "waiting for beforeinstallprompt"
   // from "user already dismissed and browser is in cooling period".
