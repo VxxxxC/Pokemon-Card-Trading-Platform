@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { ChevronDown, MoreVertical } from "lucide-react";
+import { ChevronDown, Heart, MoreVertical } from "lucide-react";
 import type { WishlistEntry } from "@/app/lib/wishlist/types";
 import { Pagination } from "@/app/components/ui/Pagination";
 import {
@@ -464,9 +464,11 @@ export function WishlistTable({
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <span className="text-[40px]" aria-hidden="true">
-          ☆
-        </span>
+        <Heart
+          className="size-10 text-text-secondary"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
         <p className="font-sans text-[15px] text-text-secondary">
           願望清單為空
         </p>

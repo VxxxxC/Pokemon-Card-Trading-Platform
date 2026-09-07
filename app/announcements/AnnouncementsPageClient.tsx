@@ -8,7 +8,6 @@ import { TopNav } from "@/app/components/navigation/TopNav";
 import { MobileHeader } from "@/app/components/navigation/MobileHeader";
 import { BottomNav } from "@/app/components/navigation/BottomNav";
 import { Footer } from "@/app/components/navigation/Footer";
-import { PwaInlineBanner } from "@/app/components/pwa/PwaInlineBanner";
 import { getAnnouncementStatus, sortAnnouncementsForPublicDisplay } from "@/lib/announcements/status";
 import type { PlatformAnnouncement } from "@/lib/announcements/types";
 import { AnnouncementDetailLink } from "@/lib/announcements/announcement-detail-link";
@@ -57,7 +56,6 @@ export function AnnouncementsPageClient({
     <div className="min-h-[100dvh] bg-bg-page text-text-primary flex flex-col font-sans overflow-x-hidden">
       <TopNav />
       <MobileHeader />
-      <PwaInlineBanner />
 
       <main className="flex-1 max-w-[1100px] mx-auto w-full px-4 lg:px-8 mt-3 pb-28 lg:pb-10 space-y-4 animate-fadeIn">
         <section

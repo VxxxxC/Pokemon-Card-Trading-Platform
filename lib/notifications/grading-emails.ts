@@ -972,7 +972,7 @@ export async function enqueueB2cAwaitingPaymentBuyerEmail(
   const admin = createAdminClient();
   const { data: order, error } = await admin
     .from("merchant_orders")
-    .select("id, buyer_id, listing_id, order_number, escrow_status, use_authentication")
+    .select("id, buyer_id, listing_id, order_number, escrow_status, requires_authentication")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
@@ -980,11 +980,11 @@ export async function enqueueB2cAwaitingPaymentBuyerEmail(
       listing_id: string;
       order_number: string | null;
       escrow_status: string | null;
-      use_authentication: boolean | null;
+      requires_authentication: boolean | null;
     }>();
 
   if (error || !order) return;
-  if (!order.use_authentication || order.escrow_status !== "pending_payment") {
+  if (!order.requires_authentication || order.escrow_status !== "pending_payment") {
     return;
   }
 
@@ -1020,17 +1020,17 @@ export async function enqueueB2cGradingPayoutCompletedEmail(args: {
   const admin = createAdminClient();
   const { data: order, error } = await admin
     .from("merchant_orders")
-    .select("id, merchant_id, listing_id, order_number, use_authentication")
+    .select("id, merchant_id, listing_id, order_number, requires_authentication")
     .eq("id", args.orderId)
     .maybeSingle<
       Pick<
         MerchantGradingOrderRow,
         "id" | "merchant_id" | "listing_id" | "order_number" | "requires_authentication"
-      > & { use_authentication: boolean | null }
+      >
     >();
 
   if (error || !order) return;
-  if (!order.use_authentication && !order.requires_authentication) return;
+  if (!order.requires_authentication) return;
 
   const listing = await fetchListingEmailContext(order.listing_id);
   if (!listing) return;

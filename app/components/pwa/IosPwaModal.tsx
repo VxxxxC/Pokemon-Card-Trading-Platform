@@ -5,6 +5,7 @@ import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { useUIStore } from "@/app/store/useUIStore";
 import { usePwaInstall } from "@/app/lib/hooks/usePwaInstall";
+import { snoozePwaPrompt } from "@/lib/pwa/snooze";
 
 interface TutorialSlide {
   title: string;
@@ -38,9 +39,6 @@ const IOS_PWA_SLIDES: TutorialSlide[] = [
   },
 ];
 
-const SNOOZE_KEY = "pwa_snooze_until";
-const SNOOZE_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
-
 export function IosPwaModal() {
   const { promptState } = usePwaInstall();
   const isOpen = useUIStore((state) => state.isIosPwaModalOpen);
@@ -48,8 +46,7 @@ export function IosPwaModal() {
   const [currentStep, setCurrentStep] = useState(0);
 
   const handleSnooze = () => {
-    localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_DURATION_MS)); //
-    window.dispatchEvent(new Event("hkcardvault:pwa-snooze-changed")); //
+    snoozePwaPrompt();
   };
 
   if (!isOpen) return null;

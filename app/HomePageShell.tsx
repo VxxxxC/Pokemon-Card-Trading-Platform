@@ -11,7 +11,6 @@ import type { HomePriceTickerItem } from "@/lib/home/load-home-ticker";
 import { HeroSearch } from "@/app/components/home/HeroSearch";
 import { HomeBanner } from "@/app/components/home/HomeBanner";
 import { TrustBanner } from "@/app/components/home/TrustBanner";
-import { PwaInlineBanner } from "@/app/components/pwa/PwaInlineBanner";
 import { AnnouncementModal } from "@/app/components/announcements/AnnouncementModal";
 import { markHomeClientMount } from "@/app/lib/home/perf-log-client";
 import type { HomeBannerItem } from "@/app/lib/home/types";
@@ -50,7 +49,6 @@ export function HomePageShell({
     <div className="min-h-[100dvh] bg-bg-page text-text-primary flex flex-col font-sans">
       <TopNav />
       <MobileHeader />
-      <PwaInlineBanner />
       <PriceTicker data={tickerItems} />
       <PwaInstallPrompt />
       <AnnouncementModal announcements={activeAnnouncements} />

@@ -1,23 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { usePwaInstall } from "@/app/lib/hooks/usePwaInstall";
 import { useUIStore } from "@/app/store/useUIStore";
 import { isAppleSafariInstallContext } from "@/lib/pwa/detect-apple-safari";
+import {
+  getIsPwaSnoozed,
+  snoozePwaPrompt,
+  subscribePwaSnooze,
+} from "@/lib/pwa/snooze";
 
-const SNOOZE_KEY = "pwa_snooze_until";
-const SNOOZE_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const IOS_AUTO_PROMPT_DELAY_MS = 2_000;
 
 export function PwaInstallPrompt() {
   const { promptState, onInstall } = usePwaInstall();
   const openIosPwaModal = useUIStore((state) => state.openIosPwaModal);
   const closeIosPwaModal = useUIStore((state) => state.closeIosPwaModal);
-  const [dismissed, setDismissed] = useState(() => {
-    if (typeof window === "undefined") return false; //
-    const snoozeUntil = localStorage.getItem(SNOOZE_KEY); //
-    return Boolean(snoozeUntil && Date.now() < Number(snoozeUntil)); //
-  });
+  const isSnoozed = useSyncExternalStore(
+    subscribePwaSnooze,
+    getIsPwaSnoozed,
+    () => false,
+  );
 
   useEffect(() => {
     if (promptState === "NATIVE_READY") {
@@ -28,7 +31,7 @@ export function PwaInstallPrompt() {
   useEffect(() => {
     if (
       promptState === "ALREADY_INSTALLED" ||
-      dismissed ||
+      isSnoozed ||
       promptState === "NATIVE_READY" ||
       promptState === "BROWSER_COOLING" ||
       !isAppleSafariInstallContext()
@@ -41,17 +44,12 @@ export function PwaInstallPrompt() {
     }, IOS_AUTO_PROMPT_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [promptState, dismissed, openIosPwaModal]);
+  }, [promptState, isSnoozed, openIosPwaModal]);
 
-  const handleSnooze = () => {
-    localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_DURATION_MS)); //
-    window.dispatchEvent(new Event("hkcardvault:pwa-snooze-changed")); //
-    setDismissed(true); //
-  };
+  if (promptState === "ALREADY_INSTALLED" || isSnoozed) {
+    return null;
+  }
 
-  if (promptState === "ALREADY_INSTALLED" || dismissed) return null; //
-
-  // State A: Native prompt ready
   if (promptState === "NATIVE_READY") {
     return (
       <aside className="fixed bottom-30 left-4 z-50 max-w-xs rounded-2xl border border-[rgba(212,165,116,0.25)] bg-[#4e3d2f] p-4 shadow-[0_8px_32px_rgba(0,0,0,0.7)] lg:bottom-6">
@@ -71,7 +69,7 @@ export function PwaInstallPrompt() {
           </button>
           <button
             type="button"
-            onClick={handleSnooze}
+            onClick={snoozePwaPrompt}
             className="flex items-center justify-center rounded-md border border-[rgba(237,232,224,0.15)] px-4 py-2.5 font-sans text-xs font-medium text-text-secondary transition-all hover:border-[rgba(237,232,224,0.3)] active:scale-[0.98] active:translate-y-px cursor-pointer"
           >
             稍後

@@ -12,4 +12,4 @@ echo ""
 echo "Set STRIPE_WEBHOOK_SECRET to the whsec_... secret printed below."
 echo ""
 
-exec stripe listen --forward-to "localhost:${PORT}/api/stripe/webhook" --events "${EVENTS}"
+exec stripe listen --forward-to "localhost:${PORT}/api/stripe/webhook" --events "${EVENTS}" --log-level debug

@@ -24,6 +24,8 @@
     "test:email:phase4": "vitest run --config vitest.config.mts tests/unit/notifications/email-phase4-gate.test.ts",
     "test:email:phase5": "vitest run --config vitest.config.mts tests/unit/notifications/email-phase5-gate.test.ts",
     "test:email:phase6": "vitest run --config vitest.config.mts tests/unit/notifications/email-phase6-gate.test.ts",
+    "test:email:triggers": "vitest run --config vitest.config.mts tests/unit/notifications/email-cron-enqueue.test.ts",
+    "verify:email-triggers": "bun scripts/dev/verify-email-triggers.ts",
     "test:catalog-search": "bun run scripts/test-product-catalog-search.ts",
     "test:member-order-complete-rpc": "bun run scripts/test-member-order-complete-rpc.ts",
     "test:chat-mark-read": "bun run scripts/test-chat-mark-read.ts",

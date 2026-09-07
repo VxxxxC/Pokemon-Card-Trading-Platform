@@ -79,10 +79,10 @@ export async function enqueueConnectPayoutCompletedEmail(args: {
   const admin = createAdminClient();
   const { data: order, error } = await admin
     .from("merchant_orders")
-    .select("id, merchant_id, order_number, use_authentication")
+    .select("id, merchant_id, order_number, requires_authentication")
     .eq("id", args.orderId)
     .maybeSingle<
-      MerchantPayoutOrderRow & { use_authentication: boolean | null }
+      MerchantPayoutOrderRow & { requires_authentication: boolean | null }
     >();
 
   if (error || !order) {
@@ -117,7 +117,7 @@ export async function enqueueConnectPayoutCompletedEmail(args: {
     },
   });
 
-  if (order.use_authentication) {
+  if (order.requires_authentication) {
     await enqueueB2cGradingPayoutCompletedEmail({
       orderId: order.id,
       merchantPayoutAmount: args.merchantPayoutAmount,
