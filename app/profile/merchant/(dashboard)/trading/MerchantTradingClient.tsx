@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { DASHBOARD_SECTION_TITLE_CLASS } from "@/app/profile/dashboard-ui";
 import { Pagination } from "@/app/components/ui/Pagination";
 import { MerchantOrderRow } from "@/app/components/merchant/MerchantOrderRow";
+import { TradingFilterResetButton } from "@/app/components/trading/TradingFilterResetButton";
 import { TradingSegmentedFilter } from "@/app/components/trading/TradingSegmentedFilter";
+import {
+  hasActiveMerchantTradingFilters,
+  useTradingFiltersStore,
+} from "@/app/store/useTradingFiltersStore";
 import {
   useMerchantTrading,
   type MerchantTradingInitialData,
@@ -26,14 +31,31 @@ type MerchantTradingClientProps = {
 
 export function MerchantTradingClient({
   initialData,
-  initialTabStatus,
   bootstrapError,
 }: MerchantTradingClientProps) {
   const searchParams = useSearchParams();
-  const [tabStatus, setTabStatus] = useState<TabStatusFilter>(initialTabStatus);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [subPaymentChecked, setSubPaymentChecked] = useState(true);
-  const [subGradingChecked, setSubGradingChecked] = useState(true);
+  const tabStatus = useTradingFiltersStore((state) => state.merchant.tabStatus);
+  const searchQuery = useTradingFiltersStore((state) => state.merchant.searchQuery);
+  const subPaymentChecked = useTradingFiltersStore(
+    (state) => state.merchant.includePaymentPending,
+  );
+  const subGradingChecked = useTradingFiltersStore(
+    (state) => state.merchant.includeAuthInProgress,
+  );
+  const setTabStatus = useTradingFiltersStore((state) => state.setMerchantTabStatus);
+  const setSearchQuery = useTradingFiltersStore((state) => state.setMerchantSearchQuery);
+  const setSubPaymentChecked = useTradingFiltersStore(
+    (state) => state.setMerchantIncludePaymentPending,
+  );
+  const setSubGradingChecked = useTradingFiltersStore(
+    (state) => state.setMerchantIncludeAuthInProgress,
+  );
+  const resetMerchantFilters = useTradingFiltersStore(
+    (state) => state.resetMerchantFilters,
+  );
+  const hasActiveFilters = useTradingFiltersStore((state) =>
+    hasActiveMerchantTradingFilters(state.merchant),
+  );
 
   const {
     orders,
@@ -57,7 +79,7 @@ export function MerchantTradingClient({
       const nextStatus = TAB_STATUS_FROM_PARAM[queryFilter];
       queueMicrotask(() => setTabStatus(nextStatus));
     }
-  }, [searchParams]);
+  }, [searchParams, setTabStatus]);
 
   const saleOrders = useMemo(
     () => orders.map(mapMerchantTradingOrderToSaleOrder),
@@ -155,12 +177,18 @@ export function MerchantTradingClient({
 
         <div className="px-3 py-2 sm:px-4 border-b border-[rgba(237,232,224,0.06)] space-y-2">
           <div className="space-y-1">
-            <p
-              className="font-mono text-[9px] text-text-disabled tracking-wide"
-              id="merchant-trading-status-filter-label"
-            >
-              訂單狀態
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className="font-mono text-[9px] text-text-disabled tracking-wide"
+                id="merchant-trading-status-filter-label"
+              >
+                訂單狀態
+              </p>
+              <TradingFilterResetButton
+                hasActiveFilters={hasActiveFilters}
+                onReset={resetMerchantFilters}
+              />
+            </div>
             <TradingSegmentedFilter
               options={statusSegmentOptions}
               value={tabStatus}

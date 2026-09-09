@@ -8,7 +8,12 @@ import { DASHBOARD_SECTION_TITLE_CLASS } from "@/app/profile/dashboard-ui";
 import type { UserTradingOrder } from "@/app/actions/orders";
 import { Pagination } from "@/app/components/ui/Pagination";
 import { UserOrderRow, OrderRowChip } from "@/app/components/user/UserOrderRow";
+import { TradingFilterResetButton } from "@/app/components/trading/TradingFilterResetButton";
 import { TradingSegmentedFilter, type SegmentedFilterOption } from "@/app/components/trading/TradingSegmentedFilter";
+import {
+  hasActiveMemberTradingFilters,
+  useTradingFiltersStore,
+} from "@/app/store/useTradingFiltersStore";
 import {
   useUserTrading,
   type TradingInitialData,
@@ -151,13 +156,19 @@ function TradingPersonaUnderlineTabs({
 
 export function UserTradingClient({
   initialData,
-  initialTabStatus,
   bootstrapError,
 }: UserTradingClientProps) {
   const searchParams = useSearchParams();
-  const [persona, setPersona] = useState<PersonaFilter>("all");
-  const [tabStatus, setTabStatus] = useState<TabStatusFilter>(initialTabStatus);
-  const [searchQuery, setSearchQuery] = useState("");
+  const persona = useTradingFiltersStore((state) => state.member.persona);
+  const tabStatus = useTradingFiltersStore((state) => state.member.tabStatus);
+  const searchQuery = useTradingFiltersStore((state) => state.member.searchQuery);
+  const setPersona = useTradingFiltersStore((state) => state.setMemberPersona);
+  const setTabStatus = useTradingFiltersStore((state) => state.setMemberTabStatus);
+  const setSearchQuery = useTradingFiltersStore((state) => state.setMemberSearchQuery);
+  const resetMemberFilters = useTradingFiltersStore((state) => state.resetMemberFilters);
+  const hasActiveFilters = useTradingFiltersStore((state) =>
+    hasActiveMemberTradingFilters(state.member),
+  );
   const [activeReview, setActiveReview] = useState<ActiveReviewState>(null);
 
   const {
@@ -182,7 +193,7 @@ export function UserTradingClient({
       const nextStatus = TAB_STATUS_FROM_PARAM[queryFilter];
       queueMicrotask(() => setTabStatus(nextStatus));
     }
-  }, [searchParams]);
+  }, [searchParams, setTabStatus]);
 
   const handleOpenReview = useCallback(
     (orderId: string, revieweeId: string) => {
@@ -298,12 +309,18 @@ export function UserTradingClient({
 
           <div className="px-3 py-2 sm:px-4 border-b border-[rgba(237,232,224,0.06)] space-y-2">
             <div className="space-y-1">
-              <p
-                className="font-mono text-[9px] text-text-disabled tracking-wide"
-                id="user-trading-status-filter-label"
-              >
-                訂單狀態
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p
+                  className="font-mono text-[9px] text-text-disabled tracking-wide"
+                  id="user-trading-status-filter-label"
+                >
+                  訂單狀態
+                </p>
+                <TradingFilterResetButton
+                  hasActiveFilters={hasActiveFilters}
+                  onReset={resetMemberFilters}
+                />
+              </div>
               <TradingSegmentedFilter
                 options={statusSegmentOptions}
                 value={tabStatus}
