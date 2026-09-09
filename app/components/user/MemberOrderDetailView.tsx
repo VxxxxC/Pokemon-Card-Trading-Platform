@@ -826,6 +826,8 @@ export function MemberOrderDetailView({
             escrowStatus={order.escrowStatus}
             paymentConfirmedAt={order.paymentConfirmedAt}
             perspective={order.persona}
+            sellerPayoutStatus={order.sellerPayoutStatus}
+            fpsPayoutRequestStatus={order.fpsPayoutRequestStatus}
           />
 
           {order.escrowStatus === "payment" && order.canPay && isBuyer ? (

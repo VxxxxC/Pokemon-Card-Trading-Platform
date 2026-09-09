@@ -3,19 +3,24 @@
 import {
   getAuthEscrowStatusLabel,
   getAuthEscrowStepIndexFromStatus,
+  getMemberAuthSellerReleasedStepCopy,
   getMemberAuthEscrowTimelineSteps,
+  isMemberAuthSellerPayoutComplete,
   type MemberEscrowStatus,
 } from "@/app/lib/member-order/auth-escrow";
 import { ESCROW_STEPS } from "@/app/lib/types/rbac";
 import type { MemberOrderDbStatus } from "@/app/lib/member-order/p2p";
 import { OrderTimelineStepDot } from "@/app/components/shared/OrderTimelineStepDot";
 import { cn } from "@/lib/utils";
+import type { Enums } from "@/types/supabase";
 
 type MemberAuthOrderTimelineProps = {
   status: MemberOrderDbStatus | null | undefined;
   escrowStatus?: MemberEscrowStatus | null;
   paymentConfirmedAt?: string | null;
   perspective?: "buy" | "sell";
+  sellerPayoutStatus?: Enums<"member_seller_payout_status"> | null;
+  fpsPayoutRequestStatus?: string | null;
   embedded?: boolean;
 };
 
@@ -24,19 +29,28 @@ export function MemberAuthOrderTimeline({
   escrowStatus,
   paymentConfirmedAt,
   perspective,
+  sellerPayoutStatus,
+  fpsPayoutRequestStatus,
   embedded = false,
 }: MemberAuthOrderTimelineProps) {
+  const timelineSteps = perspective
+    ? getMemberAuthEscrowTimelineSteps(perspective)
+    : ESCROW_STEPS;
+  const sellerPayoutComplete =
+    perspective === "sell" &&
+    isMemberAuthSellerPayoutComplete(
+      sellerPayoutStatus,
+      fpsPayoutRequestStatus,
+    );
   const currentStepIdx = getAuthEscrowStepIndexFromStatus(
     escrowStatus,
     status,
+    { perspective, sellerPayoutStatus, fpsPayoutRequestStatus },
   );
   const isAwaitingPayment =
     escrowStatus === "payment" && paymentConfirmedAt == null;
   const isCancelled =
     status === "cancelled" || escrowStatus === "cancelled";
-  const timelineSteps = perspective
-    ? getMemberAuthEscrowTimelineSteps(perspective)
-    : ESCROW_STEPS;
 
   return (
     <div
@@ -77,6 +91,7 @@ export function MemberAuthOrderTimeline({
               ? getAuthEscrowStatusLabel("payment")
               : step.label;
             let stepDescription = step.description;
+            let resolvedStepLabel = stepLabel;
             if (showAwaitingPaymentLabel) {
               stepDescription =
                 perspective === "sell"
@@ -88,6 +103,12 @@ export function MemberAuthOrderTimeline({
               isCompleted
             ) {
               stepDescription = "你已將卡牌寄往平台倉庫";
+            } else if (step.id === "released" && perspective === "sell") {
+              const releasedCopy = getMemberAuthSellerReleasedStepCopy(
+                sellerPayoutComplete,
+              );
+              resolvedStepLabel = releasedCopy.label;
+              stepDescription = releasedCopy.description;
             }
 
             return (
@@ -114,7 +135,7 @@ export function MemberAuthOrderTimeline({
                           : "text-text-secondary",
                     )}
                   >
-                    {stepLabel}
+                    {resolvedStepLabel}
                   </span>
                   <span className="text-[11px] text-text-disabled">
                     {stepDescription}

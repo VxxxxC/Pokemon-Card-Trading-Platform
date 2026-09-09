@@ -11,16 +11,57 @@ export type MemberAuthOrderActions = {
   canCancel: boolean;
 };
 
+export type MemberAuthEscrowStepIndexOptions = {
+  perspective?: "buy" | "sell";
+  sellerPayoutStatus?: Enums<"member_seller_payout_status"> | null;
+  fpsPayoutRequestStatus?: string | null;
+};
+
+const MEMBER_AUTH_ESCROW_STEP_COUNT = 5;
+
+export function isMemberAuthSellerPayoutComplete(
+  sellerPayoutStatus?: Enums<"member_seller_payout_status"> | null,
+  fpsPayoutRequestStatus?: string | null,
+): boolean {
+  return (
+    sellerPayoutStatus === "paid" || fpsPayoutRequestStatus === "completed"
+  );
+}
+
+export function getMemberAuthSellerReleasedStepCopy(payoutComplete: boolean): {
+  label: string;
+  description: string;
+} {
+  if (payoutComplete) {
+    return {
+      label: "已撥款",
+      description: "款項已透過轉數快撥至你的收款帳戶",
+    };
+  }
+
+  return {
+    label: "訂單完成，即將撥款",
+    description: "交易完成，平台將透過轉數快撥款至你的收款帳戶",
+  };
+}
+
 export function getAuthEscrowStepIndexFromStatus(
   escrowStatus: MemberEscrowStatus | null | undefined,
   orderStatus: MemberOrderDbStatus | null | undefined,
+  options: MemberAuthEscrowStepIndexOptions = {},
 ): number {
   if (orderStatus === "cancelled" || escrowStatus === "cancelled") {
     return -1;
   }
 
   if (orderStatus === "completed" || escrowStatus === "released") {
-    return 4;
+    const sellerPayoutComplete = isMemberAuthSellerPayoutComplete(
+      options.sellerPayoutStatus,
+      options.fpsPayoutRequestStatus,
+    );
+    const isFullyComplete =
+      options.perspective === "buy" || sellerPayoutComplete;
+    return isFullyComplete ? MEMBER_AUTH_ESCROW_STEP_COUNT : 4;
   }
 
   switch (escrowStatus) {
@@ -129,7 +170,7 @@ export const MEMBER_AUTH_ESCROW_SELLER_STEPS: EscrowStep[] = [
   {
     id: "released",
     label: "訂單完成，即將撥款",
-    description: "交易完成，款項即將轉到你的 Stripe Connect 帳戶",
+    description: "交易完成，平台將透過轉數快撥款至你的收款帳戶",
   },
 ];
 
