@@ -343,6 +343,33 @@ async function selectModerationResolutionUpheldWarn(page: Page): Promise<void> {
   await page.getByRole("option", { name: optionName }).click({ timeout: 20_000 });
 }
 
+export async function fillAdminDisputeRefundFields(
+  page: Page,
+  params: { orderNumber: string },
+): Promise<void> {
+  await page.getByRole("checkbox", { name: "執行售後退款" }).check();
+
+  const refundOrderCombobox = page
+    .getByRole("combobox")
+    .filter({ hasText: "選擇訂單" });
+  if (await refundOrderCombobox.isVisible().catch(() => false)) {
+    await refundOrderCombobox.click();
+    await page.getByRole("option", { name: params.orderNumber }).click();
+  } else {
+    await expect(page.getByText(params.orderNumber).first()).toBeVisible({
+      timeout: 20_000,
+    });
+  }
+
+  const arbitrationSection = page
+    .locator("div")
+    .filter({ has: page.getByRole("heading", { name: "仲裁判定動作", exact: true }) })
+    .last();
+
+  await arbitrationSection.getByRole("combobox").last().click();
+  await page.getByRole("option", { name: "賣家責任" }).click();
+}
+
 export async function resolveAdminDisputeWithSellerFaultRefund(
   page: Page,
   params: { caseId: string; orderNumber: string; violationPersona: "Member" | "Merchant" },
@@ -371,15 +398,9 @@ export async function resolveAdminDisputeWithSellerFaultRefund(
     .click();
   await page.getByRole("option", { name: params.violationPersona }).click();
 
-  await page.locator('input[name="executeOrderRefund"]').check();
-
-  const refundOrderRadio = page.getByRole("radio", {
-    name: params.orderNumber,
+  await fillAdminDisputeRefundFields(page, {
+    orderNumber: params.orderNumber,
   });
-  await expect(refundOrderRadio).toBeVisible({ timeout: 20_000 });
-  await refundOrderRadio.check();
-
-  await page.locator('select[name="faultParty"]').selectOption("seller");
   await page.getByRole("button", { name: "執行最終仲裁裁決" }).click();
 
   await expect(page).toHaveURL(/\/admin\/disputes\?status=completed/, {

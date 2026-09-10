@@ -22,6 +22,7 @@ import {
   dismissBlockingOverlays,
   openChatRoom,
 } from "./helpers/member-trading";
+import { expectPublicProfileReady } from "./helpers/public-profile-contract";
 
 const REPORT_CATEGORY = "惡意欺詐 / 虛假交易";
 const REPORT_CATEGORY_SLUG = "fraud";
@@ -205,7 +206,7 @@ test.describe("User report submission", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-    await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
+    await expectPublicProfileReady(page);
 
     await page.getByRole("button", { name: /舉報用戶/ }).click();
     await fillAndSubmitReportDialog(page, PROFILE_REPORT_DETAILS);
@@ -254,7 +255,7 @@ test.describe("User report submission", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-    await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
+    await expectPublicProfileReady(page);
 
     await page.getByRole("button", { name: /舉報用戶/ }).click();
 
@@ -365,7 +366,7 @@ test.describe("User report submission", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-    await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
+    await expectPublicProfileReady(page);
 
     await page.getByRole("button", { name: /舉報用戶/ }).click();
     await fillAndSubmitReportDialog(page, PROFILE_REPORT_DETAILS);
@@ -398,7 +399,7 @@ test.describe("User report submission", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-    await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
+    await expectPublicProfileReady(page);
 
     await page.getByRole("button", { name: /舉報用戶/ }).click();
     await fillAndSubmitReportDialog(page, PROFILE_REPORT_DETAILS);

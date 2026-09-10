@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/app/components/admin/AdminSidebar";
 import { AdminBreadcrumb } from "@/app/components/admin/AdminBreadcrumb";
-import { getOptionalAuthUser } from "@/lib/auth/session";
+import { requireAdminPageAccess } from "@/lib/auth/require-admin";
 
 export const metadata: Metadata = { title: "後台管理 — HKCardVault" };
 
@@ -17,11 +17,12 @@ export default async function AdminLayout({
 }: {
   children: ReactNode;
 }) {
+  const authUser = await requireAdminPageAccess();
+
   // 預設收合；用戶切換後以 cookie 記憶側欄開合狀態（跨頁面 / 重載持久化）
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get("sidebar_state")?.value === "true";
-  const authUser = await getOptionalAuthUser();
-  const authEmail = authUser?.email ?? "未登入";
+  const authEmail = authUser.email ?? "未登入";
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>

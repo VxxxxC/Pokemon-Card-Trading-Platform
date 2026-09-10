@@ -308,6 +308,28 @@ export async function acceptOfferViaSellerRpc(
   );
 }
 
+export async function rejectOfferViaSellerRpc(
+  offerId: string,
+  sellerId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error } = await (
+    admin as unknown as {
+      rpc: (
+        fn: "rpc_reject_offer",
+        args: { p_offer_id: string; p_seller_id: string },
+      ) => Promise<{ error: { message?: string } | null }>;
+    }
+  ).rpc("rpc_reject_offer", {
+    p_offer_id: offerId,
+    p_seller_id: sellerId,
+  });
+
+  if (error) {
+    throw new Error(`[rejectOfferViaSellerRpc] ${error.message}`);
+  }
+}
+
 export async function submitChatReportViaBuyerRpc(params: {
   sellerId: string;
   roomId: string;
@@ -1055,6 +1077,27 @@ function isSupabaseAccessDenied(
   return isAdminPermissionDenied(error);
 }
 
+export async function getOfferById(offerId: string): Promise<{
+  id: string;
+  status: string | null;
+  offer_price: number | null;
+  modified_count: number | null;
+  room_id: string | null;
+} | null> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("offers")
+    .select("id, status, offer_price, modified_count, room_id")
+    .eq("id", offerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getOfferById] ${error.message}`);
+  }
+
+  return data;
+}
+
 export async function getLatestOfferForListing(params: {
   listingId: string;
   buyerId: string;
@@ -1063,13 +1106,15 @@ export async function getLatestOfferForListing(params: {
   id: string;
   status: string | null;
   use_authentication: boolean | null;
+  offer_price: number | null;
+  modified_count: number | null;
   room_id?: string;
 } | null> {
   const admin = createE2eAdminClient();
 
   let query = admin
     .from("offers")
-    .select("id, status, use_authentication, room_id")
+    .select("id, status, use_authentication, room_id, offer_price, modified_count")
     .eq("listing_id", params.listingId)
     .eq("buyer_id", params.buyerId);
 
@@ -1094,6 +1139,9 @@ export async function getLatestOfferForListing(params: {
     id: data.id,
     status: data.status,
     use_authentication: data.use_authentication,
+    offer_price: data.offer_price,
+    modified_count: data.modified_count,
+    room_id: data.room_id ?? undefined,
   };
 }
 
@@ -1583,15 +1631,26 @@ export async function getListingSourceCollectionId(
 export async function ensureListingActive(listingId: string): Promise<boolean> {
   const admin = createE2eAdminClient();
 
-  const { error } = await admin
-    .from("listings")
-    .update({ status: "active" })
-    .eq("id", listingId);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { error } = await admin
+      .from("listings")
+      .update({ status: "active" })
+      .eq("id", listingId);
 
-  if (error) {
+    if (!error) {
+      return true;
+    }
+
     if (isAdminPermissionDenied(error)) {
       return false;
     }
+
+    const isStatementTimeout = /statement timeout/i.test(error.message);
+    if (isStatementTimeout && attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
+      continue;
+    }
+
     throw new Error(`[ensureListingActive] ${error.message}`);
   }
 

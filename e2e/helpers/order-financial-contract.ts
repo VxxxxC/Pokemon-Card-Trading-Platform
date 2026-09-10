@@ -57,7 +57,9 @@ async function readMemberAuthInvoiceRowAmount(
   const invoice = memberAuthOrderInvoice(page);
   const labelEl =
     typeof label === "string"
-      ? invoice.getByText(label, { exact: true })
+      ? invoice.getByText(label, {
+          exact: !/(最終實收總額|最終扣款總額)/.test(label),
+        })
       : invoice.getByText(label);
   const row = labelEl.locator(
     "xpath=ancestor::*[contains(@class,'justify-between')][1]",
@@ -230,13 +232,16 @@ export async function readTradingListAmountForOrderNumber(
   orderNumber: string,
 ): Promise<number> {
   const normalized = orderNumber.replace(/^#/, "");
+  const orderLabel = new RegExp(
+    `訂單號碼\\s*#?${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+  );
   const row = page
-    .locator("h3.font-mono")
-    .filter({ hasText: `#${normalized}` })
+    .locator("#orders-list")
+    .getByText(orderLabel)
     .locator("xpath=ancestor::div[contains(@class,'cursor-pointer')][1]");
   await expect(row).toBeVisible({ timeout: 30_000 });
   const amountText = await row
-    .locator("span.font-mono.font-black.text-brand")
+    .locator("span.font-mono.font-bold.text-brand")
     .first()
     .textContent();
   return parseHkdAmount(amountText);

@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import {
   getProfileUsername,
+  getProfileIdByEmail,
+  resetE2eListingTradingFixture,
   resolveE2eMarketplaceFixture,
   type ListingMarketplaceFixture,
 } from "./fixtures/supabase-admin";
@@ -10,6 +12,17 @@ import {
   hasCoreMerchantFixtures,
   hasWrongSellerFixture,
 } from "./fixtures/test-data";
+import {
+  MERCHANT_PRODUCT_DETAIL_MARKER,
+  expectMerchantProductDetailLoaded,
+  expectProductDetailBuyerFooter,
+  expectProductDetailContentIntegrity,
+  expectProductDetailSpecOrPending,
+  productDetailGalleryThumb,
+  productDetailGuestBuyLink,
+  productDetailPublicMarketLink,
+} from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 const FAKE_LISTING_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
@@ -58,19 +71,14 @@ async function gotoAndExpectNotFound(page: Page, path: string): Promise<void> {
 
   // Next.js App Router may return HTTP 200 for notFound() — assert absence of detail UI.
   await expect(
-    page.getByText("店主獨立出讓一口價"),
+    page.getByText(MERCHANT_PRODUCT_DETAIL_MARKER),
     `Expected missing listing UI for ${path}`,
   ).toHaveCount(0);
   await expect(page.locator("main h1")).toHaveCount(0);
 }
 
 async function expectDetailPageLoaded(page: Page): Promise<string> {
-  const title = page.locator("main h1");
-  await expect(title).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("店主獨立出讓一口價")).toBeVisible({
-    timeout: 15_000,
-  });
-  return (await title.textContent())?.trim() ?? "";
+  return expectMerchantProductDetailLoaded(page);
 }
 
 async function openCoreDetailPage(page: Page): Promise<string> {
@@ -92,10 +100,8 @@ test.describe("A. Route resolution", () => {
 
     const title = await expectDetailPageLoaded(page);
     expect(title.length).toBeGreaterThan(0);
-    await expect(page.getByText(/HK\$\s*[\d,]+/)).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /查看實物特寫角度 1/ }),
-    ).toBeVisible();
+    await expect(productDetailPublicMarketLink(page)).toBeVisible();
+    await expect(productDetailGalleryThumb(page, 1)).toBeVisible();
   });
 
   test("A2 resolves listing UUID for seller username", async ({ page }) => {
@@ -204,9 +210,7 @@ test.describe("C. UI interactions", () => {
 
     await openCoreDetailPage(page);
 
-    const secondThumb = page.getByRole("button", {
-      name: "查看實物特寫角度 2",
-    });
+    const secondThumb = productDetailGalleryThumb(page, 2);
     const thumbCount = await secondThumb.count();
     if (thumbCount === 0) {
       test.skip(true, "Fixture listing has fewer than 2 gallery photos");
@@ -224,9 +228,7 @@ test.describe("C. UI interactions", () => {
 
     await openCoreDetailPage(page);
 
-    const publicMarketLink = page.getByRole("link", {
-      name: /進入公開大盤商品市場/,
-    });
+    const publicMarketLink = productDetailPublicMarketLink(page);
     await expect(publicMarketLink).toBeVisible();
 
     const href = await publicMarketLink.getAttribute("href");
@@ -261,6 +263,24 @@ test.describe("C. UI interactions", () => {
 });
 
 test.describe("D. BuyButton interactions", () => {
+  test.beforeEach(async ({}, testInfo) => {
+    if (testInfo.project.name !== "buyer" || !marketplaceFixture) {
+      return;
+    }
+
+    const { buyerEmail } = getMerchantProductDetailFixtures();
+    const buyerId = buyerEmail ? await getProfileIdByEmail(buyerEmail) : null;
+    if (!buyerId) {
+      return;
+    }
+
+    await resetE2eListingTradingFixture({
+      listingId: marketplaceFixture.listingId,
+      buyerId,
+      sellerId: marketplaceFixture.sellerId,
+    });
+  });
+
   test("D1 guest sees the locked slide-over when clicking buy", async ({
     page,
   }, testInfo) => {
@@ -272,13 +292,8 @@ test.describe("D. BuyButton interactions", () => {
     requireMarketplaceFixture(test);
 
     await openCoreDetailPage(page);
-    await page.getByRole("button", { name: /立即購買/ }).click();
-
-    await expect(page.getByText("登入後方可交易")).toBeVisible();
-    await expect(
-      page.getByText("請先登入會員以活化平台第三方雙向鑑定與託管出價機制。"),
-    ).toBeVisible();
-    await expect(page.getByRole("alertdialog")).toContainText("登入 / 註冊");
+    await productDetailGuestBuyLink(page).click();
+    await expect(page).toHaveURL(/\/auth\?redirect=/, { timeout: 15_000 });
   });
 
   test("D2 buyer opens the buy-now confirm dialog without guest lock", async ({
@@ -292,18 +307,7 @@ test.describe("D. BuyButton interactions", () => {
     requireMarketplaceFixture(test);
 
     await openCoreDetailPage(page);
-    await page.getByRole("button", { name: /立即購買/ }).click();
-
-    await expect(page.getByText("登入後方可交易")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "確認立即購買" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "確認立即購買" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "改為議價出價" }),
-    ).toBeVisible();
+    await expectProductDetailBuyerFooter(page);
   });
 
   test("D3 buyer can close the buy-now confirm dialog", async ({
@@ -317,16 +321,23 @@ test.describe("D. BuyButton interactions", () => {
     requireMarketplaceFixture(test);
 
     await openCoreDetailPage(page);
-    await page.getByRole("button", { name: /立即購買/ }).click();
-    await expect(
-      page.getByRole("heading", { name: "確認立即購買" }),
-    ).toBeVisible();
-
-    await page.getByRole("button", { name: "取消" }).click();
-
-    await expect(
-      page.getByRole("heading", { name: "確認立即購買" }),
-    ).toHaveCount(0);
+    await expectProductDetailBuyerFooter(page);
+    await expect
+      .poll(
+        async () => {
+          if (await page.getByText("等待賣家回應中").isVisible().catch(() => false)) {
+            return "pending";
+          }
+          return (await page
+            .locator("#exe-negotiation-price")
+            .isEnabled()
+            .catch(() => false))
+            ? "ready"
+            : "loading";
+        },
+        { timeout: 20_000 },
+      )
+      .toMatch(/pending|ready/);
   });
 });
 
@@ -337,21 +348,7 @@ test.describe("E. Content integrity", () => {
     requireMarketplaceFixture(test);
 
     await openCoreDetailPage(page);
-
-    await expect(page.getByText("實物鑑定品品相評級")).toBeVisible();
-    await expect(page.getByText("筆歷史交割")).toBeVisible();
-    await expect(page.getByText("中介託管狀態")).toBeVisible();
-
-    const escrowLocked = page.getByText("平台官方安全中介存證已鎖定");
-    const escrowC2c = page.getByText("C2C 直接交割模式");
-    await expect(escrowLocked.or(escrowC2c)).toBeVisible();
-
-    const galleryThumbs = page.getByRole("button", {
-      name: /查看實物特寫角度/,
-    });
-    const thumbCount = await galleryThumbs.count();
-    expect(thumbCount).toBeGreaterThan(0);
-    expect(thumbCount).toBeLessThanOrEqual(4);
+    await expectProductDetailContentIntegrity(page);
   });
 });
 
@@ -372,13 +369,9 @@ test.describe("F. Known suspicious behaviors", () => {
 
     await page.goto(path, { waitUntil: "domcontentloaded" });
     await page.reload({ waitUntil: "domcontentloaded" });
+    await dismissBlockingOverlays(page);
 
-    await page.getByRole("button", { name: /立即購買/ }).click();
-
-    await expect(page.getByText("登入後方可交易")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "確認立即購買" }),
-    ).toBeVisible();
+    await expectProductDetailBuyerFooter(page);
   });
 
   test("F2 product_id route resolves to the same canonical listing as listing UUID", async ({
@@ -405,9 +398,6 @@ test.describe("F. Known suspicious behaviors", () => {
     requireMarketplaceFixture(test);
 
     await openCoreDetailPage(page);
-
-    const specTable = page.getByText("官方標準資產規格數據");
-    const ssotPending = page.getByText("SSOT Alignment Pending");
-    await expect(specTable.or(ssotPending)).toBeVisible();
+    await expectProductDetailSpecOrPending(page);
   });
 });

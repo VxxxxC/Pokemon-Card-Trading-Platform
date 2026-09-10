@@ -22,6 +22,7 @@ import {
   hasModerationStripeSmokeEnv,
   seedModerationCaseForStripeSmoke,
 } from "./helpers/moderation-stripe-smoke";
+import { fillAdminDisputeRefundFields } from "./helpers/moderation-auth-refund-partner";
 import { getProfileIdByEmail } from "./fixtures/supabase-admin";
 import { hasSellerAuthFixtures } from "./fixtures/chat-test-data";
 import {
@@ -84,15 +85,9 @@ async function resolveAdminDisputeWithRefund(
     .click();
   await page.getByRole("option", { name: "Merchant" }).click();
 
-  await page.locator('input[name="executeOrderRefund"]').check();
-
-  const refundOrderRadio = page.getByRole("radio", {
-    name: params.orderNumber,
+  await fillAdminDisputeRefundFields(page, {
+    orderNumber: params.orderNumber,
   });
-  await expect(refundOrderRadio).toBeVisible({ timeout: 20_000 });
-  await refundOrderRadio.check();
-
-  await page.locator('select[name="faultParty"]').selectOption("seller");
   await page.getByRole("button", { name: "執行最終仲裁裁決" }).click();
 
   await expect(page).toHaveURL(/\/admin\/disputes\?status=completed/, {

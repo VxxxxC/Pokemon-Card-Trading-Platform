@@ -40,19 +40,25 @@ export type MarketplaceSellerProfile = {
   topBannerUrl?: string | null;
 };
 
-type ProfileRow = Pick<
-  Tables<"profiles">,
-  | "id"
-  | "display_name"
-  | "username"
-  | "short_description"
-  | "created_at"
-  | "completed_trades_count"
-  | "rating_score"
-  | "reputation_tag"
-  | "role"
-  | "avatar_path"
->;
+type PublicProfileRow = {
+  id: string;
+  display_name: string;
+  username: string | null;
+  short_description: string | null;
+  created_at: string;
+  completed_trades_count: number;
+  rating_score: number | null;
+  reputation_tag: Json | null;
+  is_merchant: boolean;
+  avatar_path: string | null;
+};
+
+type MerchantVerification = {
+  kyc_status: Tables<"kyc_records">["kyc_status"] | null;
+  stripe_charges_enabled: boolean;
+  stripe_payouts_enabled: boolean;
+  verified: boolean;
+};
 
 type MerchantShopRow = Pick<
   Tables<"merchant_shops">,
@@ -85,10 +91,10 @@ function mapBadges(
 }
 
 function resolveLevelLabel(
-  profile: ProfileRow,
+  profile: PublicProfileRow,
   merchantShop: MerchantShopRow | null,
 ): string {
-  const isMerchant = profile.role === "merchant";
+  const isMerchant = profile.is_merchant;
   const titleFromTag = isMerchant
     ? resolveMerchantReputationTagDisplay(merchantShop?.reputation_tag ?? null)
         .merchantTitle
@@ -113,14 +119,6 @@ function resolveLevelLabel(
   return fallback?.nameZh ?? (isMerchant ? "認證商戶" : "平台會員");
 }
 
-type KycRow = Pick<
-  Tables<"kyc_records">,
-  | "kyc_status"
-  | "stripe_account_id"
-  | "stripe_charges_enabled"
-  | "stripe_payouts_enabled"
->;
-
 function resolveSellerReputationTag(
   isMerchant: boolean,
   profileTag: Json | null,
@@ -130,15 +128,15 @@ function resolveSellerReputationTag(
 }
 
 function mapProfileRow(
-  profile: ProfileRow,
+  profile: PublicProfileRow,
   merchantShop: MerchantShopRow | null,
-  kyc: KycRow | null = null,
+  kyc: MerchantVerification | null = null,
   viewPersona?: ReviewPersona,
 ): MarketplaceSellerProfile {
-  const hasDualPersona = profile.role === "merchant" && merchantShop != null;
+  const hasDualPersona = profile.is_merchant && merchantShop != null;
   const showMerchantIdentity = hasDualPersona
     ? viewPersona !== "member"
-    : profile.role === "merchant";
+    : profile.is_merchant;
   const isMerchant = showMerchantIdentity;
   const completedTrades = isMerchant
     ? (merchantShop?.completed_trades_count ?? profile.completed_trades_count)
@@ -189,13 +187,22 @@ function mapProfileRow(
     verifiedBuyer: isMerchant,
     completedTrades,
     badges: mapBadges(isMerchant, profile.reputation_tag, merchantShop?.reputation_tag ?? null),
-    role: profile.role,
+    role: profile.is_merchant ? "merchant" : "member",
     ratingScore,
     reputationTag,
     ...(isMerchant
       ? {
-          kycVerified: kyc?.kyc_status === "verified",
-          stripeConnected: isMerchantPayoutReady(kyc),
+          kycVerified: kyc?.verified === true,
+          stripeConnected: isMerchantPayoutReady(
+            kyc
+              ? {
+                  kyc_status: kyc.kyc_status,
+                  stripe_charges_enabled: kyc.stripe_charges_enabled,
+                  stripe_payouts_enabled: kyc.stripe_payouts_enabled,
+                  stripe_account_id: null,
+                }
+              : null,
+          ),
           topBannerUrl: resolveOptionalMediaUrl(merchantShop?.top_banner_path),
         }
       : {}),
@@ -209,12 +216,12 @@ async function fetchProfileById(
   const supabase = createPublicClient();
 
   const { data: profile, error } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select(
-      "id, display_name, username, short_description, created_at, completed_trades_count, rating_score, reputation_tag, role, avatar_path",
+      "id, display_name, username, short_description, created_at, completed_trades_count, rating_score, reputation_tag, is_merchant, avatar_path",
     )
     .eq("id", profileId)
-    .maybeSingle<ProfileRow>();
+    .maybeSingle<PublicProfileRow>();
 
   if (error) {
     console.error("[loadSellerProfileById]", error.message);
@@ -226,8 +233,8 @@ async function fetchProfileById(
   }
 
   let merchantShop: MerchantShopRow | null = null;
-  let kyc: KycRow | null = null;
-  if (profile.role === "merchant") {
+  let kyc: MerchantVerification | null = null;
+  if (profile.is_merchant) {
     const [shopResult, kycResult] = await Promise.all([
       supabase
         .from("merchant_shops")
@@ -236,13 +243,9 @@ async function fetchProfileById(
         )
         .eq("merchant_id", profile.id)
         .maybeSingle<MerchantShopRow>(),
-      supabase
-        .from("kyc_records")
-        .select(
-          "kyc_status, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled",
-        )
-        .eq("merchant_id", profile.id)
-        .maybeSingle<KycRow>(),
+      supabase.rpc("fn_get_merchant_public_verification", {
+        p_merchant_id: profile.id,
+      }),
     ]);
 
     if (shopResult.error) {
@@ -252,14 +255,17 @@ async function fetchProfileById(
     }
 
     if (kycResult.error) {
-      console.error("[loadSellerProfileById] kyc_records", kycResult.error.message);
+      console.error(
+        "[loadSellerProfileById] fn_get_merchant_public_verification",
+        kycResult.error.message,
+      );
     } else {
-      kyc = kycResult.data;
+      kyc = kycResult.data as MerchantVerification;
     }
   }
 
   if (
-    profile.role === "merchant" &&
+    profile.is_merchant &&
     kyc?.kyc_status !== "verified" &&
     viewPersona !== "member"
   ) {
@@ -276,12 +282,12 @@ async function fetchProfileByMemberUsername(
   const supabase = createPublicClient();
 
   const { data: profile, error } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select(
-      "id, display_name, username, short_description, created_at, completed_trades_count, rating_score, reputation_tag, role, avatar_path",
+      "id, display_name, username, short_description, created_at, completed_trades_count, rating_score, reputation_tag, is_merchant, avatar_path",
     )
     .ilike("username", username.trim())
-    .maybeSingle<ProfileRow>();
+    .maybeSingle<PublicProfileRow>();
 
   if (error) {
     console.error("[loadSellerProfileByMemberUsername]", error.message);

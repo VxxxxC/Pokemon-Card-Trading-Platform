@@ -88,6 +88,8 @@
     "test:certify:contract": "vitest run --config vitest.config.mts tests/unit/rewards/rewards-mutation-contract.test.ts && env STAGING_CERTIFY=1 playwright test e2e/partner/system/p-sec03-rewards-mutation-contract.spec.ts e2e/partner/system/p-sec06-tc-e13-env-guard.spec.ts --project=buyer",
     "test:partner:regression": "bash scripts/partner-regression.sh",
     "test:e2e:partner": "playwright test e2e/partner --project=setup --project=guest --project=buyer --project=seller --project=member-trading --project=chat-realtime",
+    "test:integration:security": "vitest run --config vitest.config.mts tests/integration/security/production-security.integration.test.ts",
+    "test:ci:require-integration-env": "bun run scripts/ci-require-integration-env.ts",
     "test:integration:platform": "vitest run --config vitest.config.mts tests/integration/platform/platform-legal.integration.test.ts tests/integration/platform/auth-fee.integration.test.ts tests/integration/platform/p2p-aml-limits.integration.test.ts tests/integration/platform/platform-admin-settings-contract.integration.test.ts tests/integration/announcements/platform-announcements.integration.test.ts",
     "test:integration:rewards-matrix": "vitest run --config vitest.config.mts tests/integration/rewards/rewards-matrix.integration.test.ts",
     "test:e2e:nightly:p2": "playwright test e2e/member-trading-p2p.spec.ts e2e/member-offer-negotiation.spec.ts e2e/global-chat-realtime.spec.ts --project=setup --project=member-trading --project=chat-realtime",

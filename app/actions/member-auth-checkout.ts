@@ -18,6 +18,7 @@ import { resolveMemberOrderIdForUser } from "@/lib/member-order/resolve-order-id
 import { getStripeClient, getStripePublishableKey } from "@/lib/stripe/env";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Tables } from "@/types/supabase";
 import type { MemberEscrowStatus } from "@/app/lib/member-order/auth-escrow";
 
@@ -365,14 +366,11 @@ export async function loadMemberAuthCheckoutOrder(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再查詢訂單" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const rowResult = await loadMemberAuthCheckoutRow(
       supabase,
@@ -424,14 +422,11 @@ export async function createMemberAuthPaymentIntent(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再付款" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const rowResult = await loadMemberAuthCheckoutRow(
       supabase,
@@ -608,14 +603,11 @@ export async function getMemberAuthPaymentStatus(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再查詢訂單" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const rowResult = await loadMemberAuthCheckoutRow(
       supabase,

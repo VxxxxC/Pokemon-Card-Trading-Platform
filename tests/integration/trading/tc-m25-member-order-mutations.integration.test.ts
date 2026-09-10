@@ -38,7 +38,7 @@ describe("TC-M25 member order complete/cancel — contract", () => {
     const result = await completeMemberOrder(VALID_ORDER_UUID);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("請先登入後再確認完成");
+      expect(result.error).toBe("請先登入");
     }
   });
 
@@ -48,7 +48,7 @@ describe("TC-M25 member order complete/cancel — contract", () => {
     const result = await cancelMemberOrder(VALID_ORDER_UUID);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("請先登入後再取消訂單");
+      expect(result.error).toBe("請先登入");
     }
   });
 });

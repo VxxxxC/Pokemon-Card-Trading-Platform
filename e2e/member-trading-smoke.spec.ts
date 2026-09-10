@@ -21,6 +21,8 @@ import {
   pollMemberOrderIdForOffer,
   selectTradingPersonaTab,
   submitBuyerOfferFromDetail,
+  tradingOrderRowByNumber,
+  dismissBlockingOverlays,
 } from "./helpers/member-trading";
 
 test.use({ viewport: { width: 1280, height: 900 } });
@@ -167,11 +169,10 @@ test.describe.serial("Member trading cancel pending order", () => {
       }
 
       await gotoTradingPage(sellerPage);
+      await dismissBlockingOverlays(sellerPage);
       await selectTradingPersonaTab(sellerPage, "賣單");
 
-      const orderRow = sellerPage
-        .locator("#orders-list")
-        .filter({ hasText: `#${orderNumber}` });
+      const orderRow = tradingOrderRowByNumber(sellerPage, orderNumber);
       const cancelButton = orderRow.getByRole("button", { name: "取消交易" });
       await expect(cancelButton).toBeVisible({ timeout: 30_000 });
 

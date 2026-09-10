@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { revalidateHomeListingsCache } from "@/lib/home/revalidate-home-listings";
 import { getCurrentUserProfile } from "@/app/actions/profile";
-import { isMerchantPayoutReady } from "@/lib/stripe/payout-ready";
+import { resolveMerchantPayoutReadyForClient } from "@/lib/stripe/payout-ready";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { createClient } from "@/lib/supabase/server";
 import { enqueueB2cAwaitingPaymentBuyerEmail } from "@/lib/notifications/grading-emails";
 import {
@@ -171,14 +172,11 @@ export async function buyNowListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再購買" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const { data: listing, error: listingError } = await supabase
       .from("listings")
@@ -211,15 +209,11 @@ export async function buyNowListing(
     const sellerPersona = listing.seller_persona ?? "member";
 
     if (sellerPersona === "merchant") {
-      const { data: kyc } = await supabase
-        .from("kyc_records")
-        .select(
-          "kyc_status, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled",
-        )
-        .eq("merchant_id", listing.seller_id)
-        .maybeSingle();
-
-      if (!isMerchantPayoutReady(kyc)) {
+      const payoutReady = await resolveMerchantPayoutReadyForClient(
+        supabase,
+        listing.seller_id,
+      );
+      if (!payoutReady) {
         return {
           success: false,
           error: "此商戶尚未完成收款設定，暫時無法直接購買",

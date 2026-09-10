@@ -626,7 +626,7 @@ describe.skipIf(!hasFullModerationIntegrationEnv()).sequential(
         );
         expect(result.success).toBe(false);
         if (!result.success) {
-          expect(result.error).toContain("帳戶已被限制發送訊息");
+          expect(result.error).toContain("帳戶已受限，無法執行此操作");
         }
       });
     });

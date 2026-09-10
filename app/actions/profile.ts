@@ -9,7 +9,8 @@ import type {
   PublicProfileReviewItem,
   ReviewPersona,
 } from "@/app/lib/reviews/types";
-import { resolveCurrentAuthRole } from "@/lib/auth/session";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
+import { resolveCurrentAuthRole, getOptionalAuthUser } from "@/lib/auth/session";
 import {
   buildDualPersonaContext,
   EMPTY_DUAL_PERSONA_CONTEXT,
@@ -383,14 +384,11 @@ export async function updateUserProfile(
   const errors = validateUserProfileFields(fields);
   if (Object.keys(errors).length) return errors;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { form: "未登入" };
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { form: guard.error };
   }
+  const { user, supabase } = guard;
 
   try {
     const { data: currentProfile, error: fetchError } = await supabase
@@ -487,14 +485,11 @@ export async function updateUserFpsId(
     return { success: false, error: firstError };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "未登入" };
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { success: false, error: guard.error };
   }
+  const { user, supabase } = guard;
 
   try {
     const payload: ProfileUpdate = {
@@ -556,14 +551,11 @@ export async function updateUserAvatar(
     return { success: false, error: "頭像網址無效" };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "未登入" };
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { success: false, error: guard.error };
   }
+  const { user, supabase } = guard;
 
   try {
     const { data: currentProfile, error: fetchError } = await supabase

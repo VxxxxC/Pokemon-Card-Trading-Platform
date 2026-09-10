@@ -4,6 +4,7 @@ import {
   resolveImageContentType,
   validateImageUpload,
 } from "@/lib/listings/image-files";
+import { requireActiveApiUser } from "@/lib/auth/require-active-api-user";
 import { uploadMerchantShopBannerToBunny } from "@/lib/storage/bunny";
 import { createClient } from "@/lib/supabase/server";
 import type { Tables } from "@/types/supabase";
@@ -12,17 +13,16 @@ type MerchantRoleRow = Pick<Tables<"profiles">, "role">;
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const auth = await requireActiveApiUser();
+    if (!auth.ok) {
       return NextResponse.json(
-        { success: false, error: "請先登入後再上載店舖橫幅" },
-        { status: 401 },
+        { success: false, error: auth.error },
+        { status: auth.status },
       );
     }
+    const user = auth.user;
+
+    const supabase = await createClient();
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")

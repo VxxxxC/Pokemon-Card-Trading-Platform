@@ -12,6 +12,7 @@ import {
   resolveModerationCaseForE2e,
 } from "./fixtures/supabase-admin";
 import { dismissBlockingOverlays } from "./helpers/member-trading";
+import { expectPublicProfileReady } from "./helpers/public-profile-contract";
 
 const OUTCOME_PROBE_DETAILS = "E2E outcome notification probe";
 
@@ -59,7 +60,7 @@ test.describe("Reporter outcome notification", () => {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-    await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
+    await expectPublicProfileReady(page);
 
     await page.getByRole("button", { name: /舉報用戶/ }).click();
     await fillAndSubmitProfileReport(page, OUTCOME_PROBE_DETAILS);

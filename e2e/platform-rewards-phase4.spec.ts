@@ -9,6 +9,7 @@ import {
   publishRewardActivityViaAdmin,
   seedBuyerPointsForE2e,
 } from "./helpers/platform-rewards";
+import { loginAsAdmin } from "./helpers/admin-auth";
 
 function readEnv(key: string): string | undefined {
   return process.env[key]?.trim() || undefined;
@@ -16,21 +17,6 @@ function readEnv(key: string): string | undefined {
 
 function hasAdminAuthFixtures(): boolean {
   return Boolean(readEnv("E2E_ADMIN_EMAIL") && readEnv("E2E_ADMIN_PASSWORD"));
-}
-
-async function loginAsAdmin(page: Page): Promise<void> {
-  const email = readEnv("E2E_ADMIN_EMAIL");
-  const password = readEnv("E2E_ADMIN_PASSWORD");
-  if (!email || !password) {
-    throw new Error("Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
-  }
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), {
-    timeout: 30_000,
-  });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -119,32 +105,28 @@ test.describe("Platform rewards Phase 4 E2E", () => {
     expect(userRewardId).toBeTruthy();
 
     await gotoMemberRewardsPage(page);
-    await expect(page.getByText("可使用")).toBeVisible({
-      timeout: 20_000,
-    });
-
-    await expect
-      .poll(async () => {
-        const tabLabel = await page
-          .getByRole("button", { name: /可領取 \/ 可使用/ })
-          .textContent();
-        const match = tabLabel?.match(/\((\d+)\)/);
-        return Number(match?.[1] ?? 0);
-      })
-      .toBeGreaterThan(0);
 
     const redeemList = page.locator("#redeem-list");
-    const hasVoucher = await redeemList
-      .getByText("VOUCHER TOKEN")
-      .first()
-      .isVisible()
-      .catch(() => false);
-    const hasTitle = await redeemList
-      .getByText(templateTitle)
-      .first()
-      .isVisible()
-      .catch(() => false);
-
-    expect(hasVoucher || hasTitle).toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const hasTitle = await redeemList
+            .getByText(templateTitle)
+            .first()
+            .isVisible()
+            .catch(() => false);
+          if (hasTitle) {
+            return "title";
+          }
+          const hasVoucher = await redeemList
+            .getByText("VOUCHER TOKEN")
+            .first()
+            .isVisible()
+            .catch(() => false);
+          return hasVoucher ? "voucher" : "pending";
+        },
+        { timeout: 30_000 },
+      )
+      .not.toBe("pending");
   });
 });

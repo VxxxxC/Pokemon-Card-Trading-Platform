@@ -34,7 +34,10 @@ type ListingRow = Pick<
   | "status"
 >;
 
-type ProfileRow = Pick<Tables<"profiles">, "id" | "display_name" | "role">;
+type ProfileRow = Pick<
+  Tables<"public_profiles">,
+  "id" | "display_name" | "is_merchant"
+>;
 
 type MerchantShopRow = Pick<
   Tables<"merchant_shops">,
@@ -92,7 +95,7 @@ function mapListingToCard(
     sellerId: listing.seller_id,
     sellerName,
     sellerBadge:
-      profile?.role === "merchant" ? CERTIFIED_MERCHANT_BADGE_LABEL : "C2C 賣家",
+      profile?.is_merchant ? CERTIFIED_MERCHANT_BADGE_LABEL : "C2C 賣家",
     photoCount: imageUrls.length,
     createdAt: listing.created_at,
     useAuthentication: listing.use_authentication,
@@ -139,8 +142,8 @@ export async function fetchHomeListingsByPersona(
   const [catalogResult, profileResult, shopResult] = await Promise.all([
     supabase.from("product_catalog").select(CATALOG_COLUMNS).in("id", productIds),
     supabase
-      .from("profiles")
-      .select("id, display_name, role")
+      .from("public_profiles")
+      .select("id, display_name, is_merchant")
       .in("id", sellerIds),
     persona === "merchant"
       ? supabase

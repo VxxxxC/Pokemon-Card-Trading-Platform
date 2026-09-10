@@ -545,7 +545,7 @@ export default function MerchantConnectLedgerTab({
         return;
       }
 
-      let targetRows = result.data.rows;
+      const targetRows = result.data.rows;
       const totalMatching = result.data.total;
 
       if (targetRows.length === 0) {

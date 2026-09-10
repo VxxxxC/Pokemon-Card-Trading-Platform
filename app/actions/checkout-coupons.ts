@@ -1,7 +1,7 @@
 "use server";
 
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Database } from "@/types/supabase";
 
 type ActionResult<T> =
@@ -77,14 +77,11 @@ export async function listCheckoutEligibleCoupons(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { supabase } = auth;
 
     const { data, error } = await (
       supabase as unknown as CheckoutCouponRpcClient

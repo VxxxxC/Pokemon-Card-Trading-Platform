@@ -5,21 +5,19 @@ import {
   validateImageUpload,
 } from "@/lib/listings/image-files";
 import { uploadListingImageToBunny } from "@/lib/storage/bunny";
+import { requireActiveApiUser } from "@/lib/auth/require-active-api-user";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const auth = await requireActiveApiUser();
+    if (!auth.ok) {
       return NextResponse.json(
-        { success: false, error: "請先登入後再上載相片" },
-        { status: 401 },
+        { success: false, error: auth.error },
+        { status: auth.status },
       );
     }
+    const user = auth.user;
 
     const formData = await request.formData();
     const entry = formData.get("image");

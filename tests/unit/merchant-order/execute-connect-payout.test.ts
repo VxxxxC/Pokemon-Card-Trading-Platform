@@ -45,6 +45,13 @@ describe("executeMerchantConnectPayout P2.5 finalize_failed recovery", () => {
     vi.clearAllMocks();
 
     const adminClient = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+      })),
       rpc: vi.fn((fn: string, args: Record<string, unknown>) => {
         if (fn === "rpc_prepare_merchant_order_payout") {
           return prepareRpc(args);

@@ -150,11 +150,8 @@ function parseHkdAmount(text: string | null | undefined): number {
 
 function checkoutOrderSummary(page: Page) {
   return page
-    .getByRole("heading", { name: /訂單財務明細總結/ })
-    .locator(
-      "xpath=ancestor::div[contains(@class,'rounded-2xl') and contains(@class,'border')]",
-    )
-    .first();
+    .getByText("帳單明細", { exact: true })
+    .locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
 }
 
 async function readSummaryRowAmount(
@@ -178,7 +175,7 @@ export async function readCheckoutSummaryAmounts(
 ): Promise<CheckoutSummaryAmounts> {
   const itemSubtotal = await readSummaryRowAmount(page, "卡牌商品總額");
   const shippingFee = await readMerchantDirectShippingFee(page);
-  const totalAmount = await readSummaryRowAmount(page, "託管安全支付總額");
+  const totalAmount = await readSummaryRowAmount(page, "付款總額");
 
   const subsidyVisible = await checkoutOrderSummary(page)
     .getByText("平台優惠", { exact: true })
@@ -258,9 +255,7 @@ export async function ensureCourierShippingSelected(page: Page): Promise<void> {
 export async function waitForMerchantDirectCheckoutReady(
   page: Page,
 ): Promise<void> {
-  const summaryHeading = page.getByRole("heading", {
-    name: /訂單財務明細總結/,
-  });
+  const summaryHeading = page.getByText("帳單明細", { exact: true });
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (!page.url().includes("/checkout/")) {
@@ -273,6 +268,55 @@ export async function waitForMerchantDirectCheckoutReady(
           async () => {
             const hasHeading = await summaryHeading.isVisible().catch(() => false);
             if (!hasHeading) {
+              return "pending";
+            }
+            const hasSubtotal = await checkoutOrderSummary(page)
+              .getByText("卡牌商品總額", { exact: true })
+              .isVisible()
+              .catch(() => false);
+            return hasSubtotal ? "ready" : "pending";
+          },
+          { timeout: 45_000 },
+        )
+        .toBe("ready");
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1_000);
+    }
+  }
+}
+
+export async function waitForMerchantAuthCheckoutReady(
+  page: Page,
+): Promise<void> {
+  const authFlowHeading = page.getByRole("heading", { name: "鑑定託管流程" });
+  const orderConfirmHeading = page.getByRole("heading", { name: "訂單確認" });
+  const summaryHeading = page.getByText("帳單明細", { exact: true });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!page.url().includes("/checkout/")) {
+      await page.waitForURL(/\/checkout\//, { timeout: 15_000 }).catch(() => {});
+    }
+
+    try {
+      await expect
+        .poll(
+          async () => {
+            const hasAuthFlow = await authFlowHeading
+              .isVisible()
+              .catch(() => false);
+            const hasOrderConfirm = await orderConfirmHeading
+              .isVisible()
+              .catch(() => false);
+            if (!hasAuthFlow && !hasOrderConfirm) {
+              return "pending";
+            }
+            const hasSummary = await summaryHeading.isVisible().catch(() => false);
+            if (!hasSummary) {
               return "pending";
             }
             const hasSubtotal = await checkoutOrderSummary(page)
@@ -354,11 +398,11 @@ export async function waitForCheckoutReviewReady(page: Page): Promise<void> {
             }
 
             const authReview = await page
-              .getByText("鑑定託管流程說明")
+              .getByRole("heading", { name: "鑑定託管流程" })
               .isVisible()
               .catch(() => false);
             const merchantSummary = await page
-              .getByRole("heading", { name: /訂單財務明細總結/ })
+              .getByText("帳單明細", { exact: true })
               .isVisible()
               .catch(() => false);
             const continuePay = await page
@@ -424,7 +468,12 @@ export async function waitForCheckoutCouponClearedAfterAuthToggle(
     timeout: 30_000,
   });
   await waitForCheckoutCouponPicker(page, { timeout: 30_000 });
-  await expect(page.locator("#checkout-coupon")).toHaveValue("");
+  await expect
+    .poll(
+      async () => page.locator("#checkout-coupon").inputValue(),
+      { timeout: 30_000 },
+    )
+    .toBe("");
 }
 
 export async function waitForCheckoutCouponOptionEnabled(

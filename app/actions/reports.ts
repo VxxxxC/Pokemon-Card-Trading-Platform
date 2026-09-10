@@ -15,6 +15,7 @@ import { reportOutcomeMessage } from "@/lib/moderation/report-outcome-copy";
 import { enqueueModerationReportReceivedEmail } from "@/lib/notifications/moderation-emails";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Database, Tables } from "@/types/supabase";
 
 const MAX_REPORT_DETAILS_LENGTH = 2000;
@@ -178,14 +179,11 @@ export async function submitUserReport(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     if (reportedUserId === user.id) {
       return { success: false, error: "無法舉報自己" };
@@ -379,15 +377,11 @@ export async function acknowledgeReportOutcomes(
     return { success: true, updated: 0 };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    return { success: false, error: "請先登入" };
+  const auth = await requireActiveAuthUser();
+  if (!auth.ok) {
+    return { success: false, error: auth.error };
   }
+  const { supabase } = auth;
 
   try {
     const { data, error } = await asReportOutcomeRpcClient(supabase).rpc(

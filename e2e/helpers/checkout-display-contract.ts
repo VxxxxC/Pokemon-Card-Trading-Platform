@@ -43,11 +43,8 @@ function createE2eAdminClient() {
 
 function checkoutOrderSummary(page: Page) {
   return page
-    .getByRole("heading", { name: /訂單財務明細總結/ })
-    .locator(
-      "xpath=ancestor::div[contains(@class,'rounded-2xl') and contains(@class,'border')]",
-    )
-    .first();
+    .getByText("帳單明細", { exact: true })
+    .locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
 }
 
 async function readSummaryRowAmount(
@@ -101,9 +98,9 @@ export function expectStandardAuthEscrowCheckoutBreakdown(
 export async function assertAuthEscrowCheckoutBreakdownOnPage(
   page: Page,
 ): Promise<AuthEscrowCheckoutBreakdown> {
-  await expect(
-    page.getByRole("heading", { name: /訂單財務明細總結/ }),
-  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("帳單明細", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
 
   const breakdown = await readAuthEscrowCheckoutBreakdown(page);
   expectStandardAuthEscrowCheckoutBreakdown(breakdown);
@@ -114,14 +111,15 @@ export async function enableAuthServiceOnMerchantDirectCheckout(
   page: Page,
 ): Promise<void> {
   const authSection = page
-    .getByRole("heading", { name: "🔍 3. 啟用鑑定服務" })
+    .getByRole("heading", { name: "平台鑑定服務" })
     .locator("xpath=ancestor::section[1]");
   await expect(authSection).toBeVisible({ timeout: 15_000 });
 
   const authSwitch = authSection.getByRole("switch");
   await expect(authSwitch).toBeEnabled({ timeout: 10_000 });
   if ((await authSwitch.getAttribute("aria-checked")) !== "true") {
-    await authSwitch.click();
+    await authSwitch.focus();
+    await page.keyboard.press("Space");
   }
   await expect(authSwitch).toHaveAttribute("aria-checked", "true");
 }
@@ -191,9 +189,9 @@ export async function assertMerchantDirectSfCheckoutBreakdownOnPage(
     expectedShippingFee: number;
   },
 ): Promise<MerchantDirectCheckoutBreakdown> {
-  await expect(
-    page.getByRole("heading", { name: /訂單財務明細總結/ }),
-  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("帳單明細", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
 
   const breakdown = await readMerchantDirectCheckoutBreakdown(page);
   expect(breakdown.itemSubtotal).toBeGreaterThan(0);

@@ -188,6 +188,14 @@ export async function dismissBlockingOverlays(page: Page): Promise<void> {
       dismissed = true;
     }
 
+    const chatConsole = page.locator('[data-chat-console="true"]').last();
+    if (await chatConsole.isVisible().catch(() => false)) {
+      const chatClose = chatConsole.locator("button").filter({ hasText: "✕" }).first();
+      if (await clickIfVisible(chatClose)) {
+        dismissed = true;
+      }
+    }
+
     const chatOpen = await page
       .locator('[data-chat-console="true"]')
       .last()

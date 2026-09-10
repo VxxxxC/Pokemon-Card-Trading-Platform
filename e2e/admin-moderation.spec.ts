@@ -146,8 +146,11 @@ test.describe("Admin moderation — admin flows", () => {
     await expect(page.getByText(openCase.case_number)).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText("舉報摘要")).toBeVisible();
-    await expect(page.getByText("風控分數明細")).toBeVisible();
+    // Single-report cases dedupe report body into the case header; 舉報摘要 is omitted.
+    await expect(page.getByText("主要舉報方")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "風控分數明細" }),
+    ).toBeVisible();
   });
 
   test("admin loads chat thread and writes view_chat audit", async ({ page }, testInfo) => {
@@ -190,9 +193,11 @@ test.describe("Admin moderation — admin flows", () => {
 
     await loginAsAdmin(page);
     await gotoAdminDisputes(page, `/admin/disputes/${chatCase.id}`);
-    await expect(page.getByText("唯讀聊天室歷史")).toBeVisible({
-      timeout: 20_000,
-    });
+    const chatHistorySection = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "唯讀聊天室歷史" }) });
+    await expect(chatHistorySection).toBeVisible({ timeout: 20_000 });
+    await chatHistorySection.getByRole("button", { name: "展開" }).click();
     await expect(page.getByText("載入聊天紀錄中…")).toBeHidden({
       timeout: 30_000,
     });
@@ -235,6 +240,10 @@ test.describe("Admin moderation — admin flows", () => {
       )
       .toBeGreaterThan(auditBefore);
 
+    const auditSection = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "審計紀錄" }) });
+    await auditSection.getByRole("button", { name: "展開" }).click();
     await expect(page.getByText("調閱聊天紀錄")).toBeVisible({
       timeout: 15_000,
     });

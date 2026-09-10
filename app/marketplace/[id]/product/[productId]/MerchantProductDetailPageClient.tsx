@@ -7,10 +7,16 @@ import { useRouter } from "next/navigation";
 import { RarityBadge } from "@/app/components/cards/RarityBadge";
 import { GradeBadge } from "@/app/components/cards/GradeBadge";
 import { ExecutionActionFooter } from "@/app/components/transactions/ExecutionActionFooter";
+import { Switch } from "@/components/ui/switch";
 import { mapMarketplaceListingToExecutionPayload } from "@/lib/marketplace/map-listing-to-execution";
 import type { MarketplaceSellerListingDetailView } from "@/app/lib/marketplace/types";
 import { formatElementTypeZh } from "@/lib/catalog/element-types";
 import { isSealedCatalogType } from "@/lib/catalog/item-kind";
+import {
+  BUYER_AUTH_DISABLED_COPY,
+  buildBuyerAuthAddOnDescription,
+} from "@/lib/listings/auth-service-copy";
+import { usePlatformAuthFee } from "@/lib/platform/use-platform-auth-fee";
 import {
   formatListingGrade,
   formatTradeGradeLabel,
@@ -43,7 +49,15 @@ export function MerchantProductDetailPageClient({
   const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [useAuthentication, setUseAuthentication] = useState(false);
+  const [authResetProductId, setAuthResetProductId] = useState(routeProductId);
+  const authServiceFeeHkd = usePlatformAuthFee();
   const lastTrackedListingIdRef = useRef<string | null>(null);
+
+  if (authResetProductId !== routeProductId) {
+    setAuthResetProductId(routeProductId);
+    setUseAuthentication(false);
+  }
 
   useEffect(() => {
     if (!detail) {
@@ -143,6 +157,7 @@ export function MerchantProductDetailPageClient({
   const executionPayload = mapMarketplaceListingToExecutionPayload(
     storefrontListing,
   );
+  const listingAcceptsBuyerAuth = detail.useAuthentication !== false;
 
   return (
     <div className="flex-1 w-full flex flex-col bg-[#17130f]">
@@ -343,13 +358,42 @@ export function MerchantProductDetailPageClient({
       </main>
 
       {executionPayload ? (
-        <ExecutionActionFooter
-          listingId={executionPayload.listingId}
-          order={executionPayload.order}
-          card={executionPayload.card}
-          productId={executionPayload.productId}
-          layout="sticky"
-        />
+        <div
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(237,232,224,0.08)] bg-[#17130f]/95 backdrop-blur-md lg:mx-auto lg:max-w-[1240px] lg:px-8 lg:border-t-0 lg:bg-transparent lg:backdrop-blur-none"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          {!isSealedProduct ? (
+            <div className="mx-4 mb-2 rounded-lg border border-white/[0.08] bg-[#17130f] p-3 lg:mx-0">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <span className="font-sans font-semibold text-[12px] text-[#eae1da] block">
+                    加購平台鑑定託管
+                  </span>
+                  <p className="font-sans text-[11px] text-text-secondary leading-snug">
+                    {listingAcceptsBuyerAuth
+                      ? buildBuyerAuthAddOnDescription(authServiceFeeHkd)
+                      : BUYER_AUTH_DISABLED_COPY}
+                  </p>
+                </div>
+                <Switch
+                  checked={useAuthentication}
+                  onCheckedChange={setUseAuthentication}
+                  disabled={!listingAcceptsBuyerAuth}
+                  className="shrink-0 data-checked:bg-brand data-unchecked:bg-[#39342f] disabled:opacity-40"
+                />
+              </div>
+            </div>
+          ) : null}
+          <ExecutionActionFooter
+            listingId={executionPayload.listingId}
+            order={executionPayload.order}
+            card={executionPayload.card}
+            productId={executionPayload.productId}
+            layout="embedded"
+            useAuthentication={useAuthentication}
+            onUseAuthenticationChange={setUseAuthentication}
+          />
+        </div>
       ) : null}
 
       <ImageViewer

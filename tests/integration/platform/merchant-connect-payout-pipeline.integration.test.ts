@@ -428,16 +428,15 @@ describe.skipIf(!hasBaseIntegrationEnv()).sequential(
           },
         );
         expect(finalizeError).toBeNull();
-
-        const { error: clearError } = await client.rpc(
-          "rpc_admin_clear_seller_settlement",
-          {
-            p_order_kind: "merchant",
-            p_order_id: recoverySeed.orderId,
-          },
-        );
-        expect(clearError).toBeNull();
       });
+
+      const { data: clearedOrder, error: orderError } = await admin
+        .from("merchant_orders")
+        .select("seller_settlement_status")
+        .eq("id", recoverySeed.orderId)
+        .single();
+      expect(orderError).toBeNull();
+      expect(clearedOrder?.seller_settlement_status).toBe("cleared");
 
       const recoveryLedger = await getMerchantLedgerGradingFailRecovery(
         recoverySeed.orderId,

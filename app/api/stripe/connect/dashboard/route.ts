@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSiteUrl } from "@/lib/auth/site-url";
+import { requireActiveApiUser } from "@/lib/auth/require-active-api-user";
 import { createMerchantExpressLoginLink } from "@/lib/stripe/connect-dashboard";
 import { isMerchantPayoutReady } from "@/lib/stripe/payout-ready";
 import { isStripeConnectAccountId } from "@/lib/stripe/sync-kyc-connect-flags";
@@ -27,15 +28,16 @@ export async function GET() {
     NextResponse.redirect(`${siteUrl}/profile/merchant/finance?stripe=${reason}`);
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.redirect(`${siteUrl}/auth`);
+    const auth = await requireActiveApiUser();
+    if (!auth.ok) {
+      if (auth.status === 401) {
+        return NextResponse.redirect(`${siteUrl}/auth`);
+      }
+      return financeFallback("restricted");
     }
+    const { user } = auth;
 
+    const supabase = await createClient();
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")

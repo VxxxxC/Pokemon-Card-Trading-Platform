@@ -14,6 +14,7 @@ import {
   publishRewardActivityViaAdmin,
   seedMemberAuthPendingOrderForE2e,
 } from "./helpers/platform-rewards";
+import { loginAsAdmin, withAdminPage } from "./helpers/admin-auth";
 import {
   waitForCheckoutCouponOptionEnabled,
   waitForCheckoutCouponPicker,
@@ -32,21 +33,6 @@ function hasAdminAuthFixtures(): boolean {
   return Boolean(readEnv("E2E_ADMIN_EMAIL") && readEnv("E2E_ADMIN_PASSWORD"));
 }
 
-async function loginAsAdmin(page: Page): Promise<void> {
-  const email = readEnv("E2E_ADMIN_EMAIL");
-  const password = readEnv("E2E_ADMIN_PASSWORD");
-  if (!email || !password) {
-    throw new Error("Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
-  }
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), {
-    timeout: 30_000,
-  });
-}
-
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(300_000);
@@ -62,20 +48,21 @@ test.describe("Member auth coupon — admin order_kinds parity", () => {
   });
 
   test("C2C-ADM-1 admin publishes free_shipping with member scope", async ({
-    page,
+    browser,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "buyer", "Runs on buyer project");
     if (!isFailIfEnvMissingMode()) {
       test.skip(!hasAdminAuthFixtures(), "Missing admin E2E credentials");
     }
 
-    await loginAsAdmin(page);
-    await publishRewardActivityViaAdmin(page, {
-      title: templateTitle,
-      type: "free_shipping",
-      orderKindsScope: "both",
-      maxSubsidy: 30,
-      trigger: { kind: "event_once", event: "profile_complete" },
+    await withAdminPage(browser, async (page) => {
+      await publishRewardActivityViaAdmin(page, {
+        title: templateTitle,
+        type: "free_shipping",
+        orderKindsScope: "both",
+        maxSubsidy: 30,
+        trigger: { kind: "event_once", event: "profile_complete" },
+      });
     });
 
     templateId = await getRewardTemplateIdByTitle(templateTitle);
@@ -90,7 +77,7 @@ test.describe("Member auth coupon — admin order_kinds parity", () => {
   });
 
   test("C2C-ADM-1b admin free_shipping default form persists member without order_kinds click", async ({
-    page,
+    browser,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "buyer", "Runs on buyer project");
     if (!isFailIfEnvMissingMode()) {
@@ -98,13 +85,14 @@ test.describe("Member auth coupon — admin order_kinds parity", () => {
     }
 
     const defaultTitle = `E2E C2C Default Form ${Date.now()}`;
-    await loginAsAdmin(page);
-    await publishRewardActivityViaAdmin(page, {
-      title: defaultTitle,
-      type: "free_shipping",
-      applyOrderKindsScope: false,
-      maxSubsidy: 30,
-      trigger: { kind: "event_once", event: "profile_complete" },
+    await withAdminPage(browser, async (page) => {
+      await publishRewardActivityViaAdmin(page, {
+        title: defaultTitle,
+        type: "free_shipping",
+        applyOrderKindsScope: false,
+        maxSubsidy: 30,
+        trigger: { kind: "event_once", event: "profile_complete" },
+      });
     });
 
     const defaultTemplateId = await getRewardTemplateIdByTitle(defaultTitle);

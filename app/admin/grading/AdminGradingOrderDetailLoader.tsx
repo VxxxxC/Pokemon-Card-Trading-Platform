@@ -26,18 +26,14 @@ export function AdminGradingOrderDetailLoader({
   tab,
   backHref,
 }: AdminGradingOrderDetailLoaderProps) {
-  const [row, setRow] = useState<AdminGradingQueueRow | null>(initialRow);
+  const [row, setRow] = useState<AdminGradingQueueRow | null>(
+    () => initialRow ?? readStashedAdminGradingDetailRow(orderKind, orderId),
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (row) {
-      return;
-    }
-
-    const stashed = readStashedAdminGradingDetailRow(orderKind, orderId);
-    if (stashed) {
-      setRow(stashed);
       return;
     }
 

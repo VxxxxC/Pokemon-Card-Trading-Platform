@@ -11,6 +11,7 @@ import {
   isBunnyStorageConfigured,
   uploadReportEvidenceToBunny,
 } from "@/lib/storage/bunny";
+import { requireActiveApiUser } from "@/lib/auth/require-active-api-user";
 import { createClient } from "@/lib/supabase/server";
 import type { TablesInsert } from "@/types/supabase";
 
@@ -23,17 +24,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const auth = await requireActiveApiUser();
+    if (!auth.ok) {
       return NextResponse.json(
-        { success: false, error: "請先登入後再上載證據圖片" },
-        { status: 401 },
+        { success: false, error: auth.error },
+        { status: auth.status },
       );
     }
+    const user = auth.user;
+
+    const supabase = await createClient();
 
     const { count: pendingCount, error: countError } = await supabase
       .from("report_attachments")

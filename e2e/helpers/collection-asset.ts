@@ -14,6 +14,7 @@ import {
   dismissRewardUnlockedModal,
   waitUntilNoBlockingOverlay,
 } from "./overlays";
+import { marketplaceSearchInput } from "./marketplace-contract";
 
 export { dismissBlockingOverlays };
 
@@ -37,6 +38,21 @@ export async function ensureMerchantPersona(page: Page): Promise<void> {
   }, ACTIVE_LISTING_PERSONA_STORAGE_KEY);
 }
 
+export async function dismissAddAssetModal(page: Page): Promise<void> {
+  const dialog = page.locator('[aria-labelledby="add-asset-modal-title"]');
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (!(await dialog.isVisible().catch(() => false))) {
+      return;
+    }
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await dialog
+      .getByRole("button", { name: "Close" })
+      .click({ force: true, timeout: 2_000 })
+      .catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+}
+
 export async function gotoCollectionPage(page: Page): Promise<void> {
   await ensureMemberPersona(page);
   const buyerId = await getBuyerProfileIdFromEnv();
@@ -46,19 +62,19 @@ export async function gotoCollectionPage(page: Page): Promise<void> {
   await page.goto("/profile/user/collection", { waitUntil: "domcontentloaded" });
   await dismissBlockingOverlays(page);
   await dismissRewardUnlockedModal(page);
+  await dismissAddAssetModal(page);
   await waitUntilNoBlockingOverlay(page);
 }
 
 export function addAssetModalForm(page: Page) {
   return page.locator("form").filter({
-    has: page.getByPlaceholder(
-      /sv2a-182 或 Charizard ex SAR|151 Booster Box/,
-    ),
+    has: page.getByPlaceholder(/卡號或名稱|盒組名稱或條碼/),
   });
 }
 
 export async function openMerchAddAssetModal(page: Page): Promise<void> {
   await dismissBlockingOverlays(page);
+  await dismissAddAssetModal(page);
   await page.keyboard.press("Escape");
   const addButton = page.getByRole("button", { name: "新增商品" });
   await addButton.scrollIntoViewIfNeeded();
@@ -68,6 +84,7 @@ export async function openMerchAddAssetModal(page: Page): Promise<void> {
 
 export async function openHobbyAddAssetModal(page: Page): Promise<void> {
   await dismissBlockingOverlays(page);
+  await dismissAddAssetModal(page);
   await page.keyboard.press("Escape");
   const addButton = page.getByRole("button", { name: "收錄新卡" });
   await expect(addButton).toBeVisible({ timeout: 10_000 });
@@ -110,9 +127,7 @@ export async function searchAndSelectCatalog(
   preferredMatch?: string,
 ): Promise<void> {
   const modal = addAssetModalForm(page);
-  const searchInput = modal.getByPlaceholder(
-    /sv2a-182 或 Charizard ex SAR|151 Booster Box/,
-  );
+  const searchInput = modal.getByPlaceholder(/卡號或名稱|盒組名稱或條碼/);
   const keywordList = Array.isArray(keywords) ? keywords : [keywords];
   const catalogDropdown = modal.locator("div.absolute.z-50");
   const catalogResults = catalogDropdown.locator("button:has(img)");
@@ -198,9 +213,7 @@ export async function ensureProductInWishlist(
   if (buyerId) {
     await seedProductWatchlistForUser(buyerId, fixture.productId);
     await gotoCollectionPage(page);
-    await expect(
-      wishlistSection(page).getByText(fixture.productName).first(),
-    ).toBeVisible({ timeout: 20_000 });
+    await expectWishlistProductVisible(page, fixture.productName);
     return;
   }
 
@@ -208,7 +221,7 @@ export async function ensureProductInWishlist(
   await page.goto("/marketplace", { waitUntil: "domcontentloaded" });
   await dismissBlockingOverlays(page);
 
-  const searchInput = page.getByPlaceholder("搜尋官方卡牌名稱、編號...");
+  const searchInput = marketplaceSearchInput(page);
   await searchInput.fill(fixture.searchKeyword);
   await page.getByRole("heading", { name: "大盤市場" }).click();
 
@@ -237,6 +250,49 @@ export function wishlistSection(page: Page) {
   return page.locator("section").filter({ has: page.locator("#wishlist-heading") });
 }
 
+export function collectionHoldingsSearchInput(page: Page) {
+  return page.getByPlaceholder(/搜尋卡牌名稱、編號/);
+}
+
+export function merchListingPriceInput(page: Page) {
+  return addAssetModalForm(page).getByRole("spinbutton", { name: /售價/ });
+}
+
+export async function clickHobbyCollectionSubmit(page: Page): Promise<void> {
+  await addAssetModalForm(page)
+    .getByRole("button", { name: /收錄至私藏愛好/ })
+    .click();
+}
+
+export async function clickMerchListingPublish(page: Page): Promise<void> {
+  await addAssetModalForm(page)
+    .getByRole("button", { name: /立即發佈商品上架/ })
+    .click();
+}
+
+export async function clickWishlistRowMenu(
+  page: Page,
+  productName: string,
+): Promise<void> {
+  const trigger = wishlistSection(page)
+    .getByLabel(`${productName} 更多操作`)
+    .filter({ visible: true })
+    .first();
+  await trigger.scrollIntoViewIfNeeded();
+  await trigger.click();
+}
+
+export async function expectWishlistProductVisible(
+  page: Page,
+  productName: string,
+): Promise<void> {
+  const section = wishlistSection(page);
+  await section.scrollIntoViewIfNeeded();
+  const link = section.getByRole("link", { name: productName }).first();
+  await expect(link).toBeAttached({ timeout: 20_000 });
+  await expect(link).toHaveAttribute("href", /\/marketplace\/product\//);
+}
+
 export function holdingsSection(page: Page) {
   return page.locator("section").filter({ has: page.locator("#cards-heading") });
 }
@@ -251,6 +307,7 @@ export function holdingsRow(page: Page, productName: string) {
   return holdingsSection(page)
     .locator("tbody tr")
     .filter({ hasText: productName })
+    .filter({ visible: true })
     .first();
 }
 
@@ -271,6 +328,7 @@ export function holdingsRowByPurchasePrice(
     .filter({
       has: page.locator("td").nth(2).locator("p").first().getByText(normalized),
     })
+    .filter({ visible: true })
     .first();
 }
 
@@ -285,7 +343,8 @@ export async function filterCollectionHoldingsBySearch(
   page: Page,
   query: string,
 ): Promise<void> {
-  const search = page.getByPlaceholder("搜尋持有卡牌名稱、編號或 JAN 條碼...");
+  const search = collectionHoldingsSearchInput(page);
+  await expect(search).toBeVisible({ timeout: 15_000 });
   await search.fill("");
   if (query) {
     await search.fill(query);
@@ -335,13 +394,35 @@ export async function focusHoldingsRowByPurchasePrice(
   return row;
 }
 
+export function holdingsRowOverflowButton(row: ReturnType<typeof holdingsRow>) {
+  return row
+    .getByRole("button", { name: "⋯" })
+    .or(row.getByRole("button", { name: /更多操作/ }))
+    .filter({ visible: true })
+    .first();
+}
+
+export async function expectHoldingsProductAttached(
+  page: Page,
+  productName: string,
+): Promise<void> {
+  const section = holdingsSection(page);
+  await section.scrollIntoViewIfNeeded();
+  const link = section
+    .getByRole("link", { name: productName })
+    .filter({ visible: true })
+    .first();
+  await expect(link).toBeAttached({ timeout: 20_000 });
+  await expect(link).toHaveAttribute("href", /\/marketplace\/product\//);
+}
+
 export async function clickHoldingsRowOverflowItem(
   page: Page,
   row: ReturnType<typeof holdingsRow>,
   menuLabel: string,
 ): Promise<void> {
   await row.scrollIntoViewIfNeeded();
-  await row.getByRole("button", { name: /更多操作/ }).click();
+  await holdingsRowOverflowButton(row).click();
   const menuItem = page.getByRole("menuitem", { name: menuLabel });
   await expect(menuItem).toBeVisible({ timeout: 10_000 });
   await menuItem.click();
@@ -367,7 +448,7 @@ export async function selectHoldingsRowGrade(
     await trigger.scrollIntoViewIfNeeded();
     await trigger.click();
   } else {
-    await row.getByRole("button", { name: /更多操作/ }).click();
+    await holdingsRowOverflowButton(row).click();
     await page.getByRole("menuitem", { name: "更改鑑定規格" }).click();
   }
 
@@ -410,7 +491,7 @@ export async function openHoldingsRowMenu(
   productName: string,
 ): Promise<void> {
   const row = holdingsRow(page, productName);
-  await row.getByRole("button", { name: /更多操作/ }).click();
+  await holdingsRowOverflowButton(row).click();
 }
 
 export async function hobbyGradingSelectTrigger(

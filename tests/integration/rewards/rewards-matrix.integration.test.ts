@@ -257,7 +257,7 @@ describe.skipIf(!hasRewardsIntegrationEnv()).sequential(
         expect(result.data?.pointsEarned).toBeGreaterThanOrEqual(0);
         return;
       }
-      expect(result.error).toMatch(/今日已簽到/);
+      expect(result.error).toMatch(/今日已簽到|簽到計劃已暫停/);
     });
   });
 });

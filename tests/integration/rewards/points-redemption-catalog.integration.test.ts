@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   getAdminRewardActivity,
@@ -24,6 +23,7 @@ import {
 } from "./helpers/fixtures";
 import { publishActivity } from "./helpers/publish";
 import { activityRowToForm } from "@/lib/admin-rewards/template-form";
+import { seedUserPoints } from "../shared/seed-user-points";
 
 const RUN_ID = `catalog-${Date.now()}`;
 const TITLE_PREFIX = `Vitest Catalog ${RUN_ID}`;
@@ -32,38 +32,7 @@ type CatalogRow = Record<string, unknown>;
 
 async function setBuyerPointsBalance(target: number): Promise<void> {
   const buyer = getBuyerClient();
-  const { data: statsData, error: statsError } = await buyer.rpc(
-    "get_gamification_stats_for_me",
-  );
-  if (statsError) {
-    throw new Error(`[setBuyerPointsBalance] ${statsError.message}`);
-  }
-
-  const current = Number(
-    (statsData as Record<string, unknown> | null)?.points_balance ?? 0,
-  );
-
-  if (target > current) {
-    const { error } = await buyer.rpc("fn_claim_mission_points", {
-      p_mission_id: randomUUID(),
-      p_points: target - current,
-      p_description: "Vitest catalog seed",
-    });
-    if (error) {
-      throw new Error(`[setBuyerPointsBalance] ${error.message}`);
-    }
-    return;
-  }
-
-  if (target < current) {
-    const { error } = await buyer.rpc("fn_redeem_member_points", {
-      p_amount: current - target,
-      p_description: "Vitest catalog seed",
-    });
-    if (error) {
-      throw new Error(`[setBuyerPointsBalance] ${error.message}`);
-    }
-  }
+  await seedUserPoints(getBuyerUserId(), target, buyer);
 }
 
 async function listCatalogForBuyer(): Promise<CatalogRow[]> {

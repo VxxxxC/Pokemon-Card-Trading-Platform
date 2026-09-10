@@ -5,7 +5,17 @@ import { hasStripeWebhookRouteEnv } from "../shared/env";
 const adminRpc = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: adminRpc }),
+  createAdminClient: () => ({
+    rpc: adminRpc,
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+          single: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  }),
 }));
 
 import { POST } from "@/app/api/stripe/webhook/route";

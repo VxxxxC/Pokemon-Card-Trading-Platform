@@ -731,6 +731,51 @@ export type MemberListingFixture = {
   price: number;
 };
 
+export async function seedMemberListingForIntegration(
+  sellerId: string,
+): Promise<string> {
+  const admin = createServiceRoleClient();
+  const { data: catalog, error: catalogError } = await admin
+    .from("product_catalog")
+    .select("id")
+    .not("name_zh", "is", null)
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (catalogError) {
+    throw new Error(
+      `[seedMemberListingForIntegration] ${catalogError.message}`,
+    );
+  }
+
+  if (!catalog?.id) {
+    throw new Error("[seedMemberListingForIntegration] no product catalog row");
+  }
+
+  const { data, error } = await admin
+    .from("listings")
+    .insert({
+      seller_id: sellerId,
+      product_id: catalog.id,
+      price: 199,
+      status: "active",
+      seller_persona: "member",
+      grading_company: "RAW",
+      seller_description: "Integration member auth fixture (auto-seeded)",
+      images: [],
+      use_authentication: true,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`[seedMemberListingForIntegration] ${error.message}`);
+  }
+
+  return data.id;
+}
+
 export async function findMemberListingForIntegration(params?: {
   excludeBuyerId?: string;
 }): Promise<MemberListingFixture> {

@@ -89,7 +89,15 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isPathAllowedForRole(role, pathname)) {
-    return response;
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-pathname", pathname);
+    const nextResponse = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    response.cookies.getAll().forEach((cookie) => {
+      nextResponse.cookies.set(cookie.name, cookie.value);
+    });
+    return nextResponse;
   }
 
   if (role === "GUEST") {

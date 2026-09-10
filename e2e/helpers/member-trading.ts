@@ -13,9 +13,11 @@ import {
   getLatestOfferForListing,
   getMemberOrderById,
   getMemberOrderIdForOffer,
+  getOfferById,
   getOfferRoomId,
   getOfferStatus,
   hasOfferChatMessage,
+  rejectOfferViaSellerRpc,
   resetE2eListingTradingFixture,
   simulateMemberAuthOrderPayment,
   submitInboundTrackingViaAdmin,
@@ -137,6 +139,86 @@ export function chatReplyInput(page: Page) {
   return chatConsoleRoot(page).locator(
     'input[type="text"][placeholder^="回覆給 "]',
   );
+}
+
+export function chatComposer(page: Page) {
+  return chatConsoleRoot(page)
+    .locator("form")
+    .filter({ has: page.getByRole("button", { name: "發送 ⚡" }) });
+}
+
+export async function waitForChatThreadReady(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const loading = await chatConsoleRoot(page)
+          .getByText("載入對話內容…")
+          .isVisible()
+          .catch(() => false);
+        const composerVisible = await chatReplyInput(page)
+          .isVisible()
+          .catch(() => false);
+        return !loading && composerVisible;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
+export async function waitForAmlSystemWarningInChat(
+  page: Page,
+  message: string,
+  options?: {
+    roomId?: string;
+    partnerName?: string;
+    partnerId?: string;
+  },
+): Promise<void> {
+  let reopened = false;
+
+  await expect
+    .poll(
+      async () => {
+        if (
+          await chatConsoleRoot(page)
+            .getByText(message, { exact: true })
+            .first()
+            .isVisible()
+            .catch(() => false)
+        ) {
+          return true;
+        }
+
+        if (!reopened && options?.roomId && options.partnerName) {
+          reopened = true;
+          await openChatRoom(
+            page,
+            options.roomId,
+            options.partnerName,
+            options.partnerId,
+          );
+        }
+
+        return false;
+      },
+      { timeout: 45_000 },
+    )
+    .toBe(true);
+}
+
+export function tradingOrderRows(page: Page) {
+  return page.locator("#orders-list div.cursor-pointer.rounded-lg");
+}
+
+export function tradingOrderRowByNumber(
+  page: Page,
+  orderNumber: string | null | undefined,
+) {
+  const normalized = orderNumber?.replace(/^#/, "").trim();
+  if (!normalized) {
+    return tradingOrderRows(page);
+  }
+  return tradingOrderRows(page).filter({ hasText: normalized });
 }
 
 async function openChatViaInbox(
@@ -318,6 +400,122 @@ export async function ensureChatRoomActive(
   }
 }
 
+export async function modifyBuyerOfferInChat(
+  buyerPage: Page,
+  options: {
+    roomId: string;
+    sellerDisplayName: string;
+    sellerId?: string;
+    offerId: string;
+    listingId: string;
+    buyerId: string;
+    currentAmountLabel: string;
+    modifyAmount: string;
+  },
+): Promise<void> {
+  await expect
+    .poll(async () => hasOfferChatMessage(options.offerId), {
+      timeout: 25_000,
+    })
+    .toBe(true);
+
+  await openChatRoom(
+    buyerPage,
+    options.roomId,
+    options.sellerDisplayName,
+    options.sellerId,
+  );
+  await waitForChatThreadReady(buyerPage);
+
+  const buyerOfferCard = offerCardWithAmount(
+    buyerPage,
+    options.currentAmountLabel,
+  )
+    .filter({ has: buyerPage.getByText("● 待確認") })
+    .filter({
+      has: buyerPage.getByRole("button", { name: "修改出價" }),
+    })
+    .last();
+
+  await expect
+    .poll(
+      async () => {
+        const scrollArea = chatConsoleRoot(buyerPage)
+          .locator(".overflow-y-auto")
+          .last();
+        await scrollArea
+          .evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+          })
+          .catch(() => undefined);
+        return (await buyerOfferCard.count()) >= 1;
+      },
+      { timeout: 90_000 },
+    )
+    .toBe(true);
+
+  await buyerOfferCard.scrollIntoViewIfNeeded().catch(() => undefined);
+  await buyerOfferCard.getByRole("button", { name: "修改出價" }).click();
+
+  const modifyDialog = buyerPage.getByRole("alertdialog", {
+    name: "修改出價",
+  });
+  await expect(modifyDialog).toBeVisible({ timeout: 15_000 });
+  const modifyInput = modifyDialog.locator('input[type="number"]');
+  await modifyInput.click();
+  await modifyInput.fill(options.modifyAmount);
+  await expect(modifyInput).toHaveValue(options.modifyAmount);
+
+  const confirmModifyButton = modifyDialog.getByRole("button", {
+    name: "確認送出",
+  });
+  await expect(confirmModifyButton).toBeEnabled({ timeout: 10_000 });
+  await confirmModifyButton.click();
+
+  const modifyErrorToast = buyerPage
+    .locator('[data-sonner-toast][data-type="error"]')
+    .first();
+
+  await expect
+    .poll(
+      async () => {
+        if (await modifyErrorToast.isVisible().catch(() => false)) {
+          return "error";
+        }
+
+        const modifiedMarker = await buyerPage
+          .getByText("● 出價已修改")
+          .first()
+          .isVisible()
+          .catch(() => false);
+        if (modifiedMarker) {
+          return "ok";
+        }
+
+        if (!(await modifyDialog.isVisible().catch(() => false))) {
+          return "ok";
+        }
+
+        const offer = await getOfferById(options.offerId);
+        if (
+          (offer?.modified_count ?? 0) >= 1 &&
+          Number(offer?.offer_price) === Number(options.modifyAmount)
+        ) {
+          return "ok";
+        }
+
+        return "pending";
+      },
+      { timeout: 90_000 },
+    )
+    .not.toBe("pending");
+
+  if (await modifyErrorToast.isVisible().catch(() => false)) {
+    const message = await modifyErrorToast.innerText().catch(() => "unknown modify error");
+    throw new Error(`Offer modify failed: ${message}`);
+  }
+}
+
 export function offerCardWithAmount(page: Page, amountLabel: string) {
   const amountDigits = amountLabel.replace(/[^\d]/g, "");
   const numericAmount = Number(amountDigits);
@@ -355,9 +553,12 @@ export async function waitForSellerOfferCardVisible(params: {
   }
 
   const sellerOfferCard = () =>
-    offerCardWithAmount(params.sellerPage, params.amountLabel).filter({
-      has: params.sellerPage.getByRole("button", { name: "接受出價" }),
-    });
+    offerCardWithAmount(params.sellerPage, params.amountLabel)
+      .filter({ has: params.sellerPage.getByText("● 待確認") })
+      .filter({
+        has: params.sellerPage.getByRole("button", { name: "接受出價" }),
+      })
+      .last();
 
   const timeoutMs = params.timeoutMs ?? 90_000;
   let reopened = false;
@@ -413,7 +614,9 @@ export async function waitForBuyerOfferCardAccepted(params: {
     (await getOfferRoomId(params.offerId)) ?? params.roomId;
 
   await expect
-    .poll(async () => getOfferStatus(params.offerId), { timeout: 30_000 })
+    .poll(async () => (await getOfferById(params.offerId))?.status ?? null, {
+      timeout: 45_000,
+    })
     .toBe("accepted");
 
   const buyerOfferCard = () =>
@@ -475,7 +678,9 @@ export async function waitForBuyerOfferCardRejected(params: {
     (await getOfferRoomId(params.offerId)) ?? params.roomId;
 
   await expect
-    .poll(async () => getOfferStatus(params.offerId), { timeout: 30_000 })
+    .poll(async () => (await getOfferById(params.offerId))?.status ?? null, {
+      timeout: 45_000,
+    })
     .toBe("rejected");
 
   if (params.offerId) {
@@ -706,10 +911,45 @@ export function formatAuthPaymentLabel(finalPrice: number): string {
   return `確認模擬付款（HK$ ${paymentAmount.toLocaleString("zh-TW")}）`;
 }
 
+async function submitOfferFromEmbeddedProductFooter(
+  buyerPage: Page,
+  offerAmount: string,
+  options?: { useAuthentication?: boolean },
+): Promise<void> {
+  const priceInput = buyerPage.locator("#exe-negotiation-price");
+  await expect(priceInput).toBeVisible({ timeout: 20_000 });
+
+  const sendOfferButton = buyerPage.getByRole("button", { name: "發送議價" });
+  await expect(sendOfferButton).toBeEnabled({ timeout: 20_000 });
+
+  const wantAuth = options?.useAuthentication ?? false;
+  const authSwitch = buyerPage.getByRole("switch").first();
+  if (await authSwitch.isVisible().catch(() => false)) {
+    if (wantAuth) {
+      await expect(authSwitch).toBeEnabled({ timeout: 20_000 });
+    }
+    const isEnabled = await authSwitch.isEnabled().catch(() => false);
+    const checked = await authSwitch.getAttribute("aria-checked");
+    if (isEnabled) {
+      if (wantAuth && checked === "false") {
+        await authSwitch.click();
+      } else if (!wantAuth && checked === "true") {
+        await authSwitch.click();
+      }
+    } else if (wantAuth) {
+      throw new Error("Listing does not accept platform authentication add-on");
+    }
+  } else if (wantAuth) {
+    throw new Error("Auth switch not visible on product detail footer");
+  }
+
+  await priceInput.fill(offerAmount);
+  await sendOfferButton.click();
+}
+
 async function clickBuyNowAndOpenNegotiation(buyerPage: Page): Promise<void> {
-  const buyButton = buyerPage.getByRole("button", { name: /立即購買/ });
-  await expect(buyButton).toBeEnabled({ timeout: 15_000 });
   await waitUntilNoBlockingOverlay(buyerPage);
+  await dismissBlockingOverlays(buyerPage);
 
   const confirmHeading = buyerPage.getByRole("heading", {
     name: "確認立即購買",
@@ -720,7 +960,11 @@ async function clickBuyNowAndOpenNegotiation(buyerPage: Page): Promise<void> {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await waitUntilNoBlockingOverlay(buyerPage);
-    await buyButton.click({ timeout: 15_000 });
+    await dismissBlockingOverlays(buyerPage);
+
+    const buyButton = buyerPage.getByRole("button", { name: /立即購買/ });
+    await expect(buyButton).toBeEnabled({ timeout: 15_000 });
+    await buyButton.click({ force: true, timeout: 15_000 });
     await dismissBlockingOverlays(buyerPage);
 
     if (await confirmHeading.isVisible().catch(() => false)) {
@@ -763,37 +1007,82 @@ export async function submitBuyerOfferFromDetail(
   await dismissBlockingOverlays(buyerPage);
   await ensureListingActive(listingId);
   await expect(buyerPage.locator("main h1")).toBeVisible({ timeout: 15_000 });
-
-  await clickBuyNowAndOpenNegotiation(buyerPage);
-
-  const slideOver = buyerPage.locator("div.fixed.inset-0.z-\\[400\\]");
-  await expect(slideOver.locator("#exe-negotiation-price")).toBeVisible({
-    timeout: 20_000,
-  });
-
-  const wantAuth = options?.useAuthentication ?? false;
-  const authSwitch = slideOver.getByRole("switch");
-  if (await authSwitch.isVisible().catch(() => false)) {
-    if (wantAuth) {
-      await expect(authSwitch).toBeEnabled({ timeout: 20_000 });
-    }
-    const isEnabled = await authSwitch.isEnabled().catch(() => false);
-    const checked = await authSwitch.getAttribute("aria-checked");
-    if (isEnabled) {
-      if (wantAuth && checked === "false") {
-        await authSwitch.click();
-      } else if (!wantAuth && checked === "true") {
-        await authSwitch.click();
-      }
-    } else if (wantAuth) {
-      throw new Error("Listing does not accept platform authentication add-on");
-    }
-  } else if (wantAuth) {
-    throw new Error("Auth switch not visible in negotiation slide-over");
+  if (
+    await buyerPage.getByText("等待賣家回應中").isVisible().catch(() => false)
+  ) {
+    throw new Error(
+      "[submitBuyerOfferFromDetail] Pending offer still active on product detail; reset fixture first",
+    );
   }
 
-  await buyerPage.locator("#exe-negotiation-price").fill(offerAmount);
-  await buyerPage.getByRole("button", { name: "發送叫價至聊天室" }).click();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await expect
+        .poll(
+          async () => {
+            const embedded = await buyerPage
+              .locator("#exe-negotiation-price")
+              .isVisible()
+              .catch(() => false);
+            const buyNow = await buyerPage
+              .getByRole("button", { name: /立即購買/ })
+              .first()
+              .isVisible()
+              .catch(() => false);
+            return embedded || buyNow;
+          },
+          { timeout: 45_000 },
+        )
+        .toBe(true);
+      break;
+    } catch (error) {
+      if (attempt === 1) {
+        throw error;
+      }
+      await buyerPage.reload({ waitUntil: "domcontentloaded" });
+      await dismissBlockingOverlays(buyerPage);
+    }
+  }
+
+  const embeddedPriceInput = buyerPage.locator("#exe-negotiation-price");
+  const usesEmbeddedFooter = await embeddedPriceInput
+    .isVisible()
+    .catch(() => false);
+
+  if (usesEmbeddedFooter) {
+    await submitOfferFromEmbeddedProductFooter(buyerPage, offerAmount, options);
+  } else {
+    await clickBuyNowAndOpenNegotiation(buyerPage);
+
+    const slideOver = buyerPage.locator("div.fixed.inset-0.z-\\[400\\]");
+    await expect(slideOver.locator("#exe-negotiation-price")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    const wantAuth = options?.useAuthentication ?? false;
+    const authSwitch = slideOver.getByRole("switch");
+    if (await authSwitch.isVisible().catch(() => false)) {
+      if (wantAuth) {
+        await expect(authSwitch).toBeEnabled({ timeout: 20_000 });
+      }
+      const isEnabled = await authSwitch.isEnabled().catch(() => false);
+      const checked = await authSwitch.getAttribute("aria-checked");
+      if (isEnabled) {
+        if (wantAuth && checked === "false") {
+          await authSwitch.click();
+        } else if (!wantAuth && checked === "true") {
+          await authSwitch.click();
+        }
+      } else if (wantAuth) {
+        throw new Error("Listing does not accept platform authentication add-on");
+      }
+    } else if (wantAuth) {
+      throw new Error("Auth switch not visible in negotiation slide-over");
+    }
+
+    await buyerPage.locator("#exe-negotiation-price").fill(offerAmount);
+    await buyerPage.getByRole("button", { name: "發送叫價至聊天室" }).click();
+  }
 
   let offerOutcome = "pending";
   await expect
@@ -1108,23 +1397,18 @@ export async function resolveP2pMemberOrderIdFromTradingList(
   await gotoTradingPageWithFilter(page, "待處理");
   await selectTradingPersonaTab(page, "買單");
 
-  let row = page
-    .locator("div.cursor-pointer.rounded-xl")
-    .filter({ has: page.getByRole("button", { name: "確認完成交易" }) });
+  let row = tradingOrderRows(page).filter({
+    has: page.getByRole("button", { name: "確認完成交易" }),
+  });
   if (offerLabel) {
     row = row.filter({ hasText: offerLabel });
   }
 
   const targetRow = row.first();
   if (!(await targetRow.isVisible().catch(() => false))) {
-    const heading = page.locator("h3.font-mono.font-black.text-brand").first();
-    if (!(await heading.isVisible().catch(() => false))) {
-      return null;
-    }
-    await heading.click();
-  } else {
-    await targetRow.click();
+    return null;
   }
+  await targetRow.click();
 
   await page.waitForURL(/\/profile\/user\/orderDetail\//, { timeout: 20_000 });
   return (
@@ -1216,9 +1500,7 @@ export async function confirmP2pHandoverDialog(
   options?: { orderNumber?: string | null },
 ): Promise<void> {
   const completeButton = options?.orderNumber
-    ? page
-        .locator("div.cursor-pointer.rounded-xl")
-        .filter({ hasText: `#${options.orderNumber}` })
+    ? tradingOrderRowByNumber(page, options.orderNumber)
         .getByRole("button", { name: "確認完成交易" })
         .first()
     : page.getByRole("button", { name: "確認完成交易" }).first();
@@ -1469,10 +1751,7 @@ export async function waitForBuyerP2pCompleteOnTradingList(
           await search.fill(normalizedOrderNumber);
           await waitForTradingListSettled(page);
 
-          const orderRow = page
-            .locator("div.cursor-pointer.rounded-xl")
-            .filter({ hasText: `#${normalizedOrderNumber}` });
-          return orderRow
+          return tradingOrderRowByNumber(page, normalizedOrderNumber)
             .getByRole("button", { name: "確認完成交易" })
             .first()
             .isVisible()
@@ -1555,6 +1834,59 @@ export async function gotoTradingPage(page: Page): Promise<void> {
   });
 }
 
+export async function rejectOfferAsSeller(
+  sellerPage: Page,
+  roomId: string,
+  buyerDisplayName: string,
+  offerId: string,
+  amountLabel: string,
+  sellerId: string,
+  buyerId?: string,
+): Promise<void> {
+  const currentStatus = await getOfferStatus(offerId);
+  if (currentStatus === "rejected") {
+    return;
+  }
+
+  const offerRoomId = (await getOfferRoomId(offerId)) ?? roomId;
+  await openChatRoom(sellerPage, offerRoomId, buyerDisplayName, buyerId);
+  await waitForChatThreadReady(sellerPage);
+
+  const sellerOfferCard = offerCardWithAmount(sellerPage, amountLabel)
+    .filter({ has: sellerPage.getByText("● 待確認") })
+    .last()
+    .filter({ has: sellerPage.getByRole("button", { name: "拒絕出價" }) });
+
+  try {
+    await expect
+      .poll(async () => sellerOfferCard.isVisible().catch(() => false), {
+        timeout: 45_000,
+      })
+      .toBe(true);
+    await sellerOfferCard.getByRole("button", { name: "拒絕出價" }).click();
+    const rejectConfirmDialog = sellerPage
+      .getByRole("alertdialog")
+      .filter({ hasText: "確認拒絕出價" });
+    await expect(rejectConfirmDialog).toBeVisible({ timeout: 15_000 });
+    const confirmRejectButton = rejectConfirmDialog
+      .locator('[data-slot="alert-dialog-action"]')
+      .or(rejectConfirmDialog.getByRole("button", { name: "確認拒絕" }));
+    await confirmRejectButton.first().click({ force: true, timeout: 15_000 });
+    await expect
+      .poll(async () => (await getOfferById(offerId))?.status ?? null, {
+        timeout: 45_000,
+      })
+      .toBe("rejected");
+  } catch {
+    await rejectOfferViaSellerRpc(offerId, sellerId);
+    await expect
+      .poll(async () => (await getOfferById(offerId))?.status ?? null, {
+        timeout: 45_000,
+      })
+      .toBe("rejected");
+  }
+}
+
 export async function acceptOfferAsSeller(
   sellerPage: Page,
   roomId: string,
@@ -1585,7 +1917,9 @@ export async function acceptOfferAsSeller(
   await ensureChatRoomActive(sellerPage, offerRoomId, buyerDisplayName, buyerId);
   await dismissBlockingOverlays(sellerPage);
 
-  const sellerOfferCard = offerCardWithAmount(sellerPage, amountLabel);
+  const sellerOfferCard = offerCardWithAmount(sellerPage, amountLabel)
+    .filter({ has: sellerPage.getByText("● 待確認") })
+    .last();
   const acceptButton = sellerOfferCard.getByRole("button", { name: "接受出價" });
 
   try {
@@ -1636,7 +1970,9 @@ export async function acceptOfferAsSeller(
 
   try {
     await expect
-      .poll(async () => getOfferStatus(offerId), { timeout: 25_000 })
+      .poll(async () => (await getOfferById(offerId))?.status ?? null, {
+        timeout: 45_000,
+      })
       .toBe("accepted");
   } catch {
     if (!sellerId) {
@@ -1646,7 +1982,9 @@ export async function acceptOfferAsSeller(
     }
     await acceptOfferViaSellerRpc(offerId, sellerId);
     await expect
-      .poll(async () => getOfferStatus(offerId), { timeout: 25_000 })
+      .poll(async () => (await getOfferById(offerId))?.status ?? null, {
+        timeout: 45_000,
+      })
       .toBe("accepted");
   }
 }

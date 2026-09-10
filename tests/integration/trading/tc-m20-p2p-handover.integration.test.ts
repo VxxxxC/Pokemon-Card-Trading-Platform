@@ -23,7 +23,7 @@ describe("TC-M20 P2P handover — contract", () => {
     const result = await confirmBuyerReceived(VALID_ORDER_UUID);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("請先登入後再確認收貨");
+      expect(result.error).toBe("請先登入");
     }
   });
 

@@ -31,7 +31,7 @@ export function getProfileHomePath(
 ): string {
   switch (role) {
     case "ADMIN":
-      return "/admin";
+      return "/admin/dashboard";
     case "GUEST":
       return "/auth";
     case "USER":
@@ -66,7 +66,7 @@ export function getRoleDefaultLandingPath(role: AuthRole): string {
     case "MERCHANT":
       return "/profile/merchant";
     case "ADMIN":
-      return "/admin";
+      return "/admin/dashboard";
     case "GUEST":
       return "/auth";
   }
@@ -106,7 +106,7 @@ function isAdminOrderDetailPath(pathname: string): boolean {
 }
 
 /** Public storefront profile (`/profile/{userId}`), not member/merchant dashboards. */
-function isPublicProfilePath(pathname: string): boolean {
+export function isPublicProfilePath(pathname: string): boolean {
   if (!pathname.startsWith("/profile/")) {
     return false;
   }

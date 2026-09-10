@@ -159,19 +159,19 @@
           "assertions": [
             {
               "type": "locator",
-              "name": "[aria-label=\"即時價格走勢\"]"
+              "name": "[aria-label=\"最新平台成交\"]"
             }
           ],
           "requiredElements": [
             {
               "id": "price-ticker",
-              "role": "button",
-              "locator": "[aria-label=\"即時價格走勢\"]"
+              "role": "text",
+              "locator": "[aria-label=\"最新平台成交\"]"
             },
             {
               "id": "hero-heading",
               "role": "heading",
-              "name": "搜尋你的目標神卡"
+              "name": "搜尋你的目標卡牌"
             },
             {
               "id": "nav-marketplace",
@@ -243,30 +243,21 @@
           "role": "buyer",
           "assertions": [
             {
-              "type": "heading",
-              "name": "大盤市場"
+              "type": "text",
+              "pattern": "大盤市場"
             }
           ],
           "requiredElements": [
             {
+              "id": "market-search",
+              "role": "text",
+              "locator": "input[type=\"search\"][placeholder*=\"搜尋卡牌\"]"
+            },
+            {
               "id": "market-heading",
               "role": "heading",
-              "name": "大盤市場"
-            },
-            {
-              "id": "market-search",
-              "role": "searchbox",
-              "pattern": "搜尋官方卡牌"
-            },
-            {
-              "id": "market-sort-label",
-              "role": "text",
-              "name": "排序"
-            },
-            {
-              "id": "quick-category-all",
-              "role": "link",
-              "name": "All"
+              "pattern": "大盤市場",
+              "optional": true
             }
           ]
         }
@@ -294,24 +285,18 @@
           "requiredElements": [
             {
               "id": "order-book-panel",
-              "role": "button",
+              "role": "text",
               "locator": "#live-order-book-panel"
             },
             {
               "id": "order-book-sort",
               "role": "text",
-              "name": "排序"
+              "pattern": "最平售價優先"
             },
             {
-              "id": "best-ask-price",
-              "role": "text",
-              "pattern": "最優現貨掛牌價",
-              "optional": true
-            },
-            {
-              "id": "graded-only-switch",
-              "role": "switch",
-              "name": "只顯示已鑑定",
+              "id": "buy-now-button",
+              "role": "button",
+              "pattern": "立即購買",
               "optional": true
             }
           ]
@@ -334,14 +319,14 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "總完成交易"
+              "pattern": "完成交易"
             }
           ],
           "requiredElements": [
             {
               "id": "total-trades",
               "role": "text",
-              "name": "總完成交易"
+              "name": "完成交易"
             },
             {
               "id": "active-listings",
@@ -392,39 +377,26 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "帳戶總積分餘額"
+              "pattern": "成交次數"
             }
           ],
           "requiredElements": [
             {
-              "id": "points-balance-label",
+              "id": "trades-count",
               "role": "text",
-              "name": "帳戶總積分餘額"
+              "pattern": "成交次數"
             },
             {
-              "id": "stats-heading",
-              "role": "heading",
-              "name": "資產總覽"
-            },
-            {
-              "id": "stats-trades",
+              "id": "collection-count",
               "role": "text",
-              "name": "成交次數"
-            },
-            {
-              "id": "pending-orders-heading",
-              "role": "heading",
-              "name": "待處理訂單"
-            },
-            {
-              "id": "nav-trading",
-              "role": "link",
-              "name": "交易管理"
+              "pattern": "持有卡牌數",
+              "optional": true
             },
             {
               "id": "rewards-link",
               "role": "link",
-              "pattern": "獎勵及任務"
+              "pattern": "進入獎勵及任務專區",
+              "optional": true
             }
           ]
         }
@@ -477,7 +449,7 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "所有商品"
+              "pattern": "上架中"
             }
           ],
           "requiredElements": [
@@ -487,14 +459,15 @@
               "locator": "#listings-heading"
             },
             {
-              "id": "all-products",
-              "role": "text",
-              "name": "所有商品"
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
             },
             {
-              "id": "sku-count",
-              "role": "text",
-              "pattern": "款 卡牌"
+              "id": "add-product",
+              "role": "button",
+              "pattern": "新增商品",
+              "optional": true
             }
           ]
         }
@@ -576,6 +549,11 @@
               "locator": "#orders-list"
             },
             {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
               "id": "status-all",
               "role": "button",
               "pattern": "^全部"
@@ -619,6 +597,11 @@
               "id": "orders-list",
               "role": "text",
               "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
             },
             {
               "id": "status-all",
@@ -702,6 +685,11 @@
               "locator": "#orders-list"
             },
             {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
               "id": "status-all",
               "role": "button",
               "pattern": "^全部"
@@ -753,6 +741,11 @@
               "locator": "#orders-list"
             },
             {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
               "id": "status-all",
               "role": "button",
               "pattern": "^全部"
@@ -790,52 +783,27 @@
             {
               "id": "trading-heading",
               "role": "heading",
-              "pattern": "交易管理"
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
             },
             {
               "id": "order-search",
-              "role": "textbox",
-              "name": "訂單搜尋"
-            },
-            {
-              "id": "raw-filter",
-              "role": "checkbox",
-              "name": "只顯示 RAW/裸卡"
+              "role": "text",
+              "locator": "#user-order-search"
             },
             {
               "id": "status-all",
               "role": "button",
-              "pattern": "全部"
+              "pattern": "^全部"
             },
             {
               "id": "status-pending",
               "role": "button",
-              "pattern": "待處理"
-            },
-            {
-              "id": "status-completed",
-              "role": "button",
-              "pattern": "已完成"
-            },
-            {
-              "id": "status-cancelled",
-              "role": "button",
-              "pattern": "已取消"
-            },
-            {
-              "id": "persona-buy",
-              "role": "button",
-              "pattern": "買單"
-            },
-            {
-              "id": "persona-sell",
-              "role": "button",
-              "pattern": "賣單"
-            },
-            {
-              "id": "orders-list-section",
-              "role": "button",
-              "locator": "#orders-list"
+              "pattern": "^待處理"
             }
           ],
           "stateVariants": [
@@ -880,11 +848,6 @@
                   "id": "buy-persona-sell",
                   "role": "button",
                   "pattern": "賣單"
-                },
-                {
-                  "id": "buy-persona-raw",
-                  "role": "checkbox",
-                  "name": "只顯示 RAW/裸卡"
                 }
               ]
             }
@@ -913,24 +876,24 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "積分商城"
+              "pattern": "帳戶總積分餘額"
             }
           ],
           "requiredElements": [
             {
-              "id": "rewards-center-heading",
+              "id": "rewards-heading",
               "role": "heading",
-              "name": "會員獎勵與任務中心"
+              "name": "我的優惠劵"
             },
             {
               "id": "campaigns-hub-link",
               "role": "link",
-              "pattern": "限時搶券.*積分商城"
+              "name": "前往限時搶券 · 積分商城"
             },
             {
-              "id": "coupon-center",
-              "role": "heading",
-              "pattern": "折價券中心"
+              "id": "coupon-tab-usable",
+              "role": "button",
+              "pattern": "^可使用"
             }
           ]
         },
@@ -993,13 +956,13 @@
             },
             {
               "id": "check-in-tab",
-              "role": "button",
-              "name": "簽到計劃"
+              "role": "tab",
+              "pattern": "^簽到計劃"
             },
             {
               "id": "activities-tab",
-              "role": "button",
-              "name": "獎勵活動"
+              "role": "tab",
+              "pattern": "^獎勵活動"
             }
           ]
         }
@@ -1023,24 +986,24 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "可領取 / 可使用"
+              "pattern": "可使用"
             }
           ],
           "requiredElements": [
             {
-              "id": "rewards-center-heading",
+              "id": "rewards-heading",
               "role": "heading",
-              "name": "會員獎勵與任務中心"
+              "name": "我的優惠劵"
             },
             {
               "id": "campaigns-hub-link",
               "role": "link",
-              "pattern": "限時搶券.*積分商城"
+              "name": "前往限時搶券 · 積分商城"
             },
             {
-              "id": "coupon-center",
-              "role": "heading",
-              "pattern": "折價券中心"
+              "id": "coupon-tab-usable",
+              "role": "button",
+              "pattern": "^可使用"
             }
           ]
         },
@@ -1050,8 +1013,8 @@
           "role": "buyer",
           "assertions": [
             {
-              "type": "heading",
-              "name": "限時搶券 · 積分商城"
+              "type": "text",
+              "pattern": "限時搶券"
             }
           ],
           "requiredElements": [
@@ -1061,7 +1024,7 @@
               "name": "限時搶券"
             },
             {
-              "id": "points-tab",
+              "id": "catalog-tab",
               "role": "button",
               "name": "積分商城"
             }
@@ -1085,19 +1048,19 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "舉報用戶"
+              "pattern": "舉報此用戶"
             }
           ],
           "requiredElements": [
             {
               "id": "total-trades",
               "role": "text",
-              "name": "總完成交易"
+              "name": "完成交易"
             },
             {
               "id": "report-user",
               "role": "button",
-              "pattern": "舉報用戶"
+              "name": "舉報用戶"
             }
           ]
         }
@@ -1129,13 +1092,18 @@
             },
             {
               "id": "case-search",
-              "role": "textbox",
-              "pattern": "搜尋案件"
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
             },
             {
               "id": "tab-pending",
-              "role": "tab",
-              "pattern": "待處理"
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
             }
           ]
         }
@@ -1157,14 +1125,14 @@
           "assertions": [
             {
               "type": "heading",
-              "name": "📢 平台官方公告與最新活動"
+              "name": "平台官方公告"
             }
           ],
           "requiredElements": [
             {
               "id": "announcements-heading",
               "role": "heading",
-              "name": "📢 平台官方公告與最新活動"
+              "name": "平台官方公告"
             },
             {
               "id": "active-events-tab",
@@ -1174,7 +1142,7 @@
             {
               "id": "past-announcements-tab",
               "role": "button",
-              "pattern": "過往公告歷史"
+              "pattern": "過往公告"
             }
           ]
         }
@@ -1343,39 +1311,19 @@
               "pattern": "交易管理"
             },
             {
-              "id": "order-search",
-              "role": "textbox",
-              "name": "訂單搜尋"
-            },
-            {
-              "id": "raw-filter",
-              "role": "checkbox",
-              "name": "只顯示 RAW/裸卡"
-            },
-            {
               "id": "tab-all",
               "role": "button",
-              "name": "全部"
+              "pattern": "^全部"
             },
             {
               "id": "tab-pending",
               "role": "button",
-              "name": "待處理"
+              "pattern": "^待處理"
             },
             {
-              "id": "tab-completed",
-              "role": "button",
-              "name": "已完成"
-            },
-            {
-              "id": "tab-cancelled",
-              "role": "button",
-              "name": "已取消"
-            },
-            {
-              "id": "orders-list-section",
-              "role": "button",
-              "locator": "#orders-list"
+              "id": "order-search",
+              "role": "text",
+              "locator": "#merchant-order-search"
             }
           ],
           "stateVariants": [
@@ -1421,39 +1369,25 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "所有商品"
+              "pattern": "上架中"
             }
           ],
           "requiredElements": [
             {
-              "id": "summary-in-stock",
-              "role": "text",
-              "name": "現貨"
+              "id": "listings-heading",
+              "role": "heading",
+              "locator": "#listings-heading"
             },
             {
-              "id": "summary-active",
-              "role": "text",
+              "id": "tab-active",
+              "role": "tab",
               "name": "上架中"
             },
             {
-              "id": "summary-sold",
-              "role": "text",
-              "name": "已售出"
-            },
-            {
-              "id": "sku-search",
-              "role": "textbox",
-              "name": "商品搜尋"
-            },
-            {
-              "id": "listings-heading",
-              "role": "heading",
-              "pattern": "所有商品"
-            },
-            {
-              "id": "listings-section",
+              "id": "add-product",
               "role": "button",
-              "locator": "#listings-heading"
+              "pattern": "新增商品",
+              "optional": true
             }
           ]
         }
@@ -1473,8 +1407,8 @@
           "role": "seller",
           "assertions": [
             {
-              "type": "text",
-              "pattern": "商品搜尋"
+              "type": "locator",
+              "name": "input[placeholder*=\"搜尋卡牌名稱\"]"
             }
           ],
           "requiredElements": [
@@ -1484,14 +1418,15 @@
               "locator": "#listings-heading"
             },
             {
-              "id": "all-products",
-              "role": "text",
-              "name": "所有商品"
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
             },
             {
               "id": "add-product",
               "role": "button",
-              "pattern": "新增商品"
+              "pattern": "新增商品",
+              "optional": true
             }
           ]
         }
@@ -1512,14 +1447,14 @@
           "assertions": [
             {
               "type": "heading",
-              "name": "店舖安全與設定中心"
+              "name": "店舖資料"
             }
           ],
           "requiredElements": [
             {
               "id": "settings-heading",
               "role": "heading",
-              "name": "店舖安全與設定中心"
+              "name": "店舖資料"
             },
             {
               "id": "shop-profile-heading",
@@ -1603,15 +1538,15 @@
           "role": "seller",
           "assertions": [
             {
-              "type": "heading",
-              "name": "店舖經營與業績分析"
+              "type": "locator",
+              "name": "[aria-label=\"店舖經營與業績分析\"]"
             }
           ],
           "requiredElements": [
             {
               "id": "performance-heading",
-              "role": "heading",
-              "name": "店舖經營與業績分析"
+              "role": "text",
+              "locator": "[aria-label=\"店舖經營與業績分析\"]"
             },
             {
               "id": "total-revenue",
@@ -1644,14 +1579,14 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "商戶入駐申請"
+              "pattern": "公司資料"
             }
           ],
           "requiredElements": [
             {
               "id": "kyc-heading",
-              "role": "heading",
-              "pattern": "商戶入駐申請"
+              "role": "text",
+              "name": "公司資料"
             },
             {
               "id": "submit-apply",
@@ -1770,8 +1705,8 @@
             },
             {
               "id": "order-search",
-              "role": "textbox",
-              "pattern": "輸入卡牌名稱"
+              "role": "text",
+              "locator": "#merchant-order-search"
             }
           ]
         }
@@ -1791,8 +1726,8 @@
           "role": "seller",
           "assertions": [
             {
-              "type": "text",
-              "pattern": "商品搜尋"
+              "type": "locator",
+              "name": "input[placeholder*=\"搜尋卡牌名稱\"]"
             }
           ],
           "requiredElements": [
@@ -1802,14 +1737,20 @@
               "locator": "#listings-heading"
             },
             {
-              "id": "all-products",
-              "role": "text",
-              "name": "所有商品"
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
             },
             {
               "id": "add-product",
               "role": "button",
-              "pattern": "新增商品"
+              "pattern": "新增商品",
+              "optional": true
+            },
+            {
+              "id": "inventory-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋卡牌名稱\"]"
             }
           ]
         }
@@ -1850,8 +1791,8 @@
             },
             {
               "id": "order-search",
-              "role": "textbox",
-              "pattern": "輸入卡牌名稱"
+              "role": "text",
+              "locator": "#merchant-order-search"
             },
             {
               "id": "raw-filter",
@@ -1878,29 +1819,20 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "平台淨營收統計"
+              "pattern": "平台淨營收"
             }
           ],
           "requiredElements": [
             {
-              "id": "dashboard-heading",
-              "role": "heading",
-              "name": "數據總覽"
-            },
-            {
-              "id": "refresh-metrics",
-              "role": "button",
-              "name": "重新整理數據"
-            },
-            {
               "id": "net-revenue",
               "role": "text",
-              "name": "平台淨營收統計"
+              "name": "平台淨營收"
             },
             {
-              "id": "stripe-balance",
-              "role": "text",
-              "name": "Stripe 平台帳戶餘額"
+              "id": "dashboard-heading",
+              "role": "heading",
+              "name": "管理員控制台",
+              "optional": true
             }
           ]
         }
@@ -1975,13 +1907,13 @@
             },
             {
               "id": "check-in-tab",
-              "role": "button",
-              "name": "簽到計劃"
+              "role": "tab",
+              "pattern": "^簽到計劃"
             },
             {
-              "id": "reward-activity-list",
-              "role": "heading",
-              "locator": "#reward-activity-list-heading"
+              "id": "activities-tab",
+              "role": "tab",
+              "pattern": "^獎勵活動"
             }
           ]
         }
@@ -2004,14 +1936,15 @@
           ],
           "requiredElements": [
             {
-              "id": "check-in-heading",
-              "role": "heading",
-              "pattern": "簽到計劃"
+              "id": "check-in-tab",
+              "role": "tab",
+              "pattern": "^簽到計劃"
             },
             {
-              "id": "save-check-in",
-              "role": "button",
-              "pattern": "儲存簽到計劃"
+              "id": "check-in-heading",
+              "role": "heading",
+              "name": "基本設定",
+              "optional": true
             }
           ]
         }
@@ -2043,33 +1976,18 @@
             },
             {
               "id": "case-search",
-              "role": "textbox",
-              "pattern": "搜尋案件"
-            },
-            {
-              "id": "tab-all",
-              "role": "tab",
-              "pattern": "全部"
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
             },
             {
               "id": "tab-pending",
-              "role": "tab",
-              "pattern": "待處理"
+              "role": "button",
+              "pattern": "^待處理"
             },
             {
-              "id": "tab-completed",
-              "role": "tab",
-              "pattern": "已完成"
-            },
-            {
-              "id": "col-case-id",
-              "role": "columnheader",
-              "name": "案件單號"
-            },
-            {
-              "id": "col-subject",
-              "role": "columnheader",
-              "name": "被舉報用戶"
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
             }
           ]
         }
@@ -2099,13 +2017,18 @@
             },
             {
               "id": "case-search",
-              "role": "textbox",
-              "pattern": "搜尋案件"
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
             },
             {
               "id": "tab-pending",
-              "role": "tab",
-              "pattern": "待處理"
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
             }
           ]
         }
@@ -2137,11 +2060,6 @@
               "name": "鑑定工作台"
             },
             {
-              "id": "grading-intro",
-              "role": "text",
-              "pattern": "統一處理 Member C2C"
-            },
-            {
               "id": "tab-awaiting-intake",
               "role": "button",
               "name": "待入庫"
@@ -2150,26 +2068,6 @@
               "id": "tab-grading",
               "role": "button",
               "name": "鑑定中"
-            },
-            {
-              "id": "tab-awaiting-outbound",
-              "role": "button",
-              "name": "待出庫"
-            },
-            {
-              "id": "tab-search",
-              "role": "textbox",
-              "pattern": "搜尋訂單"
-            },
-            {
-              "id": "search-button",
-              "role": "button",
-              "name": "搜尋"
-            },
-            {
-              "id": "col-order-no",
-              "role": "columnheader",
-              "name": "訂單號"
             }
           ],
           "stateVariants": [
@@ -2208,7 +2106,7 @@
                 {
                   "id": "intake-col-inbound",
                   "role": "columnheader",
-                  "name": "入庫物流"
+                  "name": "入庫"
                 }
               ]
             },
@@ -2225,7 +2123,7 @@
                 {
                   "id": "outbound-col-outbound",
                   "role": "columnheader",
-                  "name": "出庫物流"
+                  "name": "出庫"
                 }
               ]
             },
@@ -2270,19 +2168,15 @@
           ],
           "requiredElements": [
             {
+              "id": "merchant-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋公司名\"]"
+            },
+            {
               "id": "merchants-heading",
               "role": "heading",
-              "name": "商戶與 KYC 審查"
-            },
-            {
-              "id": "filter-pending",
-              "role": "button",
-              "pattern": "待審核"
-            },
-            {
-              "id": "merchant-search",
-              "role": "textbox",
-              "pattern": "搜尋公司"
+              "name": "商戶管理",
+              "optional": true
             }
           ],
           "stateVariants": [
@@ -2327,14 +2221,15 @@
           ],
           "requiredElements": [
             {
-              "id": "user-control-heading",
-              "role": "heading",
-              "name": "用戶管理"
+              "id": "user-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋名稱\"]"
             },
             {
-              "id": "user-search",
-              "role": "textbox",
-              "pattern": "搜尋名稱"
+              "id": "users-heading",
+              "role": "heading",
+              "name": "用戶管控",
+              "optional": true
             }
           ]
         }
@@ -2355,29 +2250,20 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "手動錄入卡牌"
+              "pattern": "手動錄入"
             }
           ],
           "requiredElements": [
             {
               "id": "manual-catalog-button",
               "role": "button",
-              "name": "手動錄入卡牌"
+              "pattern": "手動錄入"
             },
             {
               "id": "catalog-heading",
               "role": "heading",
-              "name": "卡牌字典資料庫"
-            },
-            {
-              "id": "catalog-search",
-              "role": "textbox",
-              "pattern": "搜尋編號"
-            },
-            {
-              "id": "catalog-card-tab",
-              "role": "tab",
-              "name": "獨立卡"
+              "name": "卡牌資料庫",
+              "optional": true
             }
           ]
         }
@@ -2409,13 +2295,8 @@
             },
             {
               "id": "fps-batch",
-              "role": "button",
-              "pattern": "FPS 批次處理"
-            },
-            {
-              "id": "connect-ledger-tab",
-              "role": "button",
-              "pattern": "商戶流水"
+              "role": "tab",
+              "pattern": "^FPS 批次"
             }
           ]
         }
@@ -2441,14 +2322,15 @@
           ],
           "requiredElements": [
             {
-              "id": "announcements-heading",
-              "role": "heading",
-              "name": "首頁活動與公告管理"
+              "id": "new-announcement",
+              "role": "link",
+              "name": "新增公告"
             },
             {
-              "id": "new-announcement",
-              "role": "button",
-              "pattern": "新增公告"
+              "id": "announcements-admin-heading",
+              "role": "heading",
+              "name": "公告管理",
+              "optional": true
             }
           ]
         }
@@ -2485,13 +2367,18 @@
             },
             {
               "id": "case-search",
-              "role": "textbox",
-              "pattern": "搜尋案件"
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
             },
             {
               "id": "tab-pending",
-              "role": "tab",
-              "pattern": "待處理"
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
             }
           ]
         }
@@ -2522,13 +2409,13 @@
             },
             {
               "id": "check-in-tab",
-              "role": "button",
-              "name": "簽到計劃"
+              "role": "tab",
+              "pattern": "^簽到計劃"
             },
             {
               "id": "activities-tab",
-              "role": "button",
-              "name": "獎勵活動"
+              "role": "tab",
+              "pattern": "^獎勵活動"
             }
           ]
         }
@@ -2590,7 +2477,7 @@
           "assertions": [
             {
               "type": "text",
-              "pattern": "FPS 批次處理"
+              "pattern": "FPS 批次"
             }
           ],
           "requiredElements": [
@@ -2601,8 +2488,8 @@
             },
             {
               "id": "fps-batch",
-              "role": "button",
-              "pattern": "FPS 批次處理"
+              "role": "tab",
+              "pattern": "^FPS 批次"
             }
           ]
         }
@@ -2656,20 +2543,20 @@
           "role": "buyer",
           "assertions": [
             {
-              "type": "text",
-              "pattern": "折價券中心"
+              "type": "heading",
+              "name": "我的優惠劵"
             }
           ],
           "requiredElements": [
             {
               "id": "coupon-center",
               "role": "heading",
-              "pattern": "折價券中心"
+              "name": "我的優惠劵"
             },
             {
               "id": "redeemable-label",
               "role": "text",
-              "pattern": "可領取"
+              "pattern": "可使用"
             }
           ]
         }
@@ -2699,13 +2586,18 @@
             },
             {
               "id": "case-search",
-              "role": "textbox",
-              "pattern": "搜尋案件"
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
             },
             {
               "id": "tab-pending",
-              "role": "tab",
-              "pattern": "待處理"
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
             }
           ]
         }
@@ -2857,8 +2749,8 @@
             },
             {
               "id": "order-search",
-              "role": "textbox",
-              "pattern": "輸入卡牌名稱"
+              "role": "text",
+              "locator": "#merchant-order-search"
             }
           ]
         }

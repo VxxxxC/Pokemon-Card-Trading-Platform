@@ -6,6 +6,11 @@ import {
   hasCoreMerchantFixtures,
 } from "./fixtures/test-data";
 import { resolveE2eMarketplaceFixture } from "./fixtures/supabase-admin";
+import {
+  expectMerchantProductDetailLoaded,
+  expectProductDetailBuyerFooter,
+  productDetailGuestBuyLink,
+} from "./helpers/marketplace-contract";
 import { dismissBlockingOverlays } from "./helpers/overlays";
 
 test.use({ viewport: { width: 1280, height: 900 } });
@@ -31,26 +36,9 @@ test.describe("Member auth redirect and settings", () => {
 
     await page.goto(detailPath, { waitUntil: "domcontentloaded" });
     await dismissBlockingOverlays(page);
-    await expect(page.locator("main h1")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("店主獨立出讓一口價")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByRole("button", { name: /立即購買/ }).click();
-
-    await expect(page.getByText("登入後方可交易")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(
-      page.getByText("請先登入會員以活化平台第三方雙向鑑定與託管出價機制。"),
-    ).toBeVisible();
-    const loginLink = page.getByRole("alertdialog").getByText("登入 / 註冊");
-    await expect(loginLink).toBeVisible();
-
-    const href = await loginLink.evaluate((el) => {
-      const anchor = el.closest("a");
-      return anchor?.getAttribute("href") ?? el.getAttribute("href");
-    });
-    expect(href).toContain("/auth?redirect=");
+    await expectMerchantProductDetailLoaded(page);
+    await productDetailGuestBuyLink(page).click();
+    await expect(page).toHaveURL(/\/auth\?redirect=/, { timeout: 15_000 });
 
     await page.goto("/auth", { waitUntil: "domcontentloaded" });
     await page.locator('input[name="email"]').fill(buyerEmail!);
@@ -63,13 +51,7 @@ test.describe("Member auth redirect and settings", () => {
 
     await page.goto(detailPath, { waitUntil: "domcontentloaded" });
     await dismissBlockingOverlays(page);
-    await page.getByRole("button", { name: /立即購買/ }).click();
-    await expect(page.getByText("登入後方可交易")).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "確認立即購買" }),
-    ).toBeVisible({
-      timeout: 15_000,
-    });
+    await expectProductDetailBuyerFooter(page);
   });
 
   test("buyer can update profile settings", async ({ page }, testInfo) => {

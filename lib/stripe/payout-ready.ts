@@ -22,3 +22,44 @@ export function isMerchantPayoutReady(
     kyc.stripe_payouts_enabled === true
   );
 }
+
+type MerchantVerificationRpcClient = {
+  rpc(
+    fn: "fn_get_merchant_public_verification",
+    args: { p_merchant_id: string },
+  ): Promise<{ data: unknown; error: { message: string } | null }>;
+};
+
+/** Buyer-safe payout gate after DB-H-01 removed direct kyc_records SELECT for non-owners. */
+export async function resolveMerchantPayoutReadyForClient(
+  supabase: unknown,
+  merchantId: string,
+): Promise<boolean> {
+  const trimmedMerchantId = merchantId.trim();
+  if (!trimmedMerchantId) {
+    return false;
+  }
+
+  const { data, error } = await (
+    supabase as unknown as MerchantVerificationRpcClient
+  ).rpc("fn_get_merchant_public_verification", {
+    p_merchant_id: trimmedMerchantId,
+  });
+
+  if (error) {
+    console.error("[resolveMerchantPayoutReadyForClient]", error.message);
+    return false;
+  }
+
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  const payload = data as Record<string, unknown>;
+  return isMerchantPayoutReady({
+    kyc_status: payload.kyc_status as MerchantKycPayoutFlags["kyc_status"],
+    stripe_account_id: null,
+    stripe_charges_enabled: payload.stripe_charges_enabled === true,
+    stripe_payouts_enabled: payload.stripe_payouts_enabled === true,
+  });
+}

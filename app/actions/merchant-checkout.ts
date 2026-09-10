@@ -25,9 +25,10 @@ import {
   MERCHANT_CHECKOUT_PAYMENT_METHOD_TYPES,
 } from "@/lib/payments/escrow-payment-intent";
 import { getStripeClient, getStripePublishableKey } from "@/lib/stripe/env";
-import { isMerchantPayoutReady } from "@/lib/stripe/payout-ready";
+import { resolveMerchantPayoutReadyForClient } from "@/lib/stripe/payout-ready";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Tables } from "@/types/supabase";
 
 type ActionResult<T> =
@@ -412,14 +413,11 @@ export async function loadMerchantCheckoutOrder(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再結帳" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const platformAuthFeeHkd = await fetchPlatformAuthFeeHkd();
 
@@ -591,14 +589,11 @@ export async function createMerchantOrderPaymentIntent(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再付款" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const rowResult = await loadCheckoutRow(
       supabase,
@@ -615,24 +610,11 @@ export async function createMerchantOrderPaymentIntent(
       return { success: false, error: "此訂單並非待付款狀態，無法重複付款" };
     }
 
-    // Fail-closed：商戶未完成 KYC / Stripe Connect 就緒前不可收款，否則無法撥款。
-    const { data: kyc, error: kycError } = await supabase
-      .from("kyc_records")
-      .select(
-        "kyc_status, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled",
-      )
-      .eq("merchant_id", row.merchant_id)
-      .maybeSingle();
-
-    if (kycError) {
-      console.error(
-        "[createMerchantOrderPaymentIntent] kyc lookup",
-        kycError.message,
-      );
-      return { success: false, error: "無法驗證商戶收款資格" };
-    }
-
-    if (!isMerchantPayoutReady(kyc)) {
+    const payoutReady = await resolveMerchantPayoutReadyForClient(
+      supabase,
+      row.merchant_id,
+    );
+    if (!payoutReady) {
       return {
         success: false,
         error: "此商戶尚未完成收款設定，暫時無法付款，請聯絡客服",
@@ -798,14 +780,11 @@ export async function getMerchantCheckoutPaymentStatus(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再查詢訂單" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const rowResult = await loadCheckoutRow(
       supabase,

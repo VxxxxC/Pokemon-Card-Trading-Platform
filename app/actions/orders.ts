@@ -1,5 +1,6 @@
 "use server";
 
+import type { User } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { revalidateHomeListingsCache } from "@/lib/home/revalidate-home-listings";
 import { resolveOfferCardDisplayImage } from "@/app/lib/chat/offerCardImage";
@@ -58,6 +59,7 @@ import {
 } from "@/lib/member-order/resolve-order-id";
 import { resolveMerchantOrderIdForMerchant, resolveMerchantOrderIdForBuyer } from "@/lib/merchant-order/resolve-order-id";
 import { isCurrentUserAdmin } from "@/lib/auth/require-admin";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getStripeClient } from "@/lib/stripe/env";
 import { getMerchantSellerActionFlags } from "@/app/lib/merchant-order/merchant-seller-actions";
@@ -143,6 +145,17 @@ function rejectInvalidRpcIdentity(
     return { success: false, error: "無法驗證登入狀態" };
   }
   return null;
+}
+
+async function requireActiveOrderMutationUser(): Promise<
+  | { ok: true; user: User; supabase: Awaited<ReturnType<typeof createClient>> }
+  | { ok: false; result: MemberOrderActionResult }
+> {
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { ok: false, result: { success: false, error: guard.error } };
+  }
+  return { ok: true, user: guard.user, supabase: guard.supabase };
 }
 
 function mapOrderRpcError(message: string): string {
@@ -2373,14 +2386,11 @@ export async function cancelMemberOrder(
     }
     const trimmedOrderId = orderId.trim();
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再取消訂單" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const invalidRpcIdentity = rejectInvalidRpcIdentity(
       trimmedOrderId,
@@ -2479,14 +2489,11 @@ export async function cancelMerchantAuthOrder(
     }
     const trimmedOrderId = orderId.trim();
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再取消訂單" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const invalidRpcIdentity = rejectInvalidRpcIdentity(
       trimmedOrderId,
@@ -2597,14 +2604,11 @@ export async function submitMerchantLogistics(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再操作" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const identityError = rejectInvalidRpcIdentity(trimmedOrderId, user.id);
     if (identityError) {
@@ -2672,14 +2676,11 @@ export async function submitMerchantDirectFulfillment(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再操作" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const identityError = rejectInvalidRpcIdentity(trimmedOrderId, user.id);
     if (identityError) {
@@ -2740,14 +2741,11 @@ export async function completeMerchantOrder(
     }
     const trimmedOrderId = orderId.trim();
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再確認完成" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const identityError = rejectInvalidRpcIdentity(trimmedOrderId, user.id);
     if (identityError) {
@@ -2828,14 +2826,11 @@ export async function completeMemberOrder(
     }
     const trimmedOrderId = orderId.trim();
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再確認完成" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     logMemberOrderMutation("completeMemberOrder", {
       phase: "mutation_input",
@@ -2992,14 +2987,11 @@ export async function submitInboundTracking(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再提交" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const resolved = await resolveMemberOrderIdForUser(
       supabase,
@@ -3057,14 +3049,11 @@ export async function confirmBuyerReceived(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再確認收貨" };
+    const auth = await requireActiveOrderMutationUser();
+    if (!auth.ok) {
+      return auth.result;
     }
+    const { user, supabase } = auth;
 
     const resolved = await resolveMemberOrderIdForUser(
       supabase,

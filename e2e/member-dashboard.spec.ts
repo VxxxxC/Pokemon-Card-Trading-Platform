@@ -32,7 +32,7 @@ test.describe("Member dashboard and rewards", () => {
     await page.goto("/profile/user", { waitUntil: "domcontentloaded" });
     await dismissBlockingOverlays(page);
 
-    await expect(page.getByText("帳戶總積分餘額")).toBeVisible({
+    await expect(page.getByRole("heading", { name: "資產總覽" })).toBeVisible({
       timeout: 20_000,
     });
     await expect(

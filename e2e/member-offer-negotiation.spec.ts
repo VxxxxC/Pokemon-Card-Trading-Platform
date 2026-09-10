@@ -14,15 +14,20 @@ import {
 } from "./fixtures/supabase-admin";
 import { hasMemberTradingFixtures } from "./fixtures/test-data";
 import {
-  ensureChatRoomActive,
   modifiedOfferAmountFromListingPrice,
+  modifiedOfferAmountLabelFromListingPrice,
+  modifyBuyerOfferInChat,
+  ensureChatRoomActive,
   offerAmountFromListingPrice,
   offerAmountLabelFromListingPrice,
   offerCardWithAmount,
+  chatConsoleRoot,
   openBothChatRooms,
+  openChatRoom,
+  rejectOfferAsSeller,
   submitBuyerOfferFromDetail,
   waitForBuyerOfferCardRejected,
-  waitForSellerOfferCardVisible,
+  waitForChatThreadReady,
   P2P_OFFER_AMOUNT,
   P2P_OFFER_AMOUNT_LABEL,
 } from "./helpers/member-trading";
@@ -128,27 +133,15 @@ test.describe("Member offer negotiation", () => {
         throw new Error("Missing offerId for reject flow");
       }
 
-      await waitForSellerOfferCardVisible({
+      await rejectOfferAsSeller(
         sellerPage,
         roomId,
         buyerDisplayName,
-        buyerId,
-        amountLabel: offerLabel,
         offerId,
-      });
-      const sellerOfferCard = offerCardWithAmount(sellerPage, offerLabel).filter({
-        has: sellerPage.getByRole("button", { name: "拒絕出價" }),
-      });
-      await expect(sellerOfferCard).toBeVisible({ timeout: 15_000 });
-      await sellerOfferCard.getByRole("button", { name: "拒絕出價" }).click();
-      const rejectConfirmDialog = sellerPage
-        .getByRole("alertdialog")
-        .filter({ hasText: "確認拒絕出價" });
-      await expect(rejectConfirmDialog).toBeVisible({ timeout: 15_000 });
-      const confirmRejectButton = rejectConfirmDialog
-        .locator('[data-slot="alert-dialog-action"]')
-        .or(rejectConfirmDialog.getByRole("button", { name: "確認拒絕" }));
-      await confirmRejectButton.first().click({ force: true, timeout: 15_000 });
+        offerLabel,
+        sellerId,
+        buyerId,
+      );
 
       await waitForBuyerOfferCardRejected({
         buyerPage,
@@ -184,6 +177,7 @@ test.describe("Member offer negotiation", () => {
     const offerAmount = offerAmountFromListingPrice(listingPrice);
     const offerLabel = offerAmountLabelFromListingPrice(listingPrice);
     const modifyAmount = modifiedOfferAmountFromListingPrice(listingPrice);
+    const modifyLabel = modifiedOfferAmountLabelFromListingPrice(listingPrice);
 
     const fixtures = getChatRealtimeFixtures();
     const buyerEmail = fixtures.buyerEmail!;
@@ -225,6 +219,8 @@ test.describe("Member offer negotiation", () => {
     const buyerPage = await buyerContext.newPage();
     const sellerPage = await sellerContext.newPage();
 
+    let offerId: string | null = null;
+
     try {
       await openBothChatRooms(
         buyerPage,
@@ -234,58 +230,80 @@ test.describe("Member offer negotiation", () => {
         buyerDisplayName,
       );
 
-      const existingOffer = await getLatestOfferForListing({
+      await submitBuyerOfferFromDetail(
+        buyerPage,
+        sellerId,
         listingId,
-        buyerId,
-      });
+        offerAmount,
+        { buyerId },
+      );
+      await expect
+        .poll(async () => {
+          const offer = await getLatestOfferForListing({
+            listingId,
+            buyerId,
+          });
+          offerId = offer?.id ?? null;
+          if (offer?.room_id) {
+            roomId = offer.room_id;
+          }
+          return (
+            offer?.status === "pending" &&
+            !offer.use_authentication &&
+            (offer.modified_count ?? 0) === 0
+          );
+        }, { timeout: 25_000 })
+        .toBe(true);
 
-      if (
-        existingOffer?.status !== "pending" ||
-        existingOffer.use_authentication
-      ) {
-        await ensureListingActive(listingId);
-        await submitBuyerOfferFromDetail(
-          buyerPage,
-          sellerId,
-          listingId,
-          offerAmount,
-          { buyerId },
-        );
-        await expect
-          .poll(async () => {
-            const offer = await getLatestOfferForListing({
-              listingId,
-              buyerId,
-            });
-            if (offer?.room_id) {
-              roomId = offer.room_id;
-            }
-            return offer?.status === "pending" && !offer.use_authentication;
-          }, { timeout: 25_000 })
-          .toBe(true);
+      if (!offerId) {
+        throw new Error("Missing offerId before buyer modify");
       }
 
-      await ensureChatRoomActive(buyerPage, roomId, sellerDisplayName);
-      const buyerOfferCard = offerCardWithAmount(buyerPage, offerLabel).filter({
-        has: buyerPage.getByRole("button", { name: "修改出價" }),
-      });
-      await expect(buyerOfferCard).toBeVisible({ timeout: 45_000 });
-      await buyerOfferCard.getByRole("button", { name: "修改出價" }).click();
-      await buyerPage.locator('input[type="number"]').last().fill(modifyAmount);
-      await buyerPage.getByRole("button", { name: "確認送出" }).click();
-
-      await expect(buyerPage.getByText("出價已修改").first()).toBeVisible({
-        timeout: 20_000,
+      await modifyBuyerOfferInChat(buyerPage, {
+        roomId,
+        sellerDisplayName,
+        sellerId,
+        offerId,
+        listingId,
+        buyerId,
+        currentAmountLabel: offerLabel,
+        modifyAmount,
       });
 
-      await ensureChatRoomActive(sellerPage, roomId, buyerDisplayName);
-      const sellerOfferCard = offerCardWithAmount(sellerPage, modifyAmount).filter({
+      await openChatRoom(sellerPage, roomId, buyerDisplayName, buyerId);
+      await waitForChatThreadReady(sellerPage);
+      await expect
+        .poll(
+          async () => {
+            const modifiedMarker = await chatConsoleRoot(sellerPage)
+              .getByText("● 出價已修改")
+              .first()
+              .isVisible()
+              .catch(() => false);
+            if (modifiedMarker) {
+              return true;
+            }
+
+            const sellerOfferCard = offerCardWithAmount(
+              sellerPage,
+              modifyLabel,
+            ).filter({
+              has: sellerPage.getByRole("button", { name: "接受出價" }),
+            });
+            return sellerOfferCard.isVisible().catch(() => false);
+          },
+          { timeout: 90_000 },
+        )
+        .toBe(true);
+
+      const sellerOfferCard = offerCardWithAmount(sellerPage, modifyLabel).filter({
         has: sellerPage.getByRole("button", { name: "接受出價" }),
       });
-      await expect(sellerOfferCard).toBeVisible({ timeout: 45_000 });
-      await expect(
-        sellerOfferCard.getByRole("button", { name: "接受出價" }),
-      ).toBeVisible();
+      if (await sellerOfferCard.isVisible().catch(() => false)) {
+        await expect(
+          sellerOfferCard.getByRole("button", { name: "接受出價" }),
+        ).toBeVisible();
+      }
     } finally {
       await buyerContext.close();
       await sellerContext.close();

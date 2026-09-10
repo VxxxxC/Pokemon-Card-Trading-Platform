@@ -29,6 +29,7 @@ import {
   waitForCheckoutCouponPicker,
   waitForMerchantDirectCheckoutReady,
 } from "./helpers/rewards-checkout-coupon";
+import { loginAsAdmin } from "./helpers/admin-auth";
 
 function readEnv(key: string): string | undefined {
   return process.env[key]?.trim() || undefined;
@@ -45,22 +46,6 @@ function hasRewardsCheckoutE2eEnv(): boolean {
     hasCoreMerchantFixtures() &&
     Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
   );
-}
-
-async function loginAsAdmin(page: Page): Promise<void> {
-  const email = readEnv("E2E_ADMIN_EMAIL");
-  const password = readEnv("E2E_ADMIN_PASSWORD");
-  if (!email || !password) {
-    throw new Error("Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
-  }
-
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), {
-    timeout: 30_000,
-  });
 }
 
 async function seedFreeShippingTemplateIfMissing(

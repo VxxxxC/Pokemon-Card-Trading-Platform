@@ -4,16 +4,11 @@ import {
   getMerchantProductDetailFixtures,
   hasPublicProfileFixtures,
 } from "./fixtures/test-data";
+import { publicProfileRatingLink } from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(120_000);
-
-async function dismissBlockingOverlays(page: import("@playwright/test").Page) {
-  const pwaClose = page.getByRole("button", { name: "✕" }).first();
-  if (await pwaClose.isVisible().catch(() => false)) {
-    await pwaClose.click();
-  }
-}
 
 test.describe("Public rating list page", () => {
   test("guest sees rating list with sort controls", async ({ page }, testInfo) => {
@@ -50,7 +45,7 @@ test.describe("Public rating list page", () => {
     });
     await dismissBlockingOverlays(page);
 
-    const ratingLink = page.getByRole("link", { name: "查看更多評價 →" });
+    const ratingLink = publicProfileRatingLink(page);
     await expect(ratingLink).toBeVisible({ timeout: 20_000 });
     const ratingHref = await ratingLink.getAttribute("href");
     expect(ratingHref).toMatch(/\/rating/);

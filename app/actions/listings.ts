@@ -51,6 +51,7 @@ import { enqueueOfferExpiredEmailsForListing } from "@/lib/notifications/offer-e
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Tables, TablesInsert } from "@/types/supabase";
 
 type ListingRow = Pick<
@@ -332,14 +333,11 @@ export async function rollbackListingImages(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user } = auth;
 
     const allowedKeys = objectKeys.filter((key) =>
       isUserListingObjectKey(user.id, key),
@@ -482,14 +480,11 @@ export async function updateCardListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再更新商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: existingListing, error: fetchError } = await supabase
       .from("listings")
@@ -703,14 +698,11 @@ export async function createCardListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再上架商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -1023,14 +1015,11 @@ export async function createSealedListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再上架商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")

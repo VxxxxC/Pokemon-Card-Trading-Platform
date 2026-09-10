@@ -45,6 +45,8 @@ test.describe("Member auth password recovery smoke (F-M-02)", () => {
     await page.goto("/profile/user/settings", {
       waitUntil: "domcontentloaded",
     });
+    await expect(page).not.toHaveURL(/\/auth(?:\?|$)/, { timeout: 20_000 });
+    await expect(page.getByText("登入密碼")).toBeVisible({ timeout: 20_000 });
     const changePasswordLink = page.getByRole("link", { name: "更改" });
     await expect(changePasswordLink).toBeVisible({ timeout: 20_000 });
     await expect(changePasswordLink).toHaveAttribute("href", "/auth/reset-password");

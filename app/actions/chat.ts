@@ -15,6 +15,7 @@ import {
   type ChatPartnerPersona,
 } from "@/app/lib/chat/partnerRoomKey";
 import type { ChatRoom, Message } from "@/app/store/useHkCardVaultStore";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/supabase";
@@ -747,14 +748,11 @@ export async function sendMessage(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再發送訊息" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const rpcArgs: RpcSendChatMessageArgs = {
       p_room_id: trimmedRoomId,

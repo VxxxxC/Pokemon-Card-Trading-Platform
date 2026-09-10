@@ -63,6 +63,13 @@ describe("auth-grading-fail-void-saga", () => {
         }
         return Promise.resolve({ data: null, error: null });
       }),
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
+      }),
     };
 
     vi.mocked(createClient).mockResolvedValue(rpcClient as never);

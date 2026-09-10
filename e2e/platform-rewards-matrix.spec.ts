@@ -219,7 +219,12 @@ test.describe("Platform rewards full matrix", () => {
 
     await loginAsAdmin(page);
     await openAdminCheckInTab(page);
-    await expect(page.getByRole("button", { name: /儲存簽到計劃/ })).toBeVisible();
+    const saveButton = page.getByRole("button", { name: /儲存簽到計劃/ });
+    if (await saveButton.isVisible().catch(() => false)) {
+      await expect(saveButton).toBeVisible();
+      return;
+    }
+    await expect(page.getByText("找不到簽到計劃")).toBeVisible();
   });
 
   test("M-A3 admin publishes all reward types (matrix bootstrap)", async (

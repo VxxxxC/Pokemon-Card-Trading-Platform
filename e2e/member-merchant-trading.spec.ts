@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { hasMemberTradingFixtures } from "./fixtures/test-data";
+import { merchantTradingSearchInput } from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(120_000);
@@ -12,6 +14,7 @@ test.describe("Merchant trading dashboard", () => {
     }
 
     await page.goto("/profile/merchant", { waitUntil: "domcontentloaded" });
+    await dismissBlockingOverlays(page);
 
     await expect(
       page.getByRole("heading", { name: "待處理訂單" }),
@@ -29,6 +32,7 @@ test.describe("Merchant trading dashboard", () => {
     await page.goto("/profile/merchant/trading", {
       waitUntil: "domcontentloaded",
     });
+    await dismissBlockingOverlays(page);
 
     for (const label of ["全部", "待處理", "已完成", "已取消"]) {
       await expect(page.getByRole("button", { name: label }).first()).toBeVisible({
@@ -36,9 +40,7 @@ test.describe("Merchant trading dashboard", () => {
       });
     }
 
-    await expect(
-      page.getByPlaceholder("輸入卡牌名稱、卡號、交易對手姓名或訂單ID..."),
-    ).toBeVisible({
+    await expect(merchantTradingSearchInput(page)).toBeVisible({
       timeout: 15_000,
     });
   });

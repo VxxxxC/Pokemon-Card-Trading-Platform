@@ -3,16 +3,11 @@ import {
   getMerchantProductDetailFixtures,
   hasPublicProfileFixtures,
 } from "./fixtures/test-data";
+import { storefrontSearchInput } from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(120_000);
-
-async function dismissBlockingOverlays(page: import("@playwright/test").Page) {
-  const pwaClose = page.getByRole("button", { name: "✕" }).first();
-  if (await pwaClose.isVisible().catch(() => false)) {
-    await pwaClose.click();
-  }
-}
 
 test.describe("Marketplace seller storefront", () => {
   test("guest sees seller storefront shell and listing grid or empty state", async ({
@@ -29,9 +24,7 @@ test.describe("Marketplace seller storefront", () => {
     });
     await dismissBlockingOverlays(page);
 
-    await expect(
-      page.getByPlaceholder("搜尋此商戶櫥窗內官方卡牌名稱、編號..."),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(storefrontSearchInput(page)).toBeVisible({ timeout: 20_000 });
 
     const hasGrid = await page
       .locator("a[href*='/marketplace/']")

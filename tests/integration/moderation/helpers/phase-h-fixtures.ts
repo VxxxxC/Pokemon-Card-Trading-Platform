@@ -1,8 +1,8 @@
 import type { ReportCategorySlug } from "@/lib/moderation/category-config";
 import {
-  ensureMemberListingAcceptsAuthentication,
   findMemberListingForIntegration,
   findMerchantListingForIntegration,
+  seedMemberListingForIntegration,
 } from "../../rewards/helpers/checkout-fixture";
 import { createServiceRoleClient } from "../../shared/supabase-admin";
 import { MATRIX_PREFIX } from "./fixtures";
@@ -77,9 +77,18 @@ export async function seedMemberAuthRefundEligibleOrder(params: {
   suffix?: string;
 }): Promise<PhaseHMemberOrderSeed> {
   const admin = createServiceRoleClient();
-  const { listingId, sellerId } = await findMemberListingForIntegration({
-    excludeBuyerId: params.buyerId,
-  });
+  const envSellerId = process.env.E2E_SELLER_ID?.trim();
+  let sellerId =
+    envSellerId && envSellerId !== params.buyerId
+      ? envSellerId
+      : null;
+
+  if (!sellerId) {
+    const fixture = await findMemberListingForIntegration({
+      excludeBuyerId: params.buyerId,
+    });
+    sellerId = fixture.sellerId;
+  }
 
   if (sellerId === params.buyerId) {
     throw new Error(
@@ -87,7 +96,7 @@ export async function seedMemberAuthRefundEligibleOrder(params: {
     );
   }
 
-  await ensureMemberListingAcceptsAuthentication(listingId);
+  const listingId = await seedMemberListingForIntegration(sellerId);
 
   const { data: orderId, error: seedError } = await admin.rpc(
     "rpc_e2e_seed_member_auth_refund_eligible_order",

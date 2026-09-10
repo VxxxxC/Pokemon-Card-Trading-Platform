@@ -15,6 +15,8 @@ import {
   resetE2eListingTradingFixture,
 } from "./fixtures/supabase-admin";
 import {
+  acceptOfferAsSeller,
+  chatComposer,
   chatConsoleRoot,
   ensureChatRoomActive,
   offerAmountFromListingPrice,
@@ -22,6 +24,7 @@ import {
   offerCardWithAmount,
   openChatRoom,
   submitBuyerOfferFromDetail,
+  waitForAmlSystemWarningInChat,
   waitForBuyerOfferCardAccepted,
   waitForSellerOfferCardVisible,
 } from "./helpers/member-trading";
@@ -33,12 +36,6 @@ test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 900 } });
 
 test.setTimeout(300_000);
-
-function chatComposer(page: Page) {
-  return chatConsoleRoot(page)
-    .locator("form")
-    .filter({ has: page.getByRole("button", { name: "發送 ⚡" }) });
-}
 
 async function sendChatMessage(page: Page, text: string): Promise<void> {
   const composer = chatComposer(page);
@@ -135,19 +132,14 @@ test.describe("Global Chat realtime — dual browser journey", () => {
           "私下過數",
         );
         const warningRoomId = warningRow?.room_id ?? roomId;
-        await openChatRoom(buyerPage, warningRoomId, sellerDisplayName, sellerId);
-        await openChatRoom(sellerPage, warningRoomId, buyerDisplayName, buyerId);
+        roomId = warningRoomId;
 
-        const systemWarningBubble = (page: Page) =>
-          chatConsoleRoot(page)
-            .locator("span.font-mono")
-            .filter({ hasText: SENSITIVE_CHAT_MESSAGE });
+        await waitForAmlSystemWarningInChat(buyerPage, SENSITIVE_CHAT_MESSAGE);
 
-        await expect(systemWarningBubble(buyerPage).first()).toBeVisible({
-          timeout: 15_000,
-        });
-        await expect(systemWarningBubble(sellerPage).first()).toBeVisible({
-          timeout: 15_000,
+        await waitForAmlSystemWarningInChat(sellerPage, SENSITIVE_CHAT_MESSAGE, {
+          roomId: warningRoomId,
+          partnerName: buyerDisplayName,
+          partnerId: buyerId,
         });
 
         await expect(
@@ -156,14 +148,15 @@ test.describe("Global Chat realtime — dual browser journey", () => {
         await expect(
           chatConsoleRoot(sellerPage).getByText("🛡️ 安全聲明："),
         ).toBeVisible();
-
-        roomId = warningRoomId;
       });
 
       // ── Step 2: Realtime OfferCard (listing-derived amount) ────────────
       let offerId: string | null = null;
 
       await test.step("Step 2 — buyer submits offer; seller sees OfferCard", async () => {
+        await resetE2eListingTradingFixture({ listingId, buyerId, sellerId });
+        await ensureListingActive(listingId);
+
         await ensureChatRoomActive(
           sellerPage,
           roomId,
@@ -221,17 +214,17 @@ test.describe("Global Chat realtime — dual browser journey", () => {
           throw new Error("Step 2 did not capture offerId for accept flow");
         }
 
-        const sellerOfferCard = offerCardWithAmount(sellerPage, offerAmountLabel);
-        await sellerOfferCard.getByRole("button", { name: "接受出價" }).click();
-
-        const acceptConfirmDialog = sellerPage
-          .getByRole("alertdialog")
-          .filter({ hasText: "確認接受出價" });
-        await expect(acceptConfirmDialog).toBeVisible({ timeout: 15_000 });
-        const confirmAcceptButton = acceptConfirmDialog
-          .locator('[data-slot="alert-dialog-action"]')
-          .or(acceptConfirmDialog.getByRole("button", { name: "確認接受" }));
-        await confirmAcceptButton.first().click({ force: true, timeout: 15_000 });
+        await acceptOfferAsSeller(
+          sellerPage,
+          roomId,
+          buyerDisplayName,
+          offerId,
+          offerAmountLabel,
+          buyerPage,
+          sellerDisplayName,
+          sellerId,
+          buyerId,
+        );
 
         await waitForBuyerOfferCardAccepted({
           buyerPage,
@@ -253,6 +246,10 @@ test.describe("Global Chat realtime — dual browser journey", () => {
         ).toHaveCount(0);
       });
     } finally {
+      await resetE2eListingTradingFixture({ listingId, buyerId, sellerId }).catch(
+        () => undefined,
+      );
+      await ensureListingActive(listingId).catch(() => undefined);
       await buyerContext.close();
       await sellerContext.close();
     }

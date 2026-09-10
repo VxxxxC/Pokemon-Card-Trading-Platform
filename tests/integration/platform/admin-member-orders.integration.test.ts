@@ -3,6 +3,8 @@ import { confirmPlatformReceived } from "@/app/actions/admin-member-orders";
 import {
   clearSessionCache,
   getBuyerUserId,
+  runAsAdmin,
+  runAsBuyer,
   warmSession,
 } from "../shared/auth-context";
 import { createServiceRoleClient } from "../shared/supabase-admin";
@@ -14,11 +16,61 @@ import {
 import { hasRewardsIntegrationEnv } from "../rewards/helpers/env";
 
 describe("TC-M40 admin member orders — contract", () => {
-  it("confirmPlatformReceived rejects empty order id", async () => {
-    const result = await confirmPlatformReceived("  ");
+  it("confirmPlatformReceived rejects unauthenticated callers", async () => {
+    const result = await confirmPlatformReceived(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("找不到此訂單");
+      expect(result.error).toBe("請先登入");
+    }
+  });
+
+  it("confirmPlatformReceived rejects non-admin users", async () => {
+    if (!hasRewardsIntegrationEnv()) {
+      return;
+    }
+
+    await warmSession("buyer");
+    await runAsBuyer(async () => {
+      const result = await confirmPlatformReceived(
+        "00000000-0000-4000-8000-000000000001",
+      );
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("無管理員權限");
+      }
+    });
+  });
+
+  it("confirmPlatformReceived rejects empty order id for admin", async () => {
+    if (!hasRewardsIntegrationEnv()) {
+      return;
+    }
+
+    await warmSession("admin");
+    await runAsAdmin(async () => {
+      const result = await confirmPlatformReceived("  ");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("找不到此訂單");
+      }
+    });
+  });
+
+  it("confirmPlatformReceived is blocked when NODE_ENV is production", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const result = await confirmPlatformReceived(
+        "00000000-0000-4000-8000-000000000001",
+      );
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBe("此操作僅限開發環境使用");
+      }
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
     }
   });
 });
@@ -37,7 +89,7 @@ describe.skipIf(!hasRewardsIntegrationEnv())(
     });
 
     it("confirmPlatformReceived advances custody order to grading", async () => {
-      await warmSession("buyer");
+      await warmSession("admin");
       const buyerId = getBuyerUserId();
       const { listingId } = await findMemberListingForIntegration();
       await ensureMemberListingAcceptsAuthentication(listingId);
@@ -57,8 +109,10 @@ describe.skipIf(!hasRewardsIntegrationEnv())(
 
       expect(custodyError).toBeNull();
 
-      const result = await confirmPlatformReceived(orderId);
-      expect(result.success).toBe(true);
+      await runAsAdmin(async () => {
+        const result = await confirmPlatformReceived(orderId);
+        expect(result.success).toBe(true);
+      });
 
       const { data: orderRow, error: readError } = await admin
         .from("member_orders")

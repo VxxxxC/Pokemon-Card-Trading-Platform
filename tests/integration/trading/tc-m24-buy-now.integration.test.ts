@@ -25,7 +25,7 @@ describe("TC-M24 merchant buy-now — contract", () => {
     const result = await buyNowListing(FAKE_LISTING_UUID);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("請先登入後再購買");
+      expect(result.error).toBe("請先登入");
     }
   });
 });

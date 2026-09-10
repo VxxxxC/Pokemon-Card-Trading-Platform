@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 
 function readEnv(key: string): string | undefined {
   return process.env[key]?.trim() || undefined;
@@ -15,20 +15,29 @@ export async function loginAsAdmin(page: Page): Promise<void> {
     throw new Error("Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
   }
 
-  await page.goto("/admin/dashboard", { waitUntil: "domcontentloaded" });
-  const pathname = new URL(page.url()).pathname;
-  if (pathname.startsWith("/admin/")) {
-    return;
-  }
-
   await page.goto("/auth", { waitUntil: "domcontentloaded" });
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);
   await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), {
-    timeout: 20_000,
-  });
-  await expect(page).not.toHaveURL(/\/auth/);
+  await page.waitForURL(
+    (url) =>
+      url.pathname === "/admin" || url.pathname.startsWith("/admin/"),
+    { timeout: 30_000 },
+  );
+}
+
+export async function withAdminPage(
+  browser: Browser,
+  run: (page: Page) => Promise<void>,
+): Promise<void> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await loginAsAdmin(page);
+    await run(page);
+  } finally {
+    await context.close();
+  }
 }
 
 export async function gotoAdminPage(

@@ -7,6 +7,7 @@ import {
   resolveOfferCardDisplayImage,
 } from "@/app/lib/chat/offerCardImage";
 import { parseListingImageUrls } from "@/lib/listings/images";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { SELF_OFFER_ERROR_MESSAGE } from "@/lib/auth/dual-persona";
 import {
@@ -710,14 +711,11 @@ export async function makeOffer(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再出價" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const { data: listing, error: listingError } = await supabase
       .from("listings")
@@ -807,14 +805,11 @@ export async function acceptOffer(offerId: string): Promise<AcceptOfferResult> {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再接受出價" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const rpcArgs: RpcAcceptOfferArgs = {
       p_offer_id: trimmedOfferId,
@@ -910,14 +905,11 @@ export async function modifyOffer(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再修改出價" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const rpcArgs: RpcModifyOfferArgs = {
       p_offer_id: trimmedOfferId,
@@ -977,14 +969,11 @@ export async function rejectOffer(offerId: string): Promise<RejectOfferResult> {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再拒絕出價" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const rpcArgs: RpcRejectOfferArgs = {
       p_offer_id: trimmedOfferId,

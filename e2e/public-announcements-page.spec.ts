@@ -9,9 +9,9 @@ test.describe("Public announcements list smoke (F-M-24)", () => {
 
     await page.goto("/announcements", { waitUntil: "domcontentloaded" });
     await expect(
-      page.getByRole("heading", { name: "📢 平台官方公告與最新活動" }),
+      page.getByRole("heading", { name: "平台官方公告" }),
     ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /進行中活動/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /過往公告歷史/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /過往公告/ })).toBeVisible();
   });
 });

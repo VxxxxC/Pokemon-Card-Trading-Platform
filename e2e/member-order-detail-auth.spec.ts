@@ -163,7 +163,7 @@ test.describe("Member order detail — auth escrow", () => {
         )
         .not.toBe("payment");
       await expect(
-        buyerPage.getByRole("heading", { name: /交易成功設立|付款處理中/ }),
+        buyerPage.getByRole("heading", { name: /付款成功|付款處理中/ }),
       ).toBeVisible({ timeout: 20_000 });
     } finally {
       await buyerContext.close();

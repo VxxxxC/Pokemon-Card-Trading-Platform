@@ -76,7 +76,7 @@ export function ExecutionSlideOver({
 
   useEffect(() => {
     if (!isOpen) {
-      setIsHeaderCompact(false);
+      queueMicrotask(() => setIsHeaderCompact(false));
     }
   }, [isOpen]);
 
@@ -108,7 +108,7 @@ export function ExecutionSlideOver({
 
   useEffect(() => {
     if (detail?.useAuthentication === false) {
-      setUseAuthentication(false);
+      queueMicrotask(() => setUseAuthentication(false));
     }
   }, [detail?.useAuthentication]);
 

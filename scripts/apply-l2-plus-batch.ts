@@ -98,7 +98,7 @@ const BY_SURFACE: Record<string, object[]> = {
     },
   ],
   "public-profile": [
-    { id: "total-trades", role: "text", name: "總完成交易" },
+    { id: "total-trades", role: "text", name: "完成交易" },
     { id: "active-listings", role: "text", pattern: "上架中的商品" },
     { id: "report-user", role: "button", pattern: "舉報用戶", optional: true },
   ],
@@ -128,7 +128,7 @@ const BY_SURFACE: Record<string, object[]> = {
   "admin-campaigns-coupon": ADMIN_CAMPAIGNS_SHELL,
   rewards: REWARDS_SHELL,
   "report-profile": [
-    { id: "total-trades", role: "text", name: "總完成交易" },
+    { id: "total-trades", role: "text", name: "完成交易" },
     { id: "report-user", role: "button", pattern: "舉報用戶" },
   ],
   "disputes-inbox": DISPUTES_SHELL,

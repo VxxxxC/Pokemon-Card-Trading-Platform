@@ -12,10 +12,10 @@ import {
   type KycDocumentType,
 } from "@/lib/storage/kyc-documents";
 import { getOptionalAuthUser } from "@/lib/auth/session";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enqueueMerchantKycApplicationSubmittedEmail } from "@/lib/notifications/merchant-onboarding-emails";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { createClient } from "@/lib/supabase/server";
 
 /**
  * Merchant KYC 申請 — member 端。
@@ -126,12 +126,12 @@ export async function submitMerchantKycApplication(
     return { form: "未登入" };
   }
 
-  const user = await getOptionalAuthUser();
-  if (!user) {
-    return { form: "請先登入後再提交申請" };
+  const auth = await requireActiveAuthUser();
+  if (!auth.ok) {
+    return { form: auth.error };
   }
+  const { user, supabase } = auth;
 
-  const supabase = await createClient();
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("role")

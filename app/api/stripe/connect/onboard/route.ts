@@ -3,6 +3,7 @@ import { stripe } from "@/lib/stripe";
 import { createExpressAccountForKycApplication } from "@/lib/stripe/connect-kyc";
 import { isStripeConnectAccountId } from "@/lib/stripe/sync-kyc-connect-flags";
 import { getSiteUrl } from "@/lib/auth/site-url";
+import { requireActiveApiUser } from "@/lib/auth/require-active-api-user";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Tables } from "@/types/supabase";
@@ -21,15 +22,16 @@ export async function GET() {
     NextResponse.redirect(`${siteUrl}/profile/merchant?stripe=${reason}`);
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.redirect(`${siteUrl}/auth`);
+    const auth = await requireActiveApiUser();
+    if (!auth.ok) {
+      if (auth.status === 401) {
+        return NextResponse.redirect(`${siteUrl}/auth`);
+      }
+      return fallback("restricted");
     }
+    const { user } = auth;
 
+    const supabase = await createClient();
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")

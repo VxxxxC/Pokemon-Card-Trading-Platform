@@ -24,6 +24,7 @@ import {
   resolveEffectiveCheckInStreak,
 } from "@/lib/rewards/check-in-streak";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { enqueuePointsRedemptionGrantedEmail } from "@/lib/notifications/rewards-emails";
 
 type GamificationStatsResult =
@@ -169,14 +170,11 @@ export async function executeDailyCheckIn(): Promise<DailyCheckInResult> {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再簽到" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { supabase } = auth;
 
     const { data, error } = await (
       supabase as unknown as {
@@ -317,14 +315,11 @@ export async function acknowledgeRewardGrants(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { supabase } = auth;
 
     const { data, error } = await (
       supabase as unknown as {
@@ -364,14 +359,11 @@ export async function grantPointsFromTemplate(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const { data, error } = await (
       supabase as unknown as {
@@ -420,14 +412,11 @@ export async function syncAutoGrantRewards(): Promise<void> {
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
       return;
     }
+    const { supabase } = auth;
 
     await (
       supabase as unknown as {
@@ -643,14 +632,11 @@ export async function redeemPointsCatalogItem(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user, supabase } = auth;
 
     const { data, error } = await (
       supabase as unknown as {

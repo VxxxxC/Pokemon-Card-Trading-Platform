@@ -51,5 +51,8 @@ describe("isPathAllowedForRole", () => {
   it("blocks non-admin users from admin routes", () => {
     expect(isPathAllowedForRole("USER", "/admin/dashboard")).toBe(false);
     expect(isPathAllowedForRole("MERCHANT", "/admin/dashboard")).toBe(false);
+    expect(isPathAllowedForRole("USER", "/admin/settings")).toBe(false);
+    expect(isPathAllowedForRole("USER", "/admin/catalog")).toBe(false);
+    expect(isPathAllowedForRole("USER", "/admin/announcements")).toBe(false);
   });
 });

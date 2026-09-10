@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUser = vi.hoisted(() => vi.fn());
+const rpc = vi.hoisted(() => vi.fn());
 const profileMaybeSingle = vi.hoisted(() => vi.fn());
 const pendingCount = vi.hoisted(() => vi.fn());
 const uploadEvidence = vi.hoisted(() => vi.fn());
@@ -11,6 +12,7 @@ const uploadKycDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser },
+    rpc,
     from: (table: string) => {
       if (table === "profiles") {
         return {
@@ -74,6 +76,7 @@ describe("TC-M31 upload routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getUser.mockResolvedValue({ data: { user: null } });
+    rpc.mockResolvedValue({ data: { blocked: false }, error: null });
     profileMaybeSingle.mockResolvedValue({ data: { role: "merchant" }, error: null });
     pendingCount.mockResolvedValue({ count: 0, error: null });
   });

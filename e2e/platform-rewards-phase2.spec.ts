@@ -15,6 +15,7 @@ import {
   reactivateListingForE2e,
   setListingAuthenticationForE2e,
 } from "./helpers/platform-rewards";
+import { loginAsAdmin } from "./helpers/admin-auth";
 import { getProfileIdByEmail } from "./fixtures/supabase-admin";
 import {
   getMerchantProductDetailFixtures,
@@ -39,25 +40,6 @@ function readEnv(key: string): string | undefined {
 
 function hasAdminAuthFixtures(): boolean {
   return Boolean(readEnv("E2E_ADMIN_EMAIL") && readEnv("E2E_ADMIN_PASSWORD"));
-}
-
-async function loginAsAdmin(page: Page): Promise<void> {
-  const email = readEnv("E2E_ADMIN_EMAIL");
-  const password = readEnv("E2E_ADMIN_PASSWORD");
-  if (!email || !password) {
-    throw new Error("Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
-  }
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/auth"), {
-    timeout: 30_000,
-  });
-  await page.goto("/admin/campaigns/new", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "新增獎勵活動" })).toBeVisible({
-    timeout: 20_000,
-  });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -371,12 +353,18 @@ test.describe("Platform rewards Phase 2 E2E", () => {
     await page.locator("#checkout-coupon").selectOption(rewardId);
     await page.waitForTimeout(1000);
 
-    const authSection = page.locator("section").filter({
-      hasText: "啟用鑑定服務",
-    });
+    const authSection = page
+      .getByRole("heading", { name: "平台鑑定服務" })
+      .locator("xpath=ancestor::section[1]");
     const authSwitch = authSection.getByRole("switch");
     await expect(authSwitch).toBeEnabled({ timeout: 10_000 });
-    await authSwitch.click();
+    if ((await authSwitch.getAttribute("aria-checked")) !== "true") {
+      await authSwitch.focus();
+      await page.keyboard.press("Space");
+    }
+    await expect(authSwitch).toHaveAttribute("aria-checked", "true", {
+      timeout: 10_000,
+    });
 
     await waitForCheckoutCouponClearedAfterAuthToggle(page);
   });

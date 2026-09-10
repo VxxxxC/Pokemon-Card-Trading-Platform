@@ -248,9 +248,9 @@ test.describe.serial("Member collection holdings mutations", () => {
     });
     const sellForm = sellPrefillModalForm(page);
     await expect(sellForm).toBeVisible({ timeout: 15_000 });
-    await sellForm.getByPlaceholder("一口價放售金額...").fill("17777");
+    await sellForm.getByRole("spinbutton", { name: /售價/ }).fill("17777");
     await uploadSellPrefillPhotos(page);
-    await page.getByRole("button", { name: "🚀 確認上架發售" }).click();
+    await sellForm.getByRole("button", { name: /確認上架發售/ }).click();
 
     await expect(sellForm).toBeHidden({ timeout: 120_000 });
 

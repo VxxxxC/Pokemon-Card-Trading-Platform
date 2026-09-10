@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getUser = vi.hoisted(() => vi.fn());
+const requireActiveApiUser = vi.hoisted(() => vi.fn());
 const profileMaybeSingle = vi.hoisted(() => vi.fn());
 const kycMaybeSingle = vi.hoisted(() => vi.fn());
 const kycApplicationMaybeSingle = vi.hoisted(() => vi.fn());
@@ -15,9 +15,12 @@ vi.mock("@/lib/auth/site-url", () => ({
   getSiteUrl: async () => "http://localhost:3000",
 }));
 
+vi.mock("@/lib/auth/require-active-api-user", () => ({
+  requireActiveApiUser,
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    auth: { getUser },
     from: (table: string) => {
       if (table === "profiles") {
         return {
@@ -100,7 +103,11 @@ import { GET as getConnectReturn } from "@/app/api/stripe/connect/return/route";
 describe("Stripe Connect HTTP routes (TC-M10)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getUser.mockResolvedValue({ data: { user: null } });
+    requireActiveApiUser.mockResolvedValue({
+      ok: false,
+      status: 401,
+      error: "Unauthorized",
+    });
     profileMaybeSingle.mockResolvedValue({ data: { role: "merchant" } });
     kycMaybeSingle.mockResolvedValue({
       data: {
@@ -126,8 +133,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("onboard redirects non-merchant users to /profile/user", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000001" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000001" },
     });
     profileMaybeSingle.mockResolvedValue({ data: { role: "member" } });
 
@@ -139,8 +147,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("onboard redirects merchant without approved KYC to finance fallback", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000002" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000002" },
     });
     kycMaybeSingle.mockResolvedValue({ data: { stripe_account_id: null } });
     kycApplicationMaybeSingle.mockResolvedValue({ data: null });
@@ -153,8 +162,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("onboard creates account link for payout-ready merchant", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000003" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000003" },
     });
 
     const response = await getConnectOnboard();
@@ -166,8 +176,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("dashboard redirects payout-ready merchant to Express login link", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000004" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000004" },
     });
 
     const response = await getConnectDashboard();
@@ -185,8 +196,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("return redirects non-merchant users with sync-error", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000005" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000005" },
     });
     profileMaybeSingle.mockResolvedValue({ data: { role: "member" } });
 
@@ -198,8 +210,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("return syncs Connect flags and redirects synced for merchant", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000006" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000006" },
     });
 
     const response = await getConnectReturn();
@@ -212,8 +225,9 @@ describe("Stripe Connect HTTP routes (TC-M10)", () => {
   });
 
   it("return redirects sync-error when Stripe sync fails", async () => {
-    getUser.mockResolvedValue({
-      data: { user: { id: "00000000-0000-4000-8000-000000000007" } },
+    requireActiveApiUser.mockResolvedValue({
+      ok: true,
+      user: { id: "00000000-0000-4000-8000-000000000007" },
     });
     syncKycConnectFlags.mockResolvedValue({ ok: false, error: "sync failed" });
 
