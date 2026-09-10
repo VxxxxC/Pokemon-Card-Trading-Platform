@@ -11,13 +11,13 @@ describe("getMerchantAuthSellerTimelineStepIndex", () => {
     ).toBe(5);
   });
 
-  it("returns completed step when transferred without hold", () => {
+  it("returns past final step when transferred and payout paid", () => {
     expect(
       getMerchantAuthSellerTimelineStepIndex(
         "completed_and_transferred",
         "paid",
       ),
-    ).toBe(4);
+    ).toBe(5);
   });
 
   it("returns authenticated step before buyer confirm", () => {

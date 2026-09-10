@@ -145,7 +145,12 @@ export function getMerchantDirectTimelineStepIndex(
   escrowStatus: MerchantAuthSellerEscrowStatus | null,
   payoutStatus?: string | null,
 ): number {
+  const steps = getMerchantDirectTimelineSteps(undefined, payoutStatus, "seller");
+
   if (escrowStatus === "completed_and_transferred") {
+    if (payoutStatus === "paid") {
+      return steps.length;
+    }
     return payoutStatus === "held" || payoutStatus === "processing" ? 4 : 3;
   }
   if (payoutStatus === "held" || payoutStatus === "processing") {
@@ -170,11 +175,13 @@ export function getMerchantDirectBuyerTimelineStepIndex(
   escrowStatus: MerchantAuthSellerEscrowStatus | null,
   payoutStatus?: string | null,
 ): number {
+  const steps = getMerchantDirectTimelineSteps(undefined, payoutStatus, "buyer");
+
   if (escrowStatus === "refunded") {
     return -1;
   }
   if (escrowStatus === "completed_and_transferred") {
-    return payoutStatus === "held" || payoutStatus === "processing" ? 4 : 3;
+    return steps.length;
   }
   if (payoutStatus === "held" || payoutStatus === "processing") {
     return 3;
@@ -223,9 +230,13 @@ export function getMerchantAuthSellerTimelineStepIndex(
   escrowStatus: MerchantAuthSellerEscrowStatus | null,
   payoutStatus?: string | null,
 ): number {
+  const steps = getMerchantAuthSellerTimelineSteps(payoutStatus);
   const held = payoutStatus === "held" || payoutStatus === "processing";
 
   if (escrowStatus === "completed_and_transferred") {
+    if (payoutStatus === "paid") {
+      return steps.length;
+    }
     return held ? 6 : 4;
   }
   if (held) {
