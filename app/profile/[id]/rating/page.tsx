@@ -25,6 +25,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  PUBLIC_PROFILE_BACK_CLASS,
+  PUBLIC_PROFILE_CARD_CLASS,
+  PUBLIC_PROFILE_MAIN_CLASS,
+  PUBLIC_PROFILE_SECTION_BODY_CLASS,
+} from "../public-profile-ui";
+import { PRODUCT_DETAIL_SECTION_TITLE_CLASS } from "@/app/marketplace/product/[id]/product-detail-ui";
 
 interface PublicRatingPageProps {
   params: Promise<{ id: string }>;
@@ -133,95 +140,96 @@ function PublicRatingPageContent({ params }: PublicRatingPageProps) {
       <TopNav />
       <MobileHeader />
 
-      <main className="mb-[5rem] flex-1 max-w-3xl mx-auto w-full px-4 py-6">
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            aria-label="返回上一頁"
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-card border border-white/5 transition-all cursor-pointer"
-          >
-            <IoChevronBack className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div
-          id="rating-list"
-          className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4"
+      <main className={PUBLIC_PROFILE_MAIN_CLASS}>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className={PUBLIC_PROFILE_BACK_CLASS}
         >
-          <div>
-            <h1 className="font-sans font-bold text-[22px] text-text-primary tracking-tight mb-3">
-              全量信用評價歷史
-            </h1>
-            <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-4 shadow-sm inline-block">
-              <p className="font-mono text-[13px] text-text-primary">
-                <span className="text-[18px] mr-1.5">⭐</span>
-                <span className="font-bold text-brand text-[20px]">
-                  {displayRating}
-                </span>
-                <span className="text-text-secondary mx-1.5">/ 5.0</span>
-                <span className="text-text-secondary">總體滿意度</span>
-                <span className="text-text-disabled ml-2 text-[11px]">
-                  (共計 {displayReviewCount} 筆真實認證評價)
+          <IoChevronBack className="size-3.5" />
+          返回
+        </button>
+
+        <div id="rating-list" className={PUBLIC_PROFILE_CARD_CLASS}>
+          <div
+            className={`${PUBLIC_PROFILE_SECTION_BODY_CLASS} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/[0.06]`}
+          >
+            <div className="min-w-0">
+              <h1 className={PRODUCT_DETAIL_SECTION_TITLE_CLASS}>
+                全量信用評價歷史
+              </h1>
+              <p className="font-mono text-[12px] text-[#d4c4b7] mt-1">
+                ⭐{" "}
+                <span className="text-brand font-bold">{displayRating}</span>
+                <span className="text-[#8A8680]">
+                  {" "}
+                  · {displayReviewCount} 則評價
                 </span>
               </p>
             </div>
+
+            <div className="shrink-0">
+              <Select value={sortKey} onValueChange={handleSortChange}>
+                <SelectTrigger className="w-44 h-9 bg-[#17130f] border-0 rounded-lg text-[#eae1da] text-[12px] focus:ring-0 focus:ring-offset-0 focus:border-brand/40">
+                  <SelectValue placeholder="選擇排序方式">
+                    {SORT_LABELS[sortKey]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da]">
+                  <SelectItem value="date-desc">📅 日期：最新 → 最舊</SelectItem>
+                  <SelectItem value="date-asc">⏳ 日期：最舊 → 最新</SelectItem>
+                  <SelectItem value="rating-desc">
+                    🔥 評分：最高 → 最低
+                  </SelectItem>
+                  <SelectItem value="rating-asc">❄️ 評分：最低 → 最高</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <div className="shrink-0">
-            <Select value={sortKey} onValueChange={handleSortChange}>
-              <SelectTrigger className="w-48 h-9 bg-[#26211C] border border-white/5 rounded-lg text-[#eae1da] text-[12px] focus:ring-0 focus:ring-offset-0 focus:border-brand/40">
-                <SelectValue placeholder="選擇排序方式">
-                  {SORT_LABELS[sortKey]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da]">
-                <SelectItem value="date-desc">📅 日期：最新 → 最舊</SelectItem>
-                <SelectItem value="date-asc">⏳ 日期：最舊 → 最新</SelectItem>
-                <SelectItem value="rating-desc">
-                  🔥 評分：最高 → 最低
-                </SelectItem>
-                <SelectItem value="rating-asc">❄️ 評分：最低 → 最高</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className={PUBLIC_PROFILE_SECTION_BODY_CLASS}>
+            {error ? (
+              <p className="font-sans text-[13px] text-warning mb-3">{error}</p>
+            ) : null}
+
+            {isLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {reviews.length === 0 ? (
+                  <p className="font-sans text-[13px] text-text-secondary text-center py-10">
+                    暫無公開評價紀錄
+                  </p>
+                ) : (
+                  reviews.map((review) => (
+                    <PublicReviewPreviewCard
+                      key={review.id}
+                      review={review}
+                      variant="embedded"
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {!isLoading && totalPages > 0 ? (
+              <Pagination
+                currentPage={safeCurrentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+                itemLabel="筆評價"
+                totalItems={totalCount}
+                itemsPerPage={itemsPerPage}
+                enableScroll={true}
+                scrollBlock="start"
+                scrollToViewId="rating-list"
+                className="mt-3"
+              />
+            ) : null}
           </div>
         </div>
-
-        {error ? (
-          <p className="font-sans text-[13px] text-warning mb-6">{error}</p>
-        ) : null}
-
-        {isLoading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
-          </div>
-        ) : (
-          <div className="space-y-3 mb-6">
-            {reviews.length === 0 ? (
-              <p className="font-sans text-[13px] text-text-secondary text-center py-12">
-                暫無公開評價紀錄
-              </p>
-            ) : (
-              reviews.map((review) => (
-                <PublicReviewPreviewCard key={review.id} review={review} />
-              ))
-            )}
-          </div>
-        )}
-
-        {!isLoading && totalPages > 0 ? (
-          <Pagination
-            currentPage={safeCurrentPage}
-            totalPages={totalPages}
-            onPageChange={handlePageChange}
-            itemLabel="筆評價"
-            totalItems={totalCount}
-            itemsPerPage={itemsPerPage}
-            enableScroll={true}
-            scrollBlock="start"
-            scrollToViewId="rating-list"
-          />
-        ) : null}
       </main>
 
       <BottomNav />

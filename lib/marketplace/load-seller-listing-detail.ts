@@ -1,5 +1,6 @@
 import type { MarketplaceProductDetail } from "@/app/lib/marketplace/types";
 import type { MarketplaceListing } from "@/app/components/marketplace/MarketplaceCard";
+import type { ReviewPersona } from "@/app/lib/reviews/types";
 import {
   loadMarketplaceSellerProfile,
   type MarketplaceSellerProfile,
@@ -126,13 +127,20 @@ export async function loadMarketplaceSellerListingDetail(
 ): Promise<Omit<MarketplaceSellerListingDetail, "catalog"> & {
   catalog?: MarketplaceProductDetail;
 } | null> {
-  const seller = await loadMarketplaceSellerProfile(sellerKey);
-  if (!seller) {
+  const sellerStub = await loadMarketplaceSellerProfile(sellerKey);
+  if (!sellerStub) {
     return null;
   }
 
-  const listingRow = await findSellerListing(seller.id, listingKey);
+  const listingRow = await findSellerListing(sellerStub.id, listingKey);
   if (!listingRow) {
+    return null;
+  }
+
+  const viewPersona: ReviewPersona =
+    listingRow.seller_persona === "merchant" ? "merchant" : "member";
+  const seller = await loadMarketplaceSellerProfile(sellerKey, viewPersona);
+  if (!seller) {
     return null;
   }
 
@@ -148,6 +156,7 @@ export async function loadMarketplaceSellerListingDetail(
     displayId: catalog.displayId,
     rarity: catalog.rarity,
     imageUrl: catalog.imageUrl,
+    catalogImageUrl: catalog.imageUrl,
     gradingCompany: listingRow.grading_company,
     gradingScore: listingRow.grading_score,
     price: Number(listingRow.price),

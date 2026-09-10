@@ -5,7 +5,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 // 📈 1. PriceTicker Running Marquee Skeleton
 export function PriceTickerSkeleton() {
   return (
-    <div className="w-full h-9 bg-[#26211C] border-b border-white/5 flex items-center justify-start gap-6 px-4 overflow-hidden select-none">
+    <div
+      className="w-full h-9 bg-[#26211C] border-b border-white/5 flex items-center justify-start gap-6 px-4 overflow-hidden select-none"
+      aria-label="最新平台成交"
+    >
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex items-center gap-3 shrink-0 min-w-[140px]">
           {/* Circular coin indicator */}
@@ -23,7 +26,7 @@ export function PriceTickerSkeleton() {
 // 📊 2. Product Detail 30-Day Historical Trend SVG Chart Skeleton
 export function MarketChartSkeleton() {
   return (
-    <div className="w-full lg:h-72 min-h-[120px] bg-[#26211C] border border-[rgba(237,232,224,0.08)] rounded-xl p-4 flex flex-col justify-between">
+    <div className="w-full min-h-[120px] bg-[#26211C] border border-[rgba(237,232,224,0.08)] rounded-xl p-3 flex flex-col justify-between">
       {/* Chart Top Metadata Bar */}
       <div className="flex justify-between items-center w-full">
         <Skeleton className="h-3.5 bg-[#17130f] w-1/4 rounded" />
@@ -51,7 +54,7 @@ export function MarketChartSkeleton() {
 // Product Detail market reference index card skeleton
 export function MarketIndexSkeleton() {
   return (
-    <div className="bg-[#26211C] p-5 rounded-2xl border border-white/5 shadow-md w-full">
+    <div className="bg-[#26211C] p-3 rounded-xl border border-[rgba(237,232,224,0.08)] w-full">
       <Skeleton className="h-2.5 bg-[#17130f] w-48 rounded mb-3" />
       <Skeleton className="h-9 bg-[#17130f] w-36 rounded mb-2" />
       <Skeleton className="h-2.5 bg-[#17130f] w-24 rounded" />

@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "id": "DC-CHECKOUT-MEMBER-AUTH-BREAKDOWN",
+      "featureIds": ["F-M-16", "F-M-19", "F-S-08"],
+      "partnerSpec": "e2e/partner/member/p-e08-c2c-auth-escrow.spec.ts",
+      "testPattern": "pending C2C auth checkout breakdown",
+      "kind": "auth_escrow_breakdown",
+      "critical": true,
+      "expected": {
+        "inboundShippingFeeHkd": 30,
+        "outboundShippingFeeHkd": 30,
+        "authFeeHkd": 150
+      }
+    },
+    {
+      "id": "DC-CHECKOUT-MERCHANT-AUTH-BREAKDOWN",
+      "featureIds": ["F-M-19", "F-S-08"],
+      "partnerSpec": "e2e/partner/member/p-e08b-merchant-auth-checkout-breakdown.spec.ts",
+      "testPattern": "merchant_auth checkout breakdown",
+      "kind": "auth_escrow_breakdown",
+      "critical": true,
+      "expected": {
+        "inboundShippingFeeHkd": 30,
+        "outboundShippingFeeHkd": 30,
+        "authFeeHkd": 150
+      }
+    },
+    {
+      "id": "DC-CHECKOUT-MERCHANT-DIRECT-AUTH-TOGGLE",
+      "featureIds": ["F-M-19", "F-S-08"],
+      "partnerSpec": "e2e/partner/member/p-e08c-merchant-direct-auth-breakdown.spec.ts",
+      "testPattern": "merchant_direct auth toggle",
+      "kind": "auth_escrow_breakdown",
+      "critical": true,
+      "expected": {
+        "inboundShippingFeeHkd": 30,
+        "outboundShippingFeeHkd": 30,
+        "authFeeHkd": 150
+      }
+    },
+    {
+      "id": "DC-CHECKOUT-MERCHANT-DIRECT-SF",
+      "featureIds": ["F-M-19", "F-S-08"],
+      "partnerSpec": "e2e/partner/member/p-e08d-merchant-direct-sf-breakdown.spec.ts",
+      "testPattern": "merchant_direct checkout shows courier shipping",
+      "kind": "auth_escrow_breakdown",
+      "critical": true
+    },
+    {
+      "id": "DC-CHECKOUT-COUPON-SUBSIDY",
+      "featureIds": ["F-M-19", "F-M-20"],
+      "partnerSpec": "e2e/partner/member/p-d03-checkout-coupon-subsidy.spec.ts",
+      "testPattern": "coupon updates platform subsidy",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-ORDER-DETAIL-INVOICE-FINANCIAL",
+      "featureIds": ["F-M-16", "F-M-17", "F-S-06"],
+      "partnerSpec": "e2e/partner/member/p-d01-member-auth-invoice-financial.spec.ts",
+      "testPattern": "seller invoice financial rows",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-ORDER-DETAIL-INVOICE-BUYER",
+      "featureIds": ["F-M-17", "F-S-06"],
+      "partnerSpec": "e2e/partner/member/p-d01b-member-auth-invoice-buyer.spec.ts",
+      "testPattern": "buyer invoice financial rows",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-ORDER-DETAIL-B2C-INVOICE",
+      "featureIds": ["F-M-17", "F-M-19"],
+      "partnerSpec": "e2e/partner/member/p-d04-merchant-b2c-invoice-financial.spec.ts",
+      "testPattern": "buyer B2C invoice rows",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-TRADING-LIST-ORDER-AMOUNT",
+      "featureIds": ["F-M-18", "F-M-16"],
+      "partnerSpec": "e2e/partner/member/p-d02-trading-list-order-amount.spec.ts",
+      "testPattern": "pending auth row amount",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-MERCHANT-FINANCE-SETTLEMENT",
+      "featureIds": ["F-C-06"],
+      "partnerSpec": "e2e/partner/merchant/p-f04b-merchant-finance-settlement-amount.spec.ts",
+      "testPattern": "finance settlement row amount",
+      "kind": "order_financial",
+      "critical": true
+    },
+    {
+      "id": "DC-CHECKOUT-PRICING-UNIT",
+      "featureIds": ["F-M-19", "F-M-20"],
+      "unitSpec": "tests/unit/lib/checkout/compute-pricing.test.ts",
+      "kind": "pricing_logic",
+      "critical": true
+    }
+  ]
+}

@@ -1,20 +1,20 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import {
   buildMerchantProductDetailPath,
   getMerchantProductDetailFixtures,
   hasBuyerAuthFixtures,
   hasCoreMerchantFixtures,
 } from "./fixtures/test-data";
+import { resolveE2eMarketplaceFixture } from "./fixtures/supabase-admin";
+import {
+  expectMerchantProductDetailLoaded,
+  expectProductDetailBuyerFooter,
+  productDetailGuestBuyLink,
+} from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(120_000);
-
-async function dismissBlockingOverlays(page: Page): Promise<void> {
-  const pwaClose = page.getByRole("button", { name: "✕" }).first();
-  if (await pwaClose.isVisible().catch(() => false)) {
-    await pwaClose.click();
-  }
-}
 
 test.describe("Member auth redirect and settings", () => {
   test("guest buy lock redirects to auth and returns after login", async ({
@@ -25,29 +25,20 @@ test.describe("Member auth redirect and settings", () => {
       test.skip(true, "Missing listing or buyer auth fixtures for redirect flow");
     }
 
-    const { sellerId, listingId, buyerEmail, buyerPassword } =
-      getMerchantProductDetailFixtures();
-    const detailPath = buildMerchantProductDetailPath(sellerId!, listingId!);
+    const fixtureResult = await resolveE2eMarketplaceFixture();
+    if (!fixtureResult.ok) {
+      test.skip(true, fixtureResult.skipReason);
+      return;
+    }
+    const { sellerId, listingId } = fixtureResult.fixture;
+    const { buyerEmail, buyerPassword } = getMerchantProductDetailFixtures();
+    const detailPath = buildMerchantProductDetailPath(sellerId, listingId);
 
-    await page.goto(detailPath, { waitUntil: "networkidle" });
+    await page.goto(detailPath, { waitUntil: "domcontentloaded" });
     await dismissBlockingOverlays(page);
-    await expect(page.locator("main h1")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("店主獨立出讓一口價")).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByRole("button", { name: /立即購買/ }).click();
-
-    await expect(page.getByText("您目前正以遊客身份觀盤")).toBeVisible({
-      timeout: 15_000,
-    });
-    const guestLockPanel = page
-      .getByText("請先登入會員以活化平台第三方雙向鑑定與託管出價機制。")
-      .locator("..");
-    const loginLink = guestLockPanel.getByRole("link", { name: "登入 / 註冊" });
-    await expect(loginLink).toBeVisible();
-
-    const href = await loginLink.getAttribute("href");
-    expect(href).toContain("/auth?redirect=");
+    await expectMerchantProductDetailLoaded(page);
+    await productDetailGuestBuyLink(page).click();
+    await expect(page).toHaveURL(/\/auth\?redirect=/, { timeout: 15_000 });
 
     await page.goto("/auth", { waitUntil: "domcontentloaded" });
     await page.locator('input[name="email"]').fill(buyerEmail!);
@@ -60,11 +51,7 @@ test.describe("Member auth redirect and settings", () => {
 
     await page.goto(detailPath, { waitUntil: "domcontentloaded" });
     await dismissBlockingOverlays(page);
-    await page.getByRole("button", { name: /立即購買/ }).click();
-    await expect(page.getByText("您目前正以遊客身份觀盤")).toHaveCount(0);
-    await expect(page.getByText("對接賣家商號")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expectProductDetailBuyerFooter(page);
   });
 
   test("buyer can update profile settings", async ({ page }, testInfo) => {
@@ -88,9 +75,9 @@ test.describe("Member auth redirect and settings", () => {
     );
     await page.getByRole("button", { name: "儲存更改" }).click();
 
-    await expect(page.getByText("個人資料已更新")).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(page.locator("[data-sonner-toast]").filter({
+      hasText: "個人資料及收款資料已更新",
+    })).toBeVisible({ timeout: 20_000 });
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('input[name="displayName"]')).toHaveValue(

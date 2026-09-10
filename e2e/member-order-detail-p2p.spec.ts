@@ -32,7 +32,9 @@ test.describe("Member order detail — P2P", () => {
       test.skip(true, "Missing member trading E2E env");
     }
 
-    const fixtureResult = await resolveE2eMarketplaceFixture();
+    const fixtureResult = await resolveE2eMarketplaceFixture({
+      requiredSellerPersona: "member",
+    });
     if (!fixtureResult.ok) {
       test.skip(true, fixtureResult.skipReason);
       return;
@@ -48,7 +50,7 @@ test.describe("Member order detail — P2P", () => {
       return;
     }
 
-    const roomId = await ensureDbChatRoom(buyerId, sellerId);
+    let roomId = await ensureDbChatRoom(buyerId, sellerId);
     const [sellerDisplayName, buyerDisplayName] = await Promise.all([
       getProfileDisplayName(sellerId),
       getProfileDisplayName(buyerId),
@@ -75,6 +77,7 @@ test.describe("Member order detail — P2P", () => {
         sellerDisplayName,
         buyerDisplayName,
       });
+      roomId = offerState.roomId;
       await acceptOfferAsSeller(
         sellerPage,
         roomId,
@@ -83,9 +86,14 @@ test.describe("Member order detail — P2P", () => {
         offerLabel,
         buyerPage,
         sellerDisplayName,
+        sellerId,
+        buyerId,
       );
 
-      let memberOrderId = await pollMemberOrderIdForOffer(offerState.offerId);
+      let memberOrderId = await pollMemberOrderIdForOffer(offerState.offerId, {
+        listingId,
+        buyerId,
+      });
       const order = await getLatestMemberOrderForListing({ listingId, buyerId });
       if (order) {
         const guard = guardP2pMemberOrder(order);
@@ -101,7 +109,7 @@ test.describe("Member order detail — P2P", () => {
         buyerPage.getByRole("button", { name: "確認完成交易" }),
       ).toBeVisible({ timeout: 15_000 });
       await expect(
-        buyerPage.getByText("測試模式 — Stripe 尚未接入"),
+        buyerPage.getByText(/尚未完成託管付款/),
       ).toHaveCount(0);
 
       await buyerPage.getByRole("link", { name: "返回交易管理" }).click();

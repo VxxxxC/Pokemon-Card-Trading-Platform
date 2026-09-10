@@ -16,7 +16,7 @@ const postgrestVersion =
   source.match(/PostgrestVersion:\s*"([^"]+)"/)?.[1] ?? "unknown";
 
 function extractPublicBlock(text: string): string {
-  const marker = "  public: {\n    Tables: {\n      chat_messages:";
+  const marker = "  public: {\n    Tables: {\n      account_sanctions:";
   const start = text.indexOf(marker);
   if (start === -1) {
     throw new Error("Could not find public schema in supabase.ts");

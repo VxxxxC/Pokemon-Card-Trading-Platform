@@ -68,6 +68,22 @@ export function buildShopBannerObjectKey(
   return `shop-banners/${merchantId}/${randomUUID()}.${safeExt}`;
 }
 
+export function buildReportEvidenceObjectKey(
+  userId: string,
+  extension: string,
+): string {
+  const safeExt = extension.replace(/^\./, "").toLowerCase() || "jpg";
+  return `reports/pending/${userId}/${randomUUID()}.${safeExt}`;
+}
+
+export function buildAnnouncementPosterObjectKey(
+  announcementId: string,
+  extension: string,
+): string {
+  const safeExt = extension.replace(/^\./, "").toLowerCase() || "webp";
+  return `announcements/${announcementId}/${randomUUID()}.${safeExt}`;
+}
+
 export function buildListingCdnUrl(
   config: BunnyStorageConfig,
   objectKey: string,
@@ -195,6 +211,42 @@ export async function uploadProfileAvatarToBunny(
   };
 }
 
+export async function uploadReportEvidenceToBunny(
+  userId: string,
+  fileBytes: Uint8Array,
+  contentType: string,
+): Promise<BunnyListingUpload> {
+  const config = getBunnyStorageConfig();
+  if (!config) {
+    throw new Error("Bunny.net storage is not configured");
+  }
+
+  const extension = extensionFromContentType(contentType);
+  const objectKey = buildReportEvidenceObjectKey(userId, extension);
+  const uploadUrl = buildObjectDeleteUrl(config, objectKey);
+
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      AccessKey: config.accessKey,
+      "Content-Type": contentType,
+    },
+    body: Buffer.from(fileBytes),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Bunny upload failed (${response.status})${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  return {
+    objectKey,
+    cdnUrl: buildListingCdnUrl(config, objectKey),
+  };
+}
+
 export async function uploadMerchantShopAvatarToBunny(
   merchantId: string,
   fileBytes: Uint8Array,
@@ -265,6 +317,64 @@ export async function uploadMerchantShopBannerToBunny(
     objectKey,
     cdnUrl: buildListingCdnUrl(config, objectKey),
   };
+}
+
+export async function uploadAnnouncementPosterToBunny(
+  announcementId: string,
+  fileBytes: Uint8Array,
+  contentType: string,
+): Promise<BunnyListingUpload> {
+  const config = getBunnyStorageConfig();
+  if (!config) {
+    throw new Error("Bunny.net storage is not configured");
+  }
+
+  const extension = extensionFromContentType(contentType);
+  const objectKey = buildAnnouncementPosterObjectKey(announcementId, extension);
+  const uploadUrl = buildObjectDeleteUrl(config, objectKey);
+
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      AccessKey: config.accessKey,
+      "Content-Type": contentType,
+    },
+    body: Buffer.from(fileBytes),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Bunny upload failed (${response.status})${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  return {
+    objectKey,
+    cdnUrl: buildListingCdnUrl(config, objectKey),
+  };
+}
+
+/** Best-effort cleanup when replacing or deleting an announcement poster. */
+export async function deleteAnnouncementPosterFromBunny(
+  objectKey: string,
+): Promise<void> {
+  const config = getBunnyStorageConfig();
+  if (!config || !objectKey.trim()) return;
+
+  const response = await fetch(buildObjectDeleteUrl(config, objectKey), {
+    method: "DELETE",
+    headers: {
+      AccessKey: config.accessKey,
+    },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const detail = await response.text().catch(() => "");
+    console.error(
+      `[deleteAnnouncementPosterFromBunny] Bunny delete failed (${response.status})${detail ? `: ${detail}` : ""}`,
+    );
+  }
 }
 
 /** Best-effort cleanup when replacing a profile avatar on Bunny CDN. */

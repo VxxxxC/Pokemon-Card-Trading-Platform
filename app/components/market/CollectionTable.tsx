@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ChevronDown, MoreVertical } from "lucide-react";
 import type { CollectionEntry } from "@/app/lib/collection/types";
 import {
   catalogItemKindFromType,
@@ -19,10 +20,30 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GRADING_OPTIONS } from "@/lib/grading/options";
 import type { GradingOption } from "@/lib/grading/options";
+
+const MOBILE_COLLECTION_ROW_GRID =
+  "grid grid-cols-[minmax(0,1fr)_4.25rem_4.5rem] gap-x-1.5 items-center";
+
+const MOBILE_COLLECTION_PRICE_HEADER =
+  "font-mono text-[9px] text-text-disabled/80 uppercase tracking-wider text-right";
+
+function formatCollectionMobilePrice(value: number | null): string {
+  if (value == null) return "—";
+  return `$${value.toLocaleString("en-HK")}`;
+}
+
+function truncateCollectionMobileName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length <= 5) return trimmed;
+  return `${trimmed.slice(0, 5)}…`;
+}
 
 function formatHkd(value: number | null): string {
   if (value == null) return "—";
@@ -129,12 +150,14 @@ function CollectionThumbnail({
 function GradeSelectCell({
   entry,
   onGradeChange,
+  readOnly = false,
 }: {
   entry: CollectionEntry;
   onGradeChange?: (
     entry: CollectionEntry,
     option: GradingOption,
   ) => Promise<boolean>;
+  readOnly?: boolean;
 }) {
   if (isSealedCatalogType(entry.catalogType) || isSealedProductGrade(entry.gradingCompany, entry.gradingScore)) {
     return (
@@ -144,10 +167,10 @@ function GradeSelectCell({
     );
   }
 
-  if (!onGradeChange) {
+  if (!onGradeChange || readOnly) {
     return (
-      <span className="font-mono text-[9.5px] text-[#8A8680]">
-        {entry.gradeLabel}
+      <span className="inline-flex items-center max-w-full font-mono text-[10px] text-text-secondary bg-bg-page/80 border border-[rgba(237,232,224,0.12)] px-1.5 py-0.5 rounded-md">
+        <span className="truncate">{entry.gradeLabel}</span>
       </span>
     );
   }
@@ -155,13 +178,11 @@ function GradeSelectCell({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="inline-flex items-center gap-1 font-mono text-[9.5px] text-[#8A8680] hover:text-[#eae1da] transition-colors cursor-pointer focus:outline-none"
+        className="inline-flex items-center gap-1 max-w-full font-mono text-[10px] text-text-secondary bg-bg-page/80 border border-[rgba(237,232,224,0.12)] hover:border-brand/35 hover:text-brand px-1.5 py-0.5 rounded-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/40"
         aria-label={`更改 ${entry.name} 鑑定規格`}
       >
-        {entry.gradeLabel}
-        <span className="text-[8px] opacity-70" aria-hidden="true">
-          ▾
-        </span>
+        <span className="truncate">{entry.gradeLabel}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="center"
@@ -179,6 +200,43 @@ function GradeSelectCell({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function CollectionGradeMenuSection({
+  entry,
+  onGradeChange,
+}: {
+  entry: CollectionEntry;
+  onGradeChange?: (
+    entry: CollectionEntry,
+    option: GradingOption,
+  ) => Promise<boolean>;
+}) {
+  if (
+    !onGradeChange ||
+    isSealedCatalogType(entry.catalogType) ||
+    isSealedProductGrade(entry.gradingCompany, entry.gradingScore)
+  ) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>更改鑑定規格</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-64 overflow-y-auto min-w-44">
+        {GRADING_OPTIONS.map((option) => (
+          <DropdownMenuItem
+            key={option.id}
+            disabled={option.id === entry.gradingOptionId}
+            onClick={() => void onGradeChange(entry, option)}
+            className="font-mono text-[11px]"
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
 
@@ -268,7 +326,156 @@ export function CollectionTable({
 
   return (
     <div>
-      <div className="overflow-x-auto -mx-4 lg:mx-0">
+      <div className="lg:hidden">
+        <div
+          className={`${MOBILE_COLLECTION_ROW_GRID} pb-2 border-b border-[rgba(237,232,224,0.06)] pr-7`}
+        >
+          <span className="font-mono text-[9px] text-text-disabled/80 uppercase tracking-wider">
+            商品資料
+          </span>
+          <span className={MOBILE_COLLECTION_PRICE_HEADER}>入手價</span>
+          <span className={MOBILE_COLLECTION_PRICE_HEADER}>市價</span>
+        </div>
+        <div className="divide-y divide-[rgba(237,232,224,0.06)]">
+        {entries.map((entry) => {
+          const pnl =
+            entry.currentMarketValue != null
+              ? entry.currentMarketValue - entry.purchasePrice
+              : null;
+          const pnlDir = pnl != null && pnl >= 0 ? "up" : "down";
+          const showPnl = pnl != null && pnl !== 0;
+          const trend30d = entry.trend30d;
+          const hasTrend = trend30d != null;
+          const trendDir = hasTrend && trend30d >= 0 ? "up" : "down";
+          const productHref = `/marketplace/product/${entry.productId}`;
+          const subtitleLabel = `${entry.cardCode || entry.productId}${entry.setCode ? ` · ${entry.setCode}` : ""}`;
+
+          return (
+            <div
+              key={collectionRowKey(entry)}
+              className={`relative ${MOBILE_COLLECTION_ROW_GRID} py-3 pr-7 animate-fadeIn`}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={removingId === entry.collectionId}
+                  className="absolute top-1/2 right-0 z-10 inline-flex w-7 h-7 -translate-y-1/2 items-center justify-center rounded-md text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors focus:outline-none disabled:opacity-50"
+                  aria-label={`${entry.name} 更多操作`}
+                >
+                  <MoreVertical className="size-4" aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  side="bottom"
+                  className="min-w-52"
+                >
+                  <DropdownMenuItem onClick={() => router.push(productHref)}>
+                    查看公開市場
+                  </DropdownMenuItem>
+                  {entry.status !== "listed" &&
+                  entry.status !== "in_trade" &&
+                  entry.status !== "sold" ? (
+                    <DropdownMenuItem
+                      onClick={() => handleSell(entry)}
+                      className="text-brand focus:bg-[#322a24] focus:text-brand font-bold"
+                    >
+                      出售收藏品
+                    </DropdownMenuItem>
+                  ) : null}
+                  <CollectionGradeMenuSection
+                    entry={entry}
+                    onGradeChange={onUpdateGrade}
+                  />
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={removingId === entry.collectionId}
+                    onClick={() => void handleRemove(entry)}
+                  >
+                    移除出資產庫
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="flex items-center gap-2 min-w-0">
+                <Link
+                  href={productHref}
+                  className="relative w-9 aspect-5/7 rounded-sm bg-bg-elevated border border-[rgba(237,232,224,0.08)] shrink-0 overflow-hidden block"
+                >
+                  {entry.imageUrl?.trim() ? (
+                    <Image
+                      src={entry.imageUrl.trim()}
+                      alt=""
+                      fill
+                      sizes="36px"
+                      className="object-cover object-top"
+                    />
+                  ) : (
+                    <span className="absolute inset-0 flex items-center justify-center font-mono text-[7px] text-text-disabled font-bold">
+                      {entry.gradingCompany}
+                    </span>
+                  )}
+                </Link>
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={productHref}
+                    title={entry.name}
+                    className="font-sans font-semibold text-[12px] text-text-primary leading-tight hover:text-brand transition-colors block"
+                  >
+                    {truncateCollectionMobileName(entry.name)}
+                  </Link>
+                  <p className="font-mono text-[9px] text-text-disabled truncate mt-0.5 leading-tight">
+                    {subtitleLabel}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    <GradeSelectCell
+                      entry={entry}
+                      onGradeChange={onUpdateGrade}
+                      readOnly
+                    />
+                    <StatusPill status={entry.status} />
+                    {hasTrend ? (
+                      <span
+                        className={`font-mono text-[9px] ${
+                          trendDir === "up" ? "text-success" : "text-error"
+                        }`}
+                      >
+                        30D {trendDir === "up" ? "▲" : "▼"}
+                        {Math.abs(trend30d!).toFixed(1)}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right tabular-nums min-w-0 self-center">
+                <p className="font-mono font-semibold text-[12px] text-text-secondary leading-tight truncate">
+                  {formatCollectionMobilePrice(entry.purchasePrice)}
+                </p>
+              </div>
+              <div className="text-right tabular-nums min-w-0 self-center">
+                <p className="font-mono font-bold text-[12px] text-text-primary leading-tight truncate">
+                  {formatCollectionMobilePrice(entry.currentMarketValue)}
+                </p>
+                {entry.currentMarketValue == null ? (
+                  <p className="font-mono text-[9px] text-text-disabled leading-tight">
+                    暫無市價
+                  </p>
+                ) : showPnl ? (
+                  <p
+                    className={`font-mono text-[9px] leading-tight truncate ${
+                      pnlDir === "up" ? "text-success" : "text-error"
+                    }`}
+                  >
+                    {pnl! >= 0 ? "+" : ""}$
+                    {Math.abs(pnl!).toLocaleString("en-HK")}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        </div>
+      </div>
+
+      <div className="max-lg:hidden overflow-x-auto -mx-4 lg:mx-0">
         <table className="w-full min-w-[660px] border-collapse">
           <thead>
             <tr className="border-b border-[rgba(237,232,224,0.08)]">
@@ -339,7 +546,7 @@ export function CollectionTable({
                   key={collectionRowKey(entry)}
                   className="border-b border-[rgba(237,232,224,0.04)] hover:bg-[#39342f]/30 transition-colors animate-fadeIn"
                 >
-                  <td className="py-4 pl-4 lg:pl-0 pr-3">
+                  <td className="py-3 pl-4 lg:pl-0 pr-3">
                     <div className="flex items-center gap-3">
                       <CollectionThumbnail
                         entry={entry}
@@ -363,7 +570,7 @@ export function CollectionTable({
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-3 text-center">
+                  <td className="py-3 px-3 text-center">
                     <div className="flex flex-col items-center gap-1.5">
                       <GradeSelectCell
                         entry={entry}
@@ -372,12 +579,12 @@ export function CollectionTable({
                       <StatusPill status={entry.status} />
                     </div>
                   </td>
-                  <td className="py-4 px-3 text-right">
+                  <td className="py-3 px-3 text-right">
                     <p className="font-mono text-[13px] text-[#d4c4b7]">
                       {formatHkd(entry.purchasePrice)}
                     </p>
                   </td>
-                  <td className="py-4 px-3 text-right">
+                  <td className="py-3 px-3 text-right">
                     <p className="font-mono font-semibold text-[14px] text-[#eae1da]">
                       {formatHkd(entry.currentMarketValue)}
                     </p>
@@ -406,7 +613,7 @@ export function CollectionTable({
                       </p>
                     ) : null}
                   </td>
-                  <td className="py-4 px-3 text-center">
+                  <td className="py-3 px-3 text-center">
                     <div className="flex flex-col items-center gap-0.5">
                       {hasTrend ? (
                         <span
@@ -422,7 +629,7 @@ export function CollectionTable({
                       )}
                     </div>
                   </td>
-                  <td className="py-4 pl-3 pr-4 lg:pr-0 text-right">
+                  <td className="py-3 pl-3 pr-4 lg:pr-0 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex w-8 h-8 items-center justify-center rounded-lg border border-transparent hover:bg-[#322a24] hover:border-[rgba(237,232,224,0.10)] text-[#d4c4b7] hover:text-[#eae1da] transition-all font-mono text-[15px] focus:outline-none cursor-pointer select-none">
                         ⋯

@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "plugins": ["@stryker-mutator/*"],
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "mutate": [
+    "lib/moderation/compute-report-contribution.ts",
+    "lib/moderation/report-outcome-copy.ts",
+    "lib/moderation/resolution-config.ts:79-163"
+  ],
+  "vitest": {
+    "configFile": "vitest.moderation-mutation.config.mts",
+    "related": false
+  },
+  "thresholds": {
+    "high": 85,
+    "low": 70,
+    "break": 85
+  },
+  "tempDirName": ".stryker-tmp-moderation",
+  "htmlReporter": {
+    "fileName": "reports/mutation/moderation-mutation.html"
+  }
+}

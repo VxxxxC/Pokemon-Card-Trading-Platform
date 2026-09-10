@@ -1,4 +1,5 @@
 import { hasGradingOption } from "@/lib/grading/options";
+import { parseSealState } from "@/lib/catalog/item-kind";
 import { validateImageUpload } from "@/lib/listings/image-files";
 import {
   LISTING_IMAGE_MAX,
@@ -14,6 +15,18 @@ export type CreateCardListingFields = {
   price: number;
   sellerDescription?: string;
 };
+
+export function isSealedGradingOptionId(id: string): boolean {
+  if (!id.startsWith("sealed:")) {
+    return false;
+  }
+
+  return parseSealState(id.slice("sealed:".length)) != null;
+}
+
+export function isValidListingGradingOptionId(id: string): boolean {
+  return hasGradingOption(id) || isSealedGradingOptionId(id);
+}
 
 export function validateImageFile(file: File): string | null {
   return validateImageUpload({
@@ -52,7 +65,7 @@ export function validateCreateCardListingFields(
     return "請從搜尋結果中選擇一張卡牌";
   }
 
-  if (!hasGradingOption(input.gradingOptionId)) {
+  if (!isValidListingGradingOptionId(input.gradingOptionId)) {
     return "請選擇有效的鑑定／品相";
   }
 
@@ -146,6 +159,15 @@ export type UpdateCardListingFields = {
   sellerDescription?: string;
 };
 
+export function validateUpdateListingImageCount(
+  count: number,
+  itemKind: "card" | "box_set",
+): string | null {
+  return itemKind === "box_set"
+    ? validateSealedListingImageCount(count)
+    : validateListingImageCount(count);
+}
+
 export function validateUpdateCardListingFields(
   input: UpdateCardListingFields,
 ): string | null {
@@ -153,7 +175,7 @@ export function validateUpdateCardListingFields(
     return "無效的商品";
   }
 
-  if (!hasGradingOption(input.gradingOptionId)) {
+  if (!isValidListingGradingOptionId(input.gradingOptionId)) {
     return "請選擇有效的鑑定／品相";
   }
 

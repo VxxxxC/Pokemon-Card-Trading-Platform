@@ -5,7 +5,7 @@
 **Backend owner:** Backend track  
 **Frontend owner:** Partner (polish + smoke-test)  
 **Remote DB:** Migrations **`20260709300000`** + **`20260709310000`** — pushed (`bunx supabase db push` ✅)  
-**E2E:** `e2e/user-report.spec.ts` — buyer project ✅ (2 scenarios)
+**E2E:** `e2e/user-report.spec.ts` — buyer project ✅ (chat, profile, chat+profile same case, profile duplicate blocked)
 
 ---
 
@@ -14,14 +14,14 @@
 | Area | Status |
 |------|--------|
 | `reports` table + RLS (reporter INSERT/SELECT) | ✅ Deployed |
-| Pending dedupe index (one pending per reporter+target) | ✅ Deployed |
+| Pending dedupe index (context-aware: chat room / profile+category) | ✅ `20260812120000` |
 | `submitUserReport` server action | ✅ Shipped |
 | Chat console report UI → DB | ✅ Wired |
 | Public profile report UI → DB | ✅ Wired |
 | Structured `reason` payload (`[CATEGORY]` / `[SOURCE]` / `[ROOM_ID]` / `[DETAILS]`) | ✅ Shipped |
 | Admin moderation UI (`status` workflow) | ⏳ Out of scope |
 | Auto-notify / account freeze on report | ⏳ Out of scope |
-| E2E coverage (both entry points) | ✅ `user-report.spec.ts` |
+| E2E coverage (both entry points + multi-context) | ✅ `user-report.spec.ts` |
 
 **Partner action:** Smoke-test both report dialogs as a logged-in buyer; confirm toasts, dialog behaviour, and `reports` rows in Supabase. Polish is optional — backend contract is stable.
 
@@ -65,7 +65,9 @@ await submitUserReport({
 | `reports` table | `20260709300000` | Idempotent `CREATE TABLE IF NOT EXISTS` |
 | `reports_reporter_read` RLS | `20260709300000` | SELECT own rows only |
 | `reports_reporter_insert` RLS | `20260709300000` | INSERT as self; `target_type = user`; not self |
-| `idx_reports_pending_reporter_target` | `20260709300000` | Unique pending per `(reporter_id, target_id)` |
+| `idx_reports_pending_reporter_target` | `20260709300000` | ~~Unique pending per `(reporter_id, target_id)`~~ replaced by `20260812120000` |
+| `idx_reports_pending_reporter_target_chat_room` | `20260812120000` | Unique pending per `(reporter_id, target_id, context_id)` for chat |
+| `idx_reports_pending_reporter_target_profile_category` | `20260812120000` | Unique pending per `(reporter_id, target_id, category)` for profile |
 | `service_role` GRANT | `20260709310000` | E2E admin audit helpers |
 
 ### Row shape (insert)
@@ -130,7 +132,8 @@ type SubmitUserReportResult =
 | Self-report | 無法舉報自己 |
 | Mock/pending chat room | 對話尚未建立，無法舉報 |
 | Not chat party | 無法舉報此對話中的用戶 |
-| Duplicate pending | 您已對該用戶提交過待審核的舉報，請等待處理結果 |
+| Duplicate pending (same chat room) | 您已在此對話提交過待審核的舉報，請等待處理結果 |
+| Duplicate pending (profile, same category) | 您已在此用戶公開資料提交過同類別的待審核舉報，請等待處理結果 |
 | Missing category | 請選擇舉報事項類別 |
 
 ---

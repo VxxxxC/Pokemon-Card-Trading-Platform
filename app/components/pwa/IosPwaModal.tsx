@@ -5,6 +5,7 @@ import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { useUIStore } from "@/app/store/useUIStore";
 import { usePwaInstall } from "@/app/lib/hooks/usePwaInstall";
+import { snoozePwaPrompt } from "@/lib/pwa/snooze";
 
 interface TutorialSlide {
   title: string;
@@ -38,9 +39,6 @@ const IOS_PWA_SLIDES: TutorialSlide[] = [
   },
 ];
 
-const SNOOZE_KEY = "pwa_snooze_until";
-const SNOOZE_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
-
 export function IosPwaModal() {
   const { promptState } = usePwaInstall();
   const isOpen = useUIStore((state) => state.isIosPwaModalOpen);
@@ -48,8 +46,7 @@ export function IosPwaModal() {
   const [currentStep, setCurrentStep] = useState(0);
 
   const handleSnooze = () => {
-    localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_DURATION_MS)); //
-    window.dispatchEvent(new Event("hkcardvault:pwa-snooze-changed")); //
+    snoozePwaPrompt();
   };
 
   if (!isOpen) return null;
@@ -80,7 +77,12 @@ export function IosPwaModal() {
   if (promptState === "NATIVE_READY") return null;
 
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-[400] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ios-pwa-modal-title"
+    >
       {/* 毛玻璃黑金背景 */}
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-xs"
@@ -95,7 +97,10 @@ export function IosPwaModal() {
             <p className="font-sans text-xs text-brand font-black tracking-widest block uppercase">
               [macOS/iOS/iPadOS] Safari
             </p>
-            <h3 className="font-sans font-black text-[15px] text-[#eae1da] mt-0.5">
+            <h3
+              id="ios-pwa-modal-title"
+              className="font-sans font-black text-[15px] text-[#eae1da] mt-0.5"
+            >
               安裝方法
             </h3>
           </div>

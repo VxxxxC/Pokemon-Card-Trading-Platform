@@ -1,0 +1,110 @@
+{
+  "version": "1.0.0",
+  "frozenAt": "2026-08-21",
+  "minPreflightPassRate": 0.95,
+  "note": "Do NOT edit staging-certification.sh run_step lines without bumping version and updating this manifest.",
+  "steps": [
+    {
+      "id": "SC-CERT-01",
+      "name": "ui feature map",
+      "command": "bun run test:ui:check-map",
+      "tier": "fast"
+    },
+    {
+      "id": "SC-CERT-02",
+      "name": "ui data contracts",
+      "command": "bash scripts/check-ui-data-contracts.sh",
+      "tier": "fast"
+    },
+    {
+      "id": "SC-CERT-03",
+      "name": "ui journey audit",
+      "command": "bun run test:ui:audit-journeys",
+      "tier": "fast"
+    },
+    {
+      "id": "SC-CERT-04",
+      "name": "checkout pricing unit",
+      "command": "bunx vitest run --config vitest.config.mts tests/unit/lib/checkout/compute-pricing.test.ts",
+      "tier": "fast"
+    },
+    {
+      "id": "SC-CERT-05",
+      "name": "production gate signoff",
+      "command": "env PRODUCTION_GATE_SIGNOFF=1 bun run test:production:gate:signoff",
+      "tier": "heavy",
+      "envCheck": "production-signoff"
+    },
+    {
+      "id": "SC-CERT-06",
+      "name": "nightly coverage",
+      "command": "bun run test:nightly:coverage",
+      "tier": "heavy",
+      "envCheck": "nightly"
+    },
+    {
+      "id": "SC-CERT-07",
+      "name": "rewards integration",
+      "command": "bun run test:integration:rewards",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-08",
+      "name": "start production server for rewards E2E",
+      "command": "e2e_start_production_server",
+      "tier": "heavy",
+      "envCheck": "production-server"
+    },
+    {
+      "id": "SC-CERT-09",
+      "name": "rewards E2E production gate",
+      "command": "env REWARDS_GATE=1 bun run test:e2e:rewards-gate:production",
+      "tier": "heavy",
+      "envCheck": "rewards-e2e"
+    },
+    {
+      "id": "SC-CERT-10",
+      "name": "partner checkout data contracts",
+      "command": "bun run test:e2e:partner-data-contract",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-11",
+      "name": "coupon security",
+      "command": "bunx vitest run --config vitest.config.mts tests/integration/rewards/coupon-security.integration.test.ts",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-12",
+      "name": "coupon pbt",
+      "command": "bun run test:integration:rewards:pbt",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-13",
+      "name": "moderation pbt",
+      "command": "bun run test:integration:moderation:pbt",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-14",
+      "name": "rewards mutation contract",
+      "command": "bunx vitest run --config vitest.config.mts tests/unit/rewards/rewards-mutation-contract.test.ts",
+      "tier": "medium"
+    },
+    {
+      "id": "SC-CERT-15",
+      "name": "rewards mutation",
+      "command": "bun run test:rewards:mutation",
+      "tier": "heavy",
+      "envCheck": "stryker-rewards"
+    },
+    {
+      "id": "SC-CERT-16",
+      "name": "moderation mutation",
+      "command": "bun run test:moderation:mutation",
+      "tier": "heavy",
+      "envCheck": "stryker-moderation"
+    }
+  ]
+}

@@ -9,6 +9,10 @@ import {
   getMerchantProductDetailFixtures,
   hasBuyerAuthFixtures,
 } from "./test-data";
+import {
+  acknowledgeAllReportOutcomesForReporter,
+  getBuyerProfileIdFromEnv,
+} from "./supabase-admin";
 
 const authDir = path.join(__dirname, "..", ".auth");
 const buyerAuthFile = path.join(authDir, "buyer.json");
@@ -78,6 +82,11 @@ setup("authenticate buyer", async ({ page }) => {
       true,
       "E2E_BUYER_EMAIL or E2E_BUYER_PASSWORD rejected — update credentials in .env",
     );
+  }
+
+  const buyerId = await getBuyerProfileIdFromEnv();
+  if (buyerId) {
+    await acknowledgeAllReportOutcomesForReporter(buyerId);
   }
 });
 

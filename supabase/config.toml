@@ -160,7 +160,11 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = [
+  "http://127.0.0.1:3000/auth/callback**",
+  "http://localhost:3000/auth/callback**",
+  "https://127.0.0.1:3000/auth/callback**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -223,7 +227,7 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -232,6 +236,24 @@ max_frequency = "1s"
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
+
+# Hosted projects: paste HTML in Dashboard OR run `bunx supabase config push` after link.
+# Repo files alone do NOT change remote templates until pushed or pasted.
+[auth.email.template.confirmation]
+subject = "{{ if eq .Data.onboarding_intent \"merchant_apply\" }}確認電郵 — 開始商戶入駐 · Cardvault HK{{ else }}確認你的 Cardvault HK 帳戶{{ end }}"
+content_path = "./supabase/templates/auth/confirm-signup.html"
+
+[auth.email.template.recovery]
+subject = "重設你的 Cardvault HK 密碼"
+content_path = "./supabase/templates/auth/reset-password.html"
+
+[auth.email.template.magic_link]
+subject = "登入 Cardvault HK"
+content_path = "./supabase/templates/auth/magic-link.html"
+
+[auth.email.template.email_change]
+subject = "確認你的新電郵地址"
+content_path = "./supabase/templates/auth/change-email.html"
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]

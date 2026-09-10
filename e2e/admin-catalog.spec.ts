@@ -1,6 +1,7 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs";
+import { hasAdminAuthFixtures, loginAsAdmin, gotoAdminPage } from "./helpers/admin-auth";
 
 const SCREENSHOT_DIR = path.join(process.cwd(), "test-results", "admin-catalog-screenshots");
 
@@ -10,19 +11,13 @@ test.beforeAll(() => {
   }
 });
 
-async function loginAsAdmin(page: Page) {
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill("admin@t.com");
-  await page.locator('input[name="password"]').fill("Password123!");
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => url.pathname.startsWith("/admin"), { timeout: 15000 });
-}
-
 test.describe("Phase 3 Admin Catalog Acceptance", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+  test.setTimeout(120_000);
 
   test("Route 1: /admin/catalog Full Acceptance Test Flow", async ({ page }) => {
     test.setTimeout(90000); // Allow sufficient time for the complete multi-step E2E flow
+    test.skip(!hasAdminAuthFixtures(), "Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
 
     const consoleErrors: string[] = [];
     const hydrationWarnings: string[] = [];
@@ -40,9 +35,8 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     await loginAsAdmin(page);
 
     // Navigate to /admin/catalog
-    await page.goto("/admin/catalog");
-    await page.waitForLoadState("networkidle");
-
+    await gotoAdminPage(page, "/admin/catalog");
+    
     // --- A. 基本渲染 ---
     // 1. 無 console error、無 hydration warning
     expect(consoleErrors, `Console errors found: ${consoleErrors.join("\n")}`).toHaveLength(0);
@@ -93,25 +87,21 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
 
     // 4. 切換到「Box/Set」Tab → Grid 內容改變；切 Tab 後分頁 reset 回第 1 頁
     await boxSetTab.click();
-    await page.waitForLoadState("networkidle");
-    await expect(boxSetTab).toHaveAttribute("aria-selected", "true");
+        await expect(boxSetTab).toHaveAttribute("aria-selected", "true");
 
     // Switch back to "獨立卡" Tab
     await cardTab.click();
-    await page.waitForLoadState("networkidle");
-    await expect(cardTab).toHaveAttribute("aria-selected", "true");
+        await expect(cardTab).toHaveAttribute("aria-selected", "true");
 
     // --- C. 搜尋即時 re-render ---
     // 輸入關鍵字 → 唔出 dropdown，即時 re-render，有 debounce
     await searchInput.fill("SV");
     await page.waitForTimeout(400); // wait for 300ms debounce
-    await page.waitForLoadState("networkidle");
-
+    
     // 清空搜尋 → Grid 回複完整列表
     await searchInput.fill("");
     await page.waitForTimeout(400);
-    await page.waitForLoadState("networkidle");
-
+    
     // --- D. Image Viewer ---
     // 點擊第 3 張卡 → viewer 應該顯示第 3 張圖（索引對應正確）
     const currentCards = page.locator("div.grid > div");
@@ -183,7 +173,10 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
 
     // Helper panel locators to prevent tabpanel strict mode collisions
     const cardFormPanel = dialogContent.locator('[role="tabpanel"]').filter({ has: page.locator('input[placeholder*="Pikachu PROMO"]') }).first();
-    const boxSetFormPanel = dialogContent.locator('[role="tabpanel"]').filter({ has: page.locator('input[placeholder*="4904140548311"]') }).first();
+    const boxSetFormPanel = dialogContent
+      .locator('[role="tabpanel"]')
+      .filter({ has: page.locator("label", { hasText: "Category" }) })
+      .first();
 
     // Dialog 內有 Tabs「獨立卡」/「Box/Set」
     const dialogTabs = dialogContent.locator('button[role="tab"]');
@@ -207,13 +200,10 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     const dialogBoxSetTab = dialogTabs.filter({ hasText: "Box / Set" });
     await dialogBoxSetTab.click();
 
-    // 「Box/Set」Tab：額外有 Category dropdown 同 JAN Code input
+    // 「Box/Set」Tab：額外有 Category dropdown；選 JAN 條碼規格後顯示 JAN Code input
     const categoryInBoxSet = boxSetFormPanel.locator("text=Category");
-    const janCodeInBoxSet = boxSetFormPanel.locator('input[placeholder*="4904140548311"]');
     await expect(categoryInBoxSet).toBeVisible();
-    await expect(janCodeInBoxSet).toBeVisible();
 
-    // Category dropdown 恰好 3 個選項：補充包 / 禮盒組 / 起始牌組（唔可以有 booster_box 或 accessories）
     const categoryLabel = boxSetFormPanel.locator("label", { hasText: "Category" });
     const categorySelectTrigger = categoryLabel.locator("..").locator('button[role="combobox"]');
     await categorySelectTrigger.click();
@@ -222,10 +212,16 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     await selectOptions.first().waitFor({ state: "visible" });
     const optionTexts = await selectOptions.allInnerTexts();
     console.log("[Category Dropdown Options]", optionTexts);
-    expect(optionTexts).toEqual(["補充包", "禮盒組", "起始牌組"]);
+    expect(optionTexts).toEqual([
+      "補充包",
+      "禮盒組",
+      "起始牌組",
+      "JAN 條碼規格",
+    ]);
 
-    // Close select dropdown by pressing Escape
-    await page.keyboard.press("Escape");
+    await page.getByRole("option", { name: "JAN 條碼規格" }).click();
+    const janCodeInBoxSet = boxSetFormPanel.locator('input[placeholder*="4904140548311"]');
+    await expect(janCodeInBoxSet).toBeVisible();
 
     // --- F. 表單驗證 ---
     // 1. 切回「獨立卡」Tab
@@ -250,10 +246,15 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     const nameErrorToast = page.getByText("請至少輸入一種語言嘅卡牌名稱").first();
     await expect(nameErrorToast).toBeVisible();
 
-    // 只填英文名 → 名稱驗證通過
+    // 只填英文名 + 罕有度 → 提交成功，Dialog 關閉
     await enNameInput.fill("Test Card EN");
+    const rarityTrigger = cardFormPanel
+      .locator("label", { hasText: "罕有度" })
+      .locator("..")
+      .locator('button[role="combobox"]');
+    await rarityTrigger.click();
+    await page.getByRole("option", { name: "PROMO" }).click();
     await submitBtn.click();
-    // 填齊獨立卡必填時提交成功，Dialog 關閉
 
     // --- G. 提交後 pending 區與資料遺失驗證（重點回歸項） ---
     // 驗證 Dialog 關閉
@@ -295,13 +296,29 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     // 切換至「Box/Set」Tab
     await dialogBoxSetTab.click();
 
-    // 填一半： Card Number, Set Code, 名稱, Image，但 JAN Code 填 `abc123`
-    await boxSetFormPanel.locator('input[placeholder*="promo-102"]').fill("BOX-001");
-    await boxSetFormPanel.locator('input[placeholder*="SV2a"]').fill("SV-BOX");
-    await boxSetFormPanel.locator('input[placeholder*="Pikachu PROMO"]').fill("Box Set Test");
-    await boxSetFormPanel.locator('input[placeholder*="圖片 URL"]').fill("https://picsum.photos/300/400");
-    const dialogJanInput = boxSetFormPanel.locator('input[placeholder*="4904140548311"]');
-    await dialogJanInput.fill("abc123");
+    const boxSetJanPanel = dialogContent
+      .locator('[role="tabpanel"]')
+      .filter({ has: page.locator("label", { hasText: "Category" }) })
+      .first();
+    const boxSetCategoryTrigger = boxSetJanPanel
+      .locator("label", { hasText: "Category" })
+      .locator("..")
+      .locator('button[role="combobox"]');
+
+    // 選 JAN 條碼規格後填一半：編號、系列、名稱、Image，但 JAN Code 填 `abc123`
+    await boxSetCategoryTrigger.click();
+    await page.getByRole("option", { name: "JAN 條碼規格" }).click();
+
+    const dialogJanInput = boxSetJanPanel.locator('input[placeholder*="4904140548311"]');
+    await dialogJanInput.evaluate((el) => {
+      const input = el as HTMLInputElement;
+      input.value = "abc123";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await boxSetJanPanel.locator('input[placeholder*="SV2a"]').fill("SV-BOX");
+    await boxSetJanPanel.locator('input[placeholder*="Pikachu PROMO"]').fill("Box Set Test");
+    await boxSetJanPanel.locator('input[placeholder*="圖片 URL"]').fill("https://picsum.photos/300/400");
 
     await submitBtn.click();
     const janErrorToast = page.getByText(/JAN Code 必須為全數字|請填寫所有必填欄位並檢查格式/).first();
@@ -313,6 +330,12 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     await cardFormPanel.locator('input[placeholder*="SV2a"]').fill("SV-ISO");
     await cardFormPanel.locator('input[placeholder*="Pikachu PROMO"]').fill("Isolated Card Test");
     await cardFormPanel.locator('input[placeholder*="圖片 URL"]').fill("https://picsum.photos/300/400");
+    const isolatedRarityTrigger = cardFormPanel
+      .locator("label", { hasText: "罕有度" })
+      .locator("..")
+      .locator('button[role="combobox"]');
+    await isolatedRarityTrigger.click();
+    await page.getByRole("option", { name: "PROMO" }).click();
 
     await submitBtn.click();
     // 應該順利提交成功，Dialog 關閉，唔會被 Box/Set 的 JAN Code 攔截
@@ -330,9 +353,8 @@ test.describe("Phase 3 Admin Catalog Acceptance", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAsAdmin(page);
 
-    await page.goto("/admin/catalog");
-    await page.waitForLoadState("networkidle");
-
+    await gotoAdminPage(page, "/admin/catalog");
+    
     // Open Manual Entry Dialog
     const manualEntryBtn = page.locator("button", { hasText: "手動錄入卡牌" });
     await manualEntryBtn.click();

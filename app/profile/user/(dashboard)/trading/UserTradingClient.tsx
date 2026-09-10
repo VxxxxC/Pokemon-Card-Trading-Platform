@@ -3,16 +3,23 @@
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import type { TradingOrdersFilterCounts, UserTradingOrder } from "@/app/actions/orders";
+import { Search, X } from "lucide-react";
+import { DASHBOARD_SECTION_TITLE_CLASS } from "@/app/profile/dashboard-ui";
+import type { UserTradingOrder } from "@/app/actions/orders";
 import { Pagination } from "@/app/components/ui/Pagination";
-import { UserOrderRow } from "@/app/components/user/UserOrderRow";
+import { UserOrderRow, OrderRowChip } from "@/app/components/user/UserOrderRow";
+import { TradingFilterResetButton } from "@/app/components/trading/TradingFilterResetButton";
+import { TradingSegmentedFilter, type SegmentedFilterOption } from "@/app/components/trading/TradingSegmentedFilter";
+import {
+  hasActiveMemberTradingFilters,
+  useTradingFiltersStore,
+} from "@/app/store/useTradingFiltersStore";
 import {
   useUserTrading,
   type TradingInitialData,
 } from "@/app/lib/hooks/useUserTrading";
 import { getMemberAuthOrderActions } from "@/app/lib/member-order/auth-escrow";
 import { mapTradingOrderToSaleOrder } from "@/app/lib/member-order/map-sale-order";
-import { Badge } from "@/components/ui/badge";
 import {
   PERSONA_OPTIONS,
   PENDING_ACTION_STATUSES,
@@ -22,6 +29,7 @@ import {
   type TabStatusFilter,
 } from "@/lib/member-order/constants";
 import { cn } from "@/lib/utils";
+import { isMerchantPaymentExpired } from "@/lib/merchant-checkout/pending-payment-expiry";
 
 const ReviewModal = dynamic(
   () =>
@@ -42,105 +50,125 @@ type UserTradingClientProps = {
   bootstrapError?: string;
 };
 
-function formatPersonaTabLabel(
-  value: PersonaFilter,
-  label: string,
-  counts: TradingOrdersFilterCounts,
-): string {
-  const count = counts.persona[value];
-  return count > 0 ? `${label} (${count})` : label;
-}
-
-function formatStatusTabLabel(
-  value: TabStatusFilter,
-  label: string,
-  counts: TradingOrdersFilterCounts,
-): string {
-  const count = counts.status[value];
-  return count > 0 ? `${label} (${count})` : label;
-}
-
-function isRawCardOrder(order: UserTradingOrder): boolean {
-  const o = order as unknown as Record<string, unknown>;
-  if (o.isRawCard === true || o.cardType === "RAW" || o.isRaw === true) {
-    return true;
-  }
-  const company = (order.listing?.gradingCompany ?? "").toUpperCase().trim();
-  if (
-    !company ||
-    company === "RAW" ||
-    company === "RAW CARD" ||
-    company === "NONE" ||
-    company === "裸卡"
-  ) {
-    return true;
-  }
-  return false;
-}
-
 function renderStatusBadge(order: UserTradingOrder) {
+  if (
+    order.merchantEscrowStatus === "refunded" &&
+    order.orderKind === "merchant"
+  ) {
+    return <OrderRowChip tone="buy">付款已過期</OrderRowChip>;
+  }
+
+  if (order.pendingPayment) {
+    const expired = order.paymentExpiresAt
+      ? isMerchantPaymentExpired(order.paymentExpiresAt)
+      : false;
+    if (expired) {
+      return <OrderRowChip tone="buy">付款已過期</OrderRowChip>;
+    }
+    return <OrderRowChip tone="warning">待付款</OrderRowChip>;
+  }
+
+  if (
+    order.orderKind === "merchant" &&
+    !order.useAuthentication &&
+    order.status === "pending"
+  ) {
+    switch (order.merchantEscrowStatus) {
+      case "payment_held":
+        return <OrderRowChip tone="blue">待發貨</OrderRowChip>;
+      case "shipped":
+        return <OrderRowChip tone="blue">運送中</OrderRowChip>;
+      default:
+        break;
+    }
+  }
+
   if (order.useAuthentication && order.status === "pending" && order.escrowStatus) {
     switch (order.escrowStatus) {
       case "payment":
-        return (
-          <Badge variant="secondary" className="bg-amber-950 text-amber-400">
-            待付款
-          </Badge>
-        );
+        return <OrderRowChip tone="warning">待付款</OrderRowChip>;
       case "custody":
-        return (
-          <Badge variant="secondary" className="bg-blue-950 text-blue-400">
-            待寄平台
-          </Badge>
-        );
+        return <OrderRowChip tone="blue">待寄平台</OrderRowChip>;
       case "grading":
-        return (
-          <Badge variant="secondary" className="bg-purple-950 text-purple-400">
-            鑑定中
-          </Badge>
-        );
+        return <OrderRowChip tone="grading">鑑定中</OrderRowChip>;
       case "shipped":
-        return (
-          <Badge variant="secondary" className="bg-cyan-950 text-cyan-400">
-            運送中
-          </Badge>
-        );
+        return <OrderRowChip tone="blue">運送中</OrderRowChip>;
       default:
-        return (
-          <Badge variant="secondary" className="bg-amber-950 text-amber-400">
-            待處理
-          </Badge>
-        );
+        return <OrderRowChip tone="warning">待處理</OrderRowChip>;
     }
   }
 
   switch (order.status ?? "") {
     case "pending":
     case "meetup_arranged":
-      return (
-        <Badge variant="secondary" className="bg-amber-950 text-amber-400">
-          待處理
-        </Badge>
-      );
+      return <OrderRowChip tone="warning">待處理</OrderRowChip>;
     case "completed":
-      return <Badge variant="success">已完成</Badge>;
+      return <OrderRowChip tone="success">已完成</OrderRowChip>;
     case "cancelled":
-      return <Badge variant="destructive">已取消</Badge>;
+      return <OrderRowChip tone="destructive">已取消</OrderRowChip>;
     default:
       return null;
   }
 }
 
+function TradingPersonaUnderlineTabs({
+  options,
+  value,
+  onChange,
+}: {
+  options: SegmentedFilterOption<PersonaFilter>[];
+  value: PersonaFilter;
+  onChange: (next: PersonaFilter) => void;
+}) {
+  return (
+    <nav
+      className="flex gap-0 min-w-0 overflow-x-auto scrollbar-none"
+      aria-label="買賣方向篩選"
+    >
+      {options.map((option) => {
+        const isActive = value === option.value;
+        const displayLabel =
+          option.value === "all"
+            ? option.label
+            : option.count > 0
+              ? `${option.label} (${option.count})`
+              : option.label;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "shrink-0 px-2 py-1 font-mono text-[10px] font-medium border-b-2 -mb-px transition-colors cursor-pointer",
+              isActive
+                ? "text-brand border-brand"
+                : "text-text-secondary border-transparent hover:text-text-primary",
+            )}
+          >
+            {displayLabel}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function UserTradingClient({
   initialData,
-  initialTabStatus,
   bootstrapError,
 }: UserTradingClientProps) {
   const searchParams = useSearchParams();
-  const [persona, setPersona] = useState<PersonaFilter>("all");
-  const [tabStatus, setTabStatus] = useState<TabStatusFilter>(initialTabStatus);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [onlyRawChecked, setOnlyRawChecked] = useState(false);
+  const persona = useTradingFiltersStore((state) => state.member.persona);
+  const tabStatus = useTradingFiltersStore((state) => state.member.tabStatus);
+  const searchQuery = useTradingFiltersStore((state) => state.member.searchQuery);
+  const setPersona = useTradingFiltersStore((state) => state.setMemberPersona);
+  const setTabStatus = useTradingFiltersStore((state) => state.setMemberTabStatus);
+  const setSearchQuery = useTradingFiltersStore((state) => state.setMemberSearchQuery);
+  const resetMemberFilters = useTradingFiltersStore((state) => state.resetMemberFilters);
+  const hasActiveFilters = useTradingFiltersStore((state) =>
+    hasActiveMemberTradingFilters(state.member),
+  );
   const [activeReview, setActiveReview] = useState<ActiveReviewState>(null);
 
   const {
@@ -165,7 +193,7 @@ export function UserTradingClient({
       const nextStatus = TAB_STATUS_FROM_PARAM[queryFilter];
       queueMicrotask(() => setTabStatus(nextStatus));
     }
-  }, [searchParams]);
+  }, [searchParams, setTabStatus]);
 
   const handleOpenReview = useCallback(
     (orderId: string, revieweeId: string) => {
@@ -186,199 +214,141 @@ export function UserTradingClient({
   const needsAction = filterCounts.needsAction;
   const displayError = bootstrapError ?? fetchError;
 
+  const statusSegmentOptions = STATUS_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label,
+    count: filterCounts.status[option.value],
+  }));
+
+  const personaSegmentOptions = PERSONA_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label,
+    count: filterCounts.persona[option.value],
+  }));
+
   return (
     <>
       <div
-        className={`space-y-5 animate-fadeIn${isRefreshing ? " opacity-80 pointer-events-none" : ""}`}
+        className={`animate-fadeIn${isRefreshing ? " opacity-80 pointer-events-none" : ""}`}
       >
-        {needsAction > 0 && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-[rgba(239,68,68,0.06)] border border-warning/25 rounded-xl animate-fadeIn">
+        {needsAction > 0 ? (
+          <div className="mb-3 flex items-start gap-2 px-3 py-2 bg-[rgba(239,68,68,0.06)] border border-warning/25 rounded-lg">
             <svg
-              width="16"
-              height="16"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="#ef4444"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              className="shrink-0 mt-0.5"
               aria-hidden="true"
             >
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="font-sans text-[13px] text-text-primary">
+            <p className="font-sans text-[12px] text-text-primary leading-snug">
               <span className="font-semibold text-warning">
-                {needsAction + " 件交易"}
+                {needsAction} 件交易
               </span>{" "}
-              需要您的處理：完成付款、寄出卡牌或確認收貨。
+              需要處理：付款、寄卡或確認收貨。
             </p>
           </div>
-        )}
+        ) : null}
 
-        {displayError && (
-          <div className="px-4 py-3 bg-[rgba(239,68,68,0.06)] border border-warning/25 rounded-xl">
-            <p className="font-sans text-[13px] text-warning">
+        {displayError ? (
+          <div className="mb-3 px-3 py-2 bg-[rgba(239,68,68,0.06)] border border-warning/25 rounded-lg">
+            <p className="font-sans text-[12px] text-warning">
               無法載入線上訂單：{displayError}
             </p>
           </div>
-        )}
-
-        <div className="relative bg-bg-card rounded-2xl border border-white/5 p-4 shadow-sm flex flex-col gap-2">
-          <label
-            htmlFor="user-order-search"
-            className="font-mono pl-1 text-xs text-text-primary uppercase tracking-wider"
-          >
-            訂單搜尋
-          </label>
-          <div className="relative flex items-center">
-            <svg
-              className="absolute left-3.5 text-[#8A8680] pointer-events-none"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-            <div className="flex items-center bg-[#17130f] border border-white/5 rounded-xl h-11 text-text-primary overflow-hidden w-full transition-all focus-within:border-brand/30">
-              <input
-                id="user-order-search"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="輸入訂單編號、卡牌名稱、卡號、系列代碼或交易對手姓名..."
-                className="pl-10 pr-10 w-full flex-1 h-10 bg-transparent px-4 font-sans text-[13.5px] text-text-primary placeholder-text-disabled focus:outline-none"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="px-3 h-full font-sans text-[12px] text-text-disabled hover:text-text-primary transition-colors cursor-pointer"
-                >
-                  清除
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        ) : null}
 
         <section
           id="orders-list"
           aria-labelledby="user-trading-heading"
-          className="space-y-4"
+          className="rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)]"
         >
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h2
-                id="user-trading-heading"
-                className="font-sans font-semibold text-[16px] text-text-primary"
-              >
-                {"交易管理（" + paginationMeta.total + "）"}
-              </h2>
-
-              <div className="flex gap-1.5 flex-wrap justify-start sm:justify-end">
-                {STATUS_OPTIONS.map((option) => {
-                  const isActive = tabStatus === option.value;
-                  let btnClass =
-                    "text-text-secondary border-white/5 hover:text-text-primary hover:bg-bg-elevated";
-                  if (isActive) {
-                    if (option.value === "pending") {
-                      btnClass =
-                        "text-warning border-warning/40 bg-[rgba(239,68,68,0.06)] font-bold shadow-xs animate-fadeIn";
-                    } else {
-                      btnClass =
-                        "text-brand border-brand/40 bg-[rgba(212,165,116,0.08)] font-bold shadow-xs";
-                    }
-                  }
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTabStatus(option.value)}
-                      className={cn(
-                        "font-mono text-[11px] px-3 py-1 rounded-lg border transition-all cursor-pointer",
-                        btnClass,
-                      )}
-                    >
-                      {formatStatusTabLabel(
-                        option.value,
-                        option.label,
-                        filterCounts,
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="flex gap-1.5 flex-wrap justify-start">
-                {PERSONA_OPTIONS.map((option) => {
-                  const isActive = persona === option.value;
-                  const btnClass = isActive
-                    ? "text-brand border-brand/40 bg-[rgba(212,165,116,0.08)] font-bold shadow-xs"
-                    : "text-text-secondary border-white/5 hover:text-text-primary hover:bg-bg-elevated";
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setPersona(option.value)}
-                      className={cn(
-                        "font-mono text-[11px] px-3 py-1 rounded-lg border transition-all cursor-pointer",
-                        btnClass,
-                      )}
-                    >
-                      {formatPersonaTabLabel(
-                        option.value,
-                        option.label,
-                        filterCounts,
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <label className="flex items-center gap-2 font-sans text-[12px] text-text-primary cursor-pointer select-none px-3 py-1.5 rounded-xl bg-[#17130f] border border-white/5 hover:border-brand/30 transition-colors w-fit">
-                <input
-                  type="checkbox"
-                  checked={onlyRawChecked}
-                  onChange={(e) => setOnlyRawChecked(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-white/10 bg-bg-card text-brand focus:ring-0 focus:ring-offset-0 cursor-pointer accent-brand"
-                />
-                <span className="font-medium text-text-secondary">只顯示 RAW/裸卡</span>
-              </label>
+          <div className="px-3 py-2.5 sm:px-4 border-b border-[rgba(237,232,224,0.06)]">
+            <div className="relative">
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-disabled pointer-events-none"
+                aria-hidden
+              />
+              <input
+                id="user-order-search"
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="訂單編號、卡牌、卡號、系列或對手…"
+                className="w-full h-9 pl-9 pr-9 bg-bg-page/50 border border-[rgba(237,232,224,0.08)] rounded-lg font-sans text-[13px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-brand/30 transition-colors"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-disabled hover:text-text-primary transition-colors focus:outline-none"
+                  aria-label="清除搜尋"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              ) : null}
             </div>
           </div>
 
-          <div className="space-y-3 min-h-[200px]">
-            {isLoading && orders.length === 0 ? (
-              <div className="bg-bg-card rounded-2xl border border-white/5 p-12 text-center">
-                <div className="mx-auto w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+          <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-4 border-b border-[rgba(237,232,224,0.06)]">
+            <h2
+              id="user-trading-heading"
+              className={`${DASHBOARD_SECTION_TITLE_CLASS} min-w-0 truncate`}
+            >
+              交易管理
+            </h2>
+          </div>
+
+          <div className="px-3 py-2 sm:px-4 border-b border-[rgba(237,232,224,0.06)] space-y-2">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p
+                  className="font-mono text-[9px] text-text-disabled tracking-wide"
+                  id="user-trading-status-filter-label"
+                >
+                  訂單狀態
+                </p>
+                <TradingFilterResetButton
+                  hasActiveFilters={hasActiveFilters}
+                  onReset={resetMemberFilters}
+                />
               </div>
-            ) : (() => {
-              const displayOrders = onlyRawChecked
-                ? orders.filter(isRawCardOrder)
-                : orders;
+              <TradingSegmentedFilter
+                options={statusSegmentOptions}
+                value={tabStatus}
+                onChange={setTabStatus}
+                columns={4}
+                pendingValue="pending"
+                ariaLabelledBy="user-trading-status-filter-label"
+              />
+            </div>
 
-              if (displayOrders.length === 0) {
-                return (
-                  <div className="bg-bg-card rounded-2xl border border-white/5 p-12 text-center">
-                    <p className="font-sans text-[13px] text-text-disabled">
-                      沒有符合當前篩選與關鍵字的交易訂單記錄。
-                    </p>
-                  </div>
-                );
-              }
+            <TradingPersonaUnderlineTabs
+              options={personaSegmentOptions}
+              value={persona}
+              onChange={setPersona}
+            />
+          </div>
 
-              return displayOrders.map((order) => {
+          <div className="px-2 sm:px-3 py-2.5 min-h-[12rem] space-y-2.5">
+            {isLoading && orders.length === 0 ? (
+              <div className="py-12 flex justify-center">
+                <div className="w-7 h-7 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+              </div>
+            ) : orders.length === 0 ? (
+              <p className="font-sans text-[13px] text-text-disabled py-12 text-center">
+                沒有符合篩選的訂單記錄。
+              </p>
+            ) : (
+              orders.map((order) => {
                 const authActions = order.useAuthentication
                   ? getMemberAuthOrderActions({
                       persona: order.persona,
@@ -405,6 +375,9 @@ export function UserTradingClient({
                       useAuthentication: order.useAuthentication,
                       escrowStatus: order.escrowStatus,
                       canPay: authActions?.canPay ?? false,
+                      pendingPayment: order.pendingPayment,
+                      paymentExpiresAt: order.paymentExpiresAt,
+                      canCompleteMerchantPurchase: order.canCompleteMerchantPurchase,
                       canCancel:
                         authActions?.canCancel ??
                         (order.persona === "sell" &&
@@ -413,12 +386,12 @@ export function UserTradingClient({
                     }}
                   />
                 );
-              });
-            })()}
+              })
+            )}
           </div>
 
-          {paginationMeta.total > 0 && (
-            <div className="pt-2">
+          {paginationMeta.total > 0 ? (
+            <div className="px-3 pb-2 sm:px-4">
               <Pagination
                 currentPage={paginationMeta.page}
                 totalPages={paginationMeta.totalPages}
@@ -431,7 +404,7 @@ export function UserTradingClient({
                 scrollToViewId="orders-list"
               />
             </div>
-          )}
+          ) : null}
         </section>
       </div>
 

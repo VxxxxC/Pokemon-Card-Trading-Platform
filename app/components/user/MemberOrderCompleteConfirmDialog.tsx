@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -84,6 +85,7 @@ type MemberOrderCompleteConfirmDialogProps = {
   isActionLoading?: boolean;
   onConfirm: () => Promise<boolean>;
   triggerClassName: string;
+  triggerLabel?: string;
 };
 
 export function MemberOrderCompleteConfirmDialog({
@@ -91,6 +93,7 @@ export function MemberOrderCompleteConfirmDialog({
   isActionLoading = false,
   onConfirm,
   triggerClassName,
+  triggerLabel = "確認完成交易",
 }: MemberOrderCompleteConfirmDialogProps) {
   const [open, setOpen] = useState(false);
   const [checks, setChecks] = useState<ChecklistState>(EMPTY_CHECKLIST);
@@ -132,9 +135,19 @@ export function MemberOrderCompleteConfirmDialog({
     >
       <AlertDialogTrigger
         disabled={disabled || isActionLoading}
-        className={triggerClassName}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5",
+          triggerClassName,
+        )}
       >
-        {isActionLoading ? "處理中…" : "確認完成交易"}
+        {isActionLoading ? (
+          "處理中…"
+        ) : (
+          <>
+            <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+            {triggerLabel}
+          </>
+        )}
       </AlertDialogTrigger>
 
       <AlertDialogContent className="max-w-md rounded-2xl border border-success/25 bg-[#26211C] p-6 text-[#eae1da]">
@@ -176,7 +189,10 @@ export function MemberOrderCompleteConfirmDialog({
 
         <div className="flex flex-col gap-2">
           <AlertDialogAction
-            onClick={() => void handleConfirm()}
+            onClick={(event) => {
+              event.preventDefault();
+              void handleConfirm();
+            }}
             disabled={!allChecked || isActionLoading}
             className="h-11 rounded-xl bg-success font-black text-white hover:bg-success-hover disabled:opacity-50"
           >

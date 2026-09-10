@@ -5,9 +5,14 @@ import { getOfferCardContext } from "@/app/actions/offers";
 import { hydrateChatRoomThread } from "@/app/lib/chat/hydrateChatRoomThread";
 import { isDbChatRoomId } from "@/app/lib/chat/constants";
 import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
+import { refreshInboxLobbyInStore } from "@/lib/chat/refresh-inbox-lobby";
+import {
+  isViewingChatThread,
+} from "@/lib/chat/viewing-chat-thread";
 import {
   decodeOfferRealtimeEvent,
   getLastPersistedMessageTimestamp,
+  isInboundTransactionSystemContent,
   isInitialOfferRealtimeMessage,
   mapChatMessageRowToStoreMessage,
   parseModifyOfferPriceFromContent,
@@ -23,6 +28,26 @@ type UseChatRoomRealtimeOptions = {
 
 function isRealtimeDbRoom(roomId: string): boolean {
   return isDbChatRoomId(roomId);
+}
+
+const roomHydrateQueues = new Map<string, Promise<void>>();
+
+async function enqueueRoomHydrate(roomId: string): Promise<void> {
+  const previous = roomHydrateQueues.get(roomId) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await hydrateChatRoomThread(roomId, { force: true });
+    });
+  roomHydrateQueues.set(roomId, next);
+
+  try {
+    await next;
+  } finally {
+    if (roomHydrateQueues.get(roomId) === next) {
+      roomHydrateQueues.delete(roomId);
+    }
+  }
 }
 
 async function removeChatInboxChannels(
@@ -80,11 +105,16 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
         applyOfferPriceSync,
         activeRoomId,
         isChatOpen,
+        mobileView,
       } = useHkCardVaultStore.getState();
 
       const isIncoming = row.sender_id !== currentUserId;
       const isActiveOpenThread =
-        isChatOpen && activeRoomId === row.room_id && isIncoming;
+        isIncoming &&
+        isViewingChatThread(
+          { isChatOpen, activeRoomId, mobileView },
+          row.room_id,
+        );
 
       const markActiveThreadReadIfNeeded = () => {
         if (isActiveOpenThread) {
@@ -92,18 +122,71 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
         }
       };
 
-      if (
-        isInitialOfferRealtimeMessage(row) &&
-        isChatOpen &&
-        activeRoomId === row.room_id
-      ) {
-        await hydrateChatRoomThread(row.room_id, { force: true });
-        markActiveThreadReadIfNeeded();
+      if (isInitialOfferRealtimeMessage(row)) {
+        const hadRoom = useHkCardVaultStore
+          .getState()
+          .chats.some((room) => room.id === row.room_id);
+
+        if (isActiveOpenThread) {
+          await enqueueRoomHydrate(row.room_id);
+          markActiveThreadReadIfNeeded();
+          return;
+        }
+
+        if (!hadRoom) {
+          await refreshInboxLobbyInStore();
+        } else {
+          const roomState = useHkCardVaultStore
+            .getState()
+            .chats.find((room) => room.id === row.room_id);
+          const sellerId =
+            roomState?.messages.find((message) => message.specialData?.sellerId)
+              ?.specialData?.sellerId ?? roomState?.partnerId;
+
+          const message = mapChatMessageRowToStoreMessage(
+            row,
+            currentUserId,
+            sellerId,
+          );
+          appendRoomMessage(row.room_id, message);
+        }
+
         return;
       }
 
-      const message = mapChatMessageRowToStoreMessage(row, currentUserId);
-      appendRoomMessage(row.room_id, message);
+      const roomState = useHkCardVaultStore
+        .getState()
+        .chats.find((room) => room.id === row.room_id);
+      const sellerId =
+        roomState?.messages.find((message) => message.specialData?.sellerId)
+          ?.specialData?.sellerId ??
+        (roomState?.partnerId != null &&
+        roomState.messages.some(
+          (message) =>
+            message.specialData?.buyerId != null &&
+            roomState.partnerId === message.specialData.buyerId,
+        )
+          ? currentUserId
+          : roomState?.partnerId);
+
+      const message = mapChatMessageRowToStoreMessage(
+        row,
+        currentUserId,
+        sellerId,
+      );
+      const hadRoom = useHkCardVaultStore
+        .getState()
+        .chats.some((room) => room.id === row.room_id);
+      const countAsUnread =
+        isIncoming && isInboundTransactionSystemContent(row.content);
+      appendRoomMessage(
+        row.room_id,
+        message,
+        countAsUnread ? { countAsUnread: true } : undefined,
+      );
+      if (!hadRoom) {
+        await refreshInboxLobbyInStore();
+      }
       markActiveThreadReadIfNeeded();
 
       const event = decodeOfferRealtimeEvent(row);
@@ -359,6 +442,7 @@ export function useChatRoomRealtime({ enabled }: UseChatRoomRealtimeOptions) {
       const nextUserId = session?.user?.id ?? null;
       if (!nextUserId) {
         currentUserIdRef.current = null;
+        void teardownChannel();
         return;
       }
 

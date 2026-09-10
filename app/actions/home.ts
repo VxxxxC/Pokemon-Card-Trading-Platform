@@ -7,6 +7,7 @@ import {
   HOME_LISTING_LIMIT,
 } from "@/lib/home/constants";
 import { fetchHomeListingsByPersona } from "@/lib/home/load-home-listings";
+import { HOME_LISTINGS_CACHE_TAG } from "@/lib/home/revalidate-home-listings";
 import { homePerfLog } from "@/lib/home/perf-log";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
@@ -19,7 +20,10 @@ function getCachedHomeListings(
       return { success: true as const, data };
     },
     ["home-listings", persona, String(HOME_LISTING_LIMIT)],
-    { revalidate: HOME_LISTING_CACHE_SECONDS },
+    {
+      revalidate: HOME_LISTING_CACHE_SECONDS,
+      tags: [HOME_LISTINGS_CACHE_TAG],
+    },
   )().catch(async (error) => {
     console.error(`[getHome${persona}Listings] cache`, error);
     try {

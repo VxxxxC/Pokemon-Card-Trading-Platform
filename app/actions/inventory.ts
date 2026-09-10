@@ -4,8 +4,10 @@ import type {
   GetUserInventoryGroupsInput,
   InventoryGroupsPage,
   InventoryPageBootstrap,
+  InventoryStatusFilter,
   InventorySummary,
 } from "@/app/lib/inventory/types";
+import { DEFAULT_INVENTORY_STATUS_FILTER } from "@/app/lib/inventory/types";
 import {
   INVENTORY_DEFAULT_PAGE_SIZE,
   INVENTORY_MAX_PAGE_SIZE,
@@ -39,6 +41,15 @@ async function getAuthenticatedUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+function normalizeInventoryStatusFilter(
+  value: InventoryStatusFilter | undefined,
+): InventoryStatusFilter {
+  if (value === "active" || value === "inactive" || value === "sold") {
+    return value;
+  }
+  return DEFAULT_INVENTORY_STATUS_FILTER;
+}
+
 function normalizeGroupsInput(input: GetUserInventoryGroupsInput): UserInventoryViewInput {
   const page = Math.max(1, Math.floor(input.page ?? 1));
   const pageSize = Math.min(
@@ -52,6 +63,7 @@ function normalizeGroupsInput(input: GetUserInventoryGroupsInput): UserInventory
     pageSize,
     query,
     sellerPersona: input.sellerPersona,
+    statusFilter: normalizeInventoryStatusFilter(input.statusFilter),
   };
 }
 

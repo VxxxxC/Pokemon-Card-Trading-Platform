@@ -9,8 +9,11 @@ export interface SellOrder {
   readonly sellerPersona?: "member" | "merchant";
   readonly price: number;
   readonly sellerRating: number;
+  /** Public transaction reviews count (not total trades). */
   readonly reviewCount?: number;
+  readonly sellerTotalTrades?: number;
   readonly customGrade: { authority: string; score: string };
+  readonly deliverySummary?: string;
 }
 
 export interface UnifiedProductSpec {

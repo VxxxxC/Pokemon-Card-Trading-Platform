@@ -16,6 +16,7 @@ import { validateCreateSealedListing } from "@/lib/listings/validation";
 export type SubmitSealedListingInput = {
   productId: string;
   price: number;
+  extraShippingFee?: number;
   sellerDescription?: string;
   sourceCollectionId?: string;
   sellerPersona?: "member" | "merchant";
@@ -94,6 +95,9 @@ export async function submitSealedListingWithProgress(
     const formData = new FormData();
     formData.append("productId", input.productId);
     formData.append("price", String(input.price));
+    if (input.extraShippingFee != null && input.extraShippingFee > 0) {
+      formData.append("extraShippingFee", String(input.extraShippingFee));
+    }
     if (input.sellerDescription?.trim()) {
       formData.append("sellerDescription", input.sellerDescription.trim());
     }

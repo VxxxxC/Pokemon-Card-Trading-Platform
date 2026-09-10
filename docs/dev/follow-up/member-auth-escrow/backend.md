@@ -4,7 +4,7 @@
 
 - **Backend:** ✅ Ready (mock payment + escrow RPCs + AML guards)
 - **Frontend:** 🟡 Partial — detail/list/chat/listing wired per [frontend.md](./frontend.md)
-- **Stripe:** ⏳ Deferred — replace `lib/payments/member-auth-payment.ts` stub later
+- **Stripe:** ✅ Milestone 1.5 — `app/actions/member-auth-checkout.ts` + webhook `order_kind=member_auth`（見 [member-auth-checkout/backend.md](./follow-up/member-auth-checkout/backend.md)）
 
 ## Overview
 
@@ -22,6 +22,7 @@ P2P meetup orders (`use_authentication = false`) are unchanged.
 | `20260708110000_member_auth_trading_search.sql` | MEMBER marketplace filter fix; `search_user_trading_orders` returns `escrow_status`; auth-aware pending filters; cancel sets `escrow_status='cancelled'` |
 | `20260708120000_member_auth_aml_guards.sql` | P2P limits in `rpc_make_offer` (14-day HK$300 cap; no market price > HK$800 must use auth) |
 | `20260715210000_offer_aml_shared_guard.sql` | `fn_assert_p2p_offer_aml_limits` shared helper; enforced in `rpc_make_offer`, `rpc_modify_offer`, `rpc_accept_offer` |
+| `20260920120000_p2p_aml_limits_ssot.sql` | Code SSOT mirrors + `fn_assert_p2p_offer_aml_limits` reads mirror fns (see [p2p-aml-limits plan](../p2p-aml-limits/plan.md)) |
 
 Apply: `bunx supabase db push` then regenerate `types/supabase.ts`.
 

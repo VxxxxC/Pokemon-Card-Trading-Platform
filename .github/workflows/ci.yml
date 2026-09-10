@@ -22,5 +22,42 @@ jobs:
         run: bunx tsc --noEmit
       - name: 🛡️ Gate 2 Linter Structural Cleanliness Audit
         run: bun run lint
+      - name: 🛡️ Gate 2b UI Feature Map Contract (SC-UI-MAP)
+        run: bun run test:ui:check-map
       - name: 🛡️ Gate 3 Production Optimization Asset Bundle Packer
-        run: bun run build
+        run: bun run build:ci
+
+  security-integration:
+    name: Gate 2 Security Integration
+    needs: validate-and-pack
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Clone Repository Assets
+        uses: actions/checkout@v7.0.0
+      - name: ⚡ Setup High-Performance Bun Runtime
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+          cache: true
+      - name: 📦 Hydrate Node Dependency Cache
+        run: bun ci
+      - name: 🛡️ Gate 2 Env Guard (fail if integration would skip)
+        run: CI_INTEGRATION_REQUIRED=1 bun run test:ci:require-integration-env
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_BUYER_EMAIL: ${{ secrets.E2E_BUYER_EMAIL }}
+          E2E_BUYER_PASSWORD: ${{ secrets.E2E_BUYER_PASSWORD }}
+      - name: 🛡️ Gate 2 Security Integration Tests
+        run: bun run test:integration:security
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_BUYER_EMAIL: ${{ secrets.E2E_BUYER_EMAIL }}
+          E2E_BUYER_PASSWORD: ${{ secrets.E2E_BUYER_PASSWORD }}

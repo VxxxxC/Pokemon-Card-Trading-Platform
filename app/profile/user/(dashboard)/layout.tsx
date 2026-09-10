@@ -13,10 +13,10 @@ export const metadata: Metadata = {
 };
 
 const USER_TABS: TabItem[] = [
-  { href: "/profile/user", label: "總覽", icon: "👤" },
-  { href: "/profile/user/collection", label: "卡牌庫", icon: "💎" },
-  { href: "/profile/user/inventory", label: "商品管理", icon: "🏪" },
-  { href: "/profile/user/trading", label: "交易管理", icon: "⚡" },
+  { href: "/profile/user", label: "總覽", iconKey: "overview" },
+  { href: "/profile/user/collection", label: "卡牌庫", iconKey: "collection" },
+  { href: "/profile/user/inventory", label: "我的掛單", iconKey: "my-listings" },
+  { href: "/profile/user/trading", label: "交易管理", iconKey: "trading" },
 ];
 
 export default function UserProfileLayout({
@@ -29,7 +29,7 @@ export default function UserProfileLayout({
       <TopNav />
       <MobileHeader />
 
-      <main className="mt-5 flex-1 max-w-300 mx-auto w-full px-4 lg:px-8 pb-28 lg:pb-10">
+      <main className="mt-3 flex-1 max-w-[1100px] mx-auto w-full px-4 lg:px-8 pb-28 lg:pb-10">
         <UserProfileTabNav tabs={USER_TABS} />
         <UserProfileDashboardShell>{children}</UserProfileDashboardShell>
       </main>

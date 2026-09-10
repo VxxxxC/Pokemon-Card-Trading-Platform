@@ -1,0 +1,9 @@
+確認新電郵地址
+
+你正在更改帳戶登入電郵。
+請使用以下連結確認新電郵地址。
+
+確認新電郵: {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email_change&next=/profile/user/settings
+
+Cardvault HK
+如非本人操作，請忽略此郵件或聯絡客服。

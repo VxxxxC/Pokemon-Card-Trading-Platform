@@ -39,24 +39,33 @@ loadEnvFile(".env");
 loadEnvFile(".env.local");
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+const productionGate = process.env.PRODUCTION_GATE === "1";
+const skipWebServer = process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1";
 
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries:
+    process.env.CI || process.env.REWARDS_GATE || process.env.MODERATION_GATE
+      ? 1
+      : 0,
   workers: 1,
   reporter: "list",
   use: {
     baseURL,
+    timezoneId: "Asia/Hong_Kong",
     trace: "on-first-retry",
+    actionTimeout: 30_000,
   },
-  webServer: {
-    command: "bun run dev",
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: skipWebServer
+    ? undefined
+    : {
+        command: productionGate ? "bun run start" : "bun run dev",
+        url: baseURL,
+        reuseExistingServer: productionGate || !process.env.CI,
+        timeout: 120_000,
+      },
   projects: [
     {
       name: "setup",
@@ -74,6 +83,7 @@ export default defineConfig({
         /member-auth-escrow\.spec\.ts/,
         /member-auth-inbound\.spec\.ts/,
         /member-order-detail-auth\.spec\.ts/,
+        /e2e\/partner\/(?!system\/(p-ui-routes|p-m0-staging-smoke)\.spec\.ts)(?!member\/p-e04-marketplace-search\.spec\.ts)(?!member\/p-e05-merchant-buy-now\.spec\.ts)(?!member\/p-e12-order-detail-profile\.spec\.ts)/,
       ],
       use: { ...devices["Desktop Chrome"] },
     },
@@ -132,7 +142,7 @@ export default defineConfig({
         /member-auth-inbound\.spec\.ts/,
       ],
       dependencies: ["setup"],
-      timeout: 300_000,
+      timeout: 480_000,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

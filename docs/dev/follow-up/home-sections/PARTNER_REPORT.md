@@ -1,5 +1,7 @@
 # Partner Report — Home Page Sections (`/`)
 
+> **Partner 人手清單：** [PARTNER_QA.md § M5](../../PARTNER_QA.md#m5--首頁-p015-min)（本頁為技術報告，唔再維護獨立 QA checklist）
+
 **Date:** 2026-07-08 (updated)  
 **Flow:** Homepage wishlist strip + merchant carousel + C2C arrivals + auth-gated check-in  
 **Backend owner:** Backend track  

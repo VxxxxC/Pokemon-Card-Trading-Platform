@@ -14,6 +14,10 @@ import {
 import { bunnyObjectKeyFromCdnUrl } from "@/lib/storage/bunny";
 import type { ListingSubmitMode } from "@/app/store/useListingSubmitStore";
 import { LISTING_IMAGE_MAX } from "@/lib/listings/images";
+import {
+  validateListingImageCount,
+  validateSealedListingImageCount,
+} from "@/lib/listings/validation";
 
 export type ListingImageSlotInput = {
   file?: File | null;
@@ -24,6 +28,7 @@ export type ListingImageSlotInput = {
 
 export type SubmitCardListingInput = {
   mode?: ListingSubmitMode;
+  itemKind?: "card" | "box_set";
   productId?: string;
   listingId?: string;
   gradingOptionId: string;
@@ -36,6 +41,7 @@ export type SubmitCardListingInput = {
   imageFiles?: File[];
   imageSlots?: ListingImageSlotInput[];
   photosRemark?: string[];
+  extraShippingFee?: number;
 };
 
 async function rollbackClientUploadedImages(
@@ -65,6 +71,7 @@ export async function submitCardListingWithProgress(
 
   const mode = input.mode ?? "create";
   const isEdit = mode === "edit";
+  const itemKind = input.itemKind ?? "card";
   const uploadTargets = isEdit
     ? (input.imageSlots ?? []).filter((slot) => slot.file)
     : (input.imageFiles ?? []).map((file) => ({ file }));
@@ -86,14 +93,31 @@ export async function submitCardListingWithProgress(
 
     if (isEdit) {
       const slots = input.imageSlots ?? [];
-      if (slots.length !== LISTING_IMAGE_MAX) {
-        finishError(`必須提供 ${LISTING_IMAGE_MAX} 張相片`);
-        return { success: false, error: `必須提供 ${LISTING_IMAGE_MAX} 張相片` };
+      const filledSlots = slots.filter(
+        (slot) => slot.file || slot.existingUrl,
+      );
+
+      if (itemKind === "card" && slots.length !== LISTING_IMAGE_MAX) {
+        const cardSlotError = `必須提供 ${LISTING_IMAGE_MAX} 張相片`;
+        finishError(cardSlotError);
+        return { success: false, error: cardSlotError };
       }
 
+      const countError =
+        itemKind === "box_set"
+          ? validateSealedListingImageCount(filledSlots.length)
+          : validateListingImageCount(filledSlots.length);
+
+      if (countError) {
+        finishError(countError);
+        return { success: false, error: countError };
+      }
+
+      const slotsToUpload = itemKind === "box_set" ? filledSlots : slots;
+
       let uploadIndex = 0;
-      for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
-        const slot = slots[slotIndex]!;
+      for (let slotIndex = 0; slotIndex < slotsToUpload.length; slotIndex += 1) {
+        const slot = slotsToUpload[slotIndex]!;
         const imageOrder = slotIndex + 1;
 
         if (slot.file) {
@@ -173,6 +197,17 @@ export async function submitCardListingWithProgress(
           }
           formData.append("listingId", input.listingId);
           formData.append("isActive", String(input.isActive ?? true));
+          formData.append(
+            "useAuthentication",
+            String(input.useAuthentication ?? false),
+          );
+          if (input.sellerPersona === "merchant") {
+            formData.append("sellerPersona", "merchant");
+            formData.append(
+              "extraShippingFee",
+              String(input.extraShippingFee ?? 0),
+            );
+          }
           return updateCardListing(formData);
         })()
       : await (() => {
@@ -192,6 +227,13 @@ export async function submitCardListingWithProgress(
           }
           if (input.sellerPersona) {
             formData.append("sellerPersona", input.sellerPersona);
+          }
+          if (
+            input.sellerPersona === "merchant" &&
+            input.extraShippingFee != null &&
+            input.extraShippingFee > 0
+          ) {
+            formData.append("extraShippingFee", String(input.extraShippingFee));
           }
           return createCardListing(formData);
         })();

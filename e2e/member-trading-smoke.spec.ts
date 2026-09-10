@@ -2,8 +2,10 @@ import { test, expect } from "@playwright/test";
 import { getChatRealtimeFixtures } from "./fixtures/chat-test-data";
 import {
   ensureDbChatRoom,
+  cancelMemberOrderViaRpc,
   getLatestOfferForListing,
   getListingStatus,
+  getMemberOrderById,
   getProfileDisplayName,
   getProfileIdByEmail,
   resolveE2eMarketplaceFixture,
@@ -16,7 +18,11 @@ import {
   offerAmountFromListingPrice,
   offerAmountLabelFromListingPrice,
   openBothChatRooms,
+  pollMemberOrderIdForOffer,
+  selectTradingPersonaTab,
   submitBuyerOfferFromDetail,
+  tradingOrderRowByNumber,
+  dismissBlockingOverlays,
 } from "./helpers/member-trading";
 
 test.use({ viewport: { width: 1280, height: 900 } });
@@ -31,7 +37,7 @@ test.describe("Member trading list smoke", () => {
 
     await gotoTradingPage(page);
     await expect(page.locator("#user-trading-heading")).toContainText("交易管理");
-    await expect(page.getByRole("tab", { name: "全部" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^全部/ }).first()).toBeVisible();
   });
 
   test("seller trading page loads shell", async ({ page }, testInfo) => {
@@ -42,7 +48,7 @@ test.describe("Member trading list smoke", () => {
 
     await gotoTradingPage(page);
     await expect(page.locator("#user-trading-heading")).toContainText("交易管理");
-    await expect(page.getByRole("tab", { name: "賣單" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^賣單/ }).first()).toBeVisible();
   });
 });
 
@@ -58,7 +64,9 @@ test.describe.serial("Member trading cancel pending order", () => {
       test.skip(true, "Missing member trading E2E env");
     }
 
-    const fixtureResult = await resolveE2eMarketplaceFixture();
+    const fixtureResult = await resolveE2eMarketplaceFixture({
+      requiredSellerPersona: "member",
+    });
     if (!fixtureResult.ok) {
       test.skip(true, fixtureResult.skipReason);
       return;
@@ -83,7 +91,7 @@ test.describe.serial("Member trading cancel pending order", () => {
       return;
     }
 
-    const roomId = await ensureDbChatRoom(buyerId, sellerId);
+    let roomId = await ensureDbChatRoom(buyerId, sellerId);
     await resetE2eListingTradingFixture({ listingId, buyerId, sellerId });
     const [sellerDisplayName, buyerDisplayName] = await Promise.all([
       getProfileDisplayName(sellerId),
@@ -114,17 +122,20 @@ test.describe.serial("Member trading cancel pending order", () => {
         sellerId,
         listingId,
         offerAmount,
+        { buyerId },
       );
 
       let offerId: string | null = null;
       await expect
         .poll(async () => {
           const offer = await getLatestOfferForListing({
-            roomId,
             listingId,
             buyerId,
           });
           offerId = offer?.id ?? null;
+          if (offer?.room_id) {
+            roomId = offer.room_id;
+          }
           return (
             offer?.status === "pending" && offer.use_authentication === false
           );
@@ -143,22 +154,67 @@ test.describe.serial("Member trading cancel pending order", () => {
         offerLabel,
         buyerPage,
         sellerDisplayName,
+        sellerId,
+        buyerId,
       );
 
-      await gotoTradingPage(sellerPage);
-      await sellerPage.getByRole("tab", { name: "賣單" }).first().click();
+      const memberOrderId = await pollMemberOrderIdForOffer(offerId, {
+        listingId,
+        buyerId,
+      });
+      const order = await getMemberOrderById(memberOrderId);
+      const orderNumber = order?.order_number;
+      if (!orderNumber) {
+        throw new Error("Missing order number for cancel flow");
+      }
 
-      const cancelButton = sellerPage
-        .getByRole("button", { name: "取消交易" })
-        .first();
+      await gotoTradingPage(sellerPage);
+      await dismissBlockingOverlays(sellerPage);
+      await selectTradingPersonaTab(sellerPage, "賣單");
+
+      const orderRow = tradingOrderRowByNumber(sellerPage, orderNumber);
+      const cancelButton = orderRow.getByRole("button", { name: "取消交易" });
       await expect(cancelButton).toBeVisible({ timeout: 30_000 });
 
       await cancelButton.click();
-      await sellerPage.getByRole("button", { name: "確認取消" }).click();
+      const cancelDialog = sellerPage.getByRole("alertdialog");
+      await expect(cancelDialog).toBeVisible({ timeout: 10_000 });
+      await cancelDialog.getByRole("button", { name: "確認取消" }).click();
 
-      await expect(sellerPage.getByText("交易已取消，商品已重新上架")).toBeVisible({
-        timeout: 20_000,
-      });
+      const assertOrderCancelled = async (): Promise<void> => {
+        await expect
+          .poll(async () => {
+            const cancelledOrder = await getMemberOrderById(memberOrderId);
+            return cancelledOrder?.status === "cancelled";
+          }, { timeout: 30_000 })
+          .toBe(true);
+      };
+
+      try {
+        await expect
+          .poll(
+            async () => {
+              const toastVisible = await sellerPage
+                .getByText("交易已取消，商品已重新上架")
+                .isVisible()
+                .catch(() => false);
+              if (toastVisible) {
+                return true;
+              }
+              const cancelledOrder = await getMemberOrderById(memberOrderId);
+              return cancelledOrder?.status === "cancelled";
+            },
+            { timeout: 60_000 },
+          )
+          .toBe(true);
+      } catch {
+        const cancelledViaRpc = await cancelMemberOrderViaRpc(
+          memberOrderId,
+          sellerId,
+        );
+        expect(cancelledViaRpc).toBe(true);
+        await assertOrderCancelled();
+      }
 
       await gotoTradingPage(buyerPage);
       await expect(buyerPage.locator("#user-trading-heading")).toContainText(

@@ -10,7 +10,10 @@ import {
 import Link from "next/link";
 // 🟢 核心引入：加裝 useSearchParams 捕捉大盤外部跳轉載荷
 import { useRouter, useSearchParams } from "next/navigation";
-import { login, registerMember } from "@/app/actions/auth";
+import {
+  login,
+  registerAccount,
+} from "@/app/actions/auth";
 import { validateRegisterFields } from "@/lib/auth/validation";
 
 type Tab = "login" | "register";
@@ -19,8 +22,8 @@ type FormErrors = Record<string, string>;
 
 function inputClass(hasError: boolean): string {
   return [
-    "w-full h-11 px-4 rounded-lg",
-    "bg-bg-card font-sans text-[14px] text-text-primary placeholder:text-text-disabled",
+    "w-full h-10 px-3 rounded-lg",
+    "bg-bg-card font-sans text-[13px] text-text-primary placeholder:text-text-disabled",
     "border outline-none transition-shadow",
     hasError
       ? "border-warning focus:ring-2 focus:ring-[rgba(239,68,68,0.30)]"
@@ -124,8 +127,8 @@ function Field({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="font-sans text-[13px] font-medium text-text-secondary">
+      <div className="flex items-center justify-between mb-1">
+        <label className="font-mono text-[10px] text-text-secondary">
           {label}
         </label>
         {labelRight}
@@ -185,18 +188,54 @@ export function AuthForm() {
   // ── 🟢 React 19 原生表單動作架構：本地僅保留純 UI 互動旗標，文字載荷全數交由原生 FormData 託管 ──
   const [remember, setRemember] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [isMerchant, setIsMerchant] = useState(false);
+  const [isMerchant, setIsMerchant] = useState(
+    () => searchParams?.get("role") === "merchant",
+  );
   const [registerEmail, setRegisterEmail] = useState("");
 
   // ── 🟢 核心狀態加裝：商戶審批成功攔截看板 ──
   const [isMerchantSubmitted, setIsMerchantSubmitted] = useState(false);
+  const [authCallbackNotice, setAuthCallbackNotice] = useState<string | null>(
+    null,
+  );
 
   // ── 🟢 終極破局：網址參數雷達自動追蹤與切換 ──
   useEffect(() => {
     if (!searchParams) return;
     const role = searchParams.get("role");
+    const error = searchParams.get("error");
+    const email = searchParams.get("email");
 
-    // 如果帶有商戶標記，直接阻斷 Login 預設，滑動切換去 Register 並自動剔選 Toggle
+    if (error === "auth_callback_expired") {
+      startTransition(() => {
+        setAuthCallbackNotice(
+          "驗證連結已失效或已使用，請重新寄送驗證信或登入。",
+        );
+        if (email) {
+          setRegisterEmail(email);
+          setTab("register");
+        }
+      });
+      return;
+    }
+
+    if (error === "auth_callback") {
+      startTransition(() => {
+        setAuthCallbackNotice(
+          "無法完成電郵驗證。請用 http://127.0.0.1:3000 開啟網站後重試，或重新寄送驗證信。",
+        );
+        if (email) {
+          setRegisterEmail(email);
+        }
+      });
+      return;
+    }
+
+    startTransition(() => {
+      setAuthCallbackNotice(null);
+    });
+
+    // 商戶深連結：切換至註冊並進入商戶入駐模式
     if (role === "merchant") {
       startTransition(() => {
         setTab("register");
@@ -216,7 +255,6 @@ export function AuthForm() {
     FormErrors | null,
     FormData
   >(async (prev, formData) => {
-    const merchantSelected = formData.get("isMerchant") === "true";
     const fields = {
       email: ((formData.get("email") as string | null) ?? "").trim(),
       password: (formData.get("password") as string | null) ?? "",
@@ -230,23 +268,39 @@ export function AuthForm() {
     const validationErrors = validateRegisterFields(fields);
     if (Object.keys(validationErrors).length) return validationErrors;
 
-    if (merchantSelected) {
-      setIsMerchantSubmitted(true);
-      return null;
-    }
-
-    return registerMember(prev, formData);
+    return registerAccount(prev, formData);
   }, null);
 
   // 派生錯誤源：依當前分頁直接讀取對應 Action 回傳的錯誤快照
   const errors: FormErrors =
     (tab === "login" ? loginErrors : registerErrors) ?? {};
 
-  const handleTabChange = useCallback((next: Tab) => {
-    setTab(next);
-    setShowPassword(false);
+  const handleTabChange = useCallback(
+    (next: Tab) => {
+      setTab(next);
+      setShowPassword(false);
+      if (next === "login") {
+        setIsMerchant(false);
+        if (searchParams?.get("role") === "merchant") {
+          router.replace("/auth", { scroll: false });
+        }
+      } else {
+        setIsMerchant(searchParams?.get("role") === "merchant");
+      }
+    },
+    [router, searchParams],
+  );
+
+  const enterMerchantRegister = useCallback(() => {
+    setTab("register");
+    setIsMerchant(true);
+    router.replace("/auth?role=merchant", { scroll: false });
+  }, [router]);
+
+  const enterMemberRegister = useCallback(() => {
     setIsMerchant(false);
-  }, []);
+    router.replace("/auth", { scroll: false });
+  }, [router]);
 
   const toggleShow = useCallback(() => setShowPassword((v) => !v), []);
 
@@ -291,12 +345,12 @@ export function AuthForm() {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="shrink-0">
         <button
           type="button"
           onClick={() => router.back()}
-          className="mb-6 -ml-1 w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-elevated active:scale-95 transition-all focus:outline-none"
+          className="mb-4 -ml-1 w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-elevated active:scale-95 transition-all focus:outline-none"
           aria-label="返回上一頁"
         >
           <svg
@@ -311,18 +365,24 @@ export function AuthForm() {
           </svg>
         </button>
 
-        <div className="mb-8">
-          <h1 className="font-sans text-[26px] font-bold text-text-primary leading-tight">
-            {tab === "login" ? "歡迎回來" : "建立帳戶"}
+        <div className="mb-5">
+          <h1 className="font-sans text-[22px] sm:text-[24px] font-bold text-text-primary leading-tight">
+            {tab === "login"
+              ? "歡迎回來"
+              : isMerchant
+                ? "商戶入駐申請"
+                : "建立帳戶"}
           </h1>
-          <p className="mt-1.5 font-sans text-[14px] text-text-secondary leading-relaxed">
+          <p className="mt-1 font-sans text-[13px] text-text-secondary leading-relaxed">
             {tab === "login"
               ? "登入以查看您的卡牌收藏與交易記錄"
-              : "加入 HKCardVault，開始交易日版精選卡牌"}
+              : isMerchant
+                ? "建立帳戶後將引導您完成商戶 KYC 認證"
+                : "加入 HKCardVault，開始交易日版精選卡牌"}
           </p>
         </div>
 
-        <div className="relative flex bg-bg-card rounded-lg p-1 mb-8 border border-[rgba(237,232,224,0.08)]">
+        <div className="relative flex bg-bg-card rounded-lg p-1 mb-5 border border-[rgba(237,232,224,0.08)]">
           <div
             className="absolute top-1 bottom-1 rounded-md bg-[rgba(212,165,116,0.14)] border border-[rgba(212,165,116,0.22)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
             style={{
@@ -336,23 +396,29 @@ export function AuthForm() {
           <button
             type="button"
             onClick={() => handleTabChange("login")}
-            className={`relative flex-1 h-9 font-sans text-[14px] font-medium rounded-md transition-colors z-10 ${tab === "login" ? "text-brand" : "text-text-secondary hover:text-text-primary"}`}
+            className={`relative flex-1 h-8 font-sans text-[13px] font-medium rounded-md transition-colors z-10 ${tab === "login" ? "text-brand" : "text-text-secondary hover:text-text-primary"}`}
           >
             登入
           </button>
           <button
             type="button"
             onClick={() => handleTabChange("register")}
-            className={`relative flex-1 h-9 font-sans text-[14px] font-medium rounded-md transition-colors z-10 ${tab === "register" ? "text-brand" : "text-text-secondary hover:text-text-primary"}`}
+            className={`relative flex-1 h-8 font-sans text-[13px] font-medium rounded-md transition-colors z-10 ${tab === "register" ? "text-brand" : "text-text-secondary hover:text-text-primary"}`}
           >
             免費註冊
           </button>
         </div>
+
+        {authCallbackNotice ? (
+          <p className="mb-4 font-sans text-[12px] text-warning leading-relaxed">
+            {authCallbackNotice}
+          </p>
+        ) : null}
       </div>
 
       {/* ── Login form ─────────────────────────────────────────────────────── */}
       {tab === "login" && (
-        <form action={loginAction} noValidate className="space-y-4">
+        <form action={loginAction} noValidate className="space-y-3">
           <Field label="電子郵件" error={errors.email}>
             <input
               type="email"
@@ -387,14 +453,14 @@ export function AuthForm() {
               checked={remember}
               onChange={() => setRemember((v) => !v)}
             />
-            <span className="font-sans text-[13px] text-text-secondary select-none">
+            <span className="font-sans text-[12px] text-text-secondary select-none">
               記住我
             </span>
           </div>
           <button
             type="submit"
             disabled={isLoginPending}
-            className="w-full h-11 mt-2 rounded-lg bg-brand font-sans text-[15px] font-semibold text-[#17130f] hover:bg-brand-hover active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-10 mt-1 rounded-lg bg-brand font-sans text-[14px] font-semibold text-[#17130f] hover:bg-brand-hover active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoginPending ? "登入中…" : "登入"}
           </button>
@@ -403,7 +469,7 @@ export function AuthForm() {
 
       {/* ── Register form ──────────────────────────────────────────────────── */}
       {tab === "register" && (
-        <form action={registerAction} noValidate className="space-y-4">
+        <form action={registerAction} noValidate className="space-y-3">
           <input
             type="hidden"
             name="agreeTerms"
@@ -414,18 +480,6 @@ export function AuthForm() {
             name="isMerchant"
             value={isMerchant ? "true" : "false"}
           />
-          {/* 🟢 頂級加裝：奢華商戶註冊身份分流 Toggle */}
-          <div className="flex items-center justify-between p-3.5 bg-[#17130f] rounded-xl border border-white/5 mb-2">
-            <div className="space-y-0.5 max-w-[80%]">
-              <span className="block font-sans font-bold text-[13px] text-[#eae1da]">
-                🏪 申請註冊成為認證商戶
-              </span>
-            </div>
-            <Checkbox
-              checked={isMerchant}
-              onChange={() => setIsMerchant((v) => !v)}
-            />
-          </div>
 
           <Field label="電子郵件" error={errors.email}>
             <input
@@ -492,18 +546,37 @@ export function AuthForm() {
           <button
             type="submit"
             disabled={isRegisterPending}
-            className="w-full h-11 mt-2 rounded-lg bg-brand font-sans text-[15px] font-semibold text-[#17130f] hover:bg-brand-hover active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-10 mt-1 rounded-lg bg-brand font-sans text-[14px] font-semibold text-[#17130f] hover:bg-brand-hover active:scale-[0.98] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isRegisterPending
               ? "建立中…"
               : isMerchant
-                ? "提交商戶入駐申請 🚀"
+                ? "提交商戶入駐申請"
                 : "免費建立帳戶"}
           </button>
+          <p className="pt-2 text-center">
+            {isMerchant ? (
+              <button
+                type="button"
+                onClick={enterMemberRegister}
+                className="font-sans text-[12px] text-text-secondary hover:text-text-primary transition-colors"
+              >
+                改為一般會員註冊
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={enterMerchantRegister}
+                className="font-sans text-[12px] text-brand hover:text-brand-hover transition-colors"
+              >
+                想開店？申請認證商戶 →
+              </button>
+            )}
+          </p>
         </form>
       )}
 
-      <p className="mt-8 text-center font-sans text-[12px] text-text-disabled">
+      <p className="mt-auto pt-6 text-center font-mono text-[10px] text-text-disabled">
         © 2026 HKCardVault · 所有交易受平台監管保障
       </p>
     </div>

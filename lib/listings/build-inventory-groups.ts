@@ -2,6 +2,7 @@ import type { InventoryProductGroup } from "@/app/lib/inventory/types";
 import { mapListingStatusToUi } from "@/app/lib/inventory/types";
 import { formatTradeGradeLabel } from "@/lib/marketplace/listing-display";
 import { isSealedProductGrade } from "@/lib/catalog/item-kind";
+import { isListingReservedForOpenOrder, matchesInventoryStatusFilter } from "@/lib/listings/inventory-reservation";
 import {
   resolveCardCode,
   resolveProductName,
@@ -27,6 +28,7 @@ export type InventoryListingRow = Pick<
   | "seller_description"
   | "created_at"
   | "use_authentication"
+  | "extra_shipping_fee"
 >;
 
 export type InventoryStatsRow = Pick<
@@ -56,16 +58,27 @@ export function matchesInventorySearch(
 
 export function filterInventoryListingsForDisplay(
   listings: InventoryListingRow[],
+  status: InventoryListingRow["status"] = "active",
+  reservedListingIds: ReadonlySet<string> = new Set(),
 ): InventoryListingRow[] {
-  return listings.filter((listing) => listing.status === "active");
+  return listings.filter((listing) =>
+    matchesInventoryStatusFilter(
+      listing,
+      status,
+      reservedListingIds,
+    ),
+  );
 }
 
 export function groupListingsByProduct(input: {
   listings: InventoryListingRow[];
   catalogById: Map<string, CatalogRow>;
   statsByListingId: Map<string, InventoryStatsRow>;
+  reservedListingIds?: ReadonlySet<string>;
 }): InventoryProductGroup[] {
   const grouped = new Map<string, InventoryListingRow[]>();
+
+  const reservedListingIds = input.reservedListingIds ?? new Set<string>();
 
   for (const listing of input.listings) {
     const bucket = grouped.get(listing.product_id);
@@ -99,6 +112,7 @@ export function groupListingsByProduct(input: {
         catalog?.card_number?.trim() ||
         catalog?.display_id?.trim() ||
         "",
+      rarity: catalog?.rarity?.trim() || null,
       thumbnailSeed: productId,
       imageUrl: catalog?.image_url ?? null,
       items: sortedListings.map((listing) => {
@@ -132,6 +146,11 @@ export function groupListingsByProduct(input: {
             listing.grading_company,
             listing.grading_score,
           ),
+          isOrderReserved: isListingReservedForOpenOrder(
+            listing,
+            reservedListingIds,
+          ),
+          extraShippingFee: Number(listing.extra_shipping_fee ?? 0),
         };
       }),
     });
@@ -144,6 +163,7 @@ export function groupListingsByProduct(input: {
 
 export function summarizeInventoryListings(
   listings: InventoryListingRow[],
+  reservedListingIds: ReadonlySet<string> = new Set(),
 ): {
   totalListings: number;
   activeCount: number;
@@ -157,11 +177,17 @@ export function summarizeInventoryListings(
   for (const listing of listings) {
     if (listing.status === "active") activeCount += 1;
     else if (listing.status === "sold") soldCount += 1;
-    else if (listing.status === "inactive") inactiveCount += 1;
+    else if (listing.status === "inactive") {
+      if (isListingReservedForOpenOrder(listing, reservedListingIds)) {
+        activeCount += 1;
+      } else {
+        inactiveCount += 1;
+      }
+    }
   }
 
   return {
-    totalListings: activeCount,
+    totalListings: activeCount + inactiveCount,
     activeCount,
     soldCount,
     inactiveCount,

@@ -3,6 +3,7 @@ import {
   isDbChatRoomId,
   isChatRoomId,
 } from "@/app/lib/chat/constants";
+import { resolveRoomViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
 import {
   buildPartnerRoomKey,
   type ChatPartnerPersona,
@@ -143,9 +144,7 @@ function mergeRoomMessages(
   const timestamp =
     messages.at(-1)?.timestamp ?? db.timestamp ?? local.timestamp;
 
-  const mergedUnread = preferServerUnread
-    ? db.unreadCount
-    : Math.max(local.unreadCount, db.unreadCount);
+  const mergedUnread = Math.max(local.unreadCount, db.unreadCount);
 
   return {
     ...db,
@@ -201,6 +200,10 @@ function finalizeCanonicalRoom(
 }
 
 function roomsSharePartnerIdentity(left: ChatRoom, right: ChatRoom): boolean {
+  if (resolveRoomViewerPersona(left) !== resolveRoomViewerPersona(right)) {
+    return false;
+  }
+
   const leftPartnerKey = buildPartnerRoomKey(
     left.partnerId,
     inferPartnerPersona(left),
@@ -391,6 +394,50 @@ export function prependOlderRoomMessages(
       ...room,
       messages,
       threadHasMoreOlder: hasMoreOlder,
+    };
+  });
+}
+
+/** Append newer messages from a delta sync without replacing older scroll-up pages. */
+export function appendDeltaMessagesToRoom(
+  currentRooms: ChatRoom[],
+  roomId: string,
+  deltaMessages: ChatRoom["messages"],
+): ChatRoom[] {
+  if (deltaMessages.length === 0) {
+    return currentRooms;
+  }
+
+  return currentRooms.map((room) => {
+    if (room.id !== roomId) {
+      return room;
+    }
+
+    const existingIds = new Set(room.messages.map((message) => message.id));
+    const uniqueDelta = deltaMessages.filter(
+      (message) => !existingIds.has(message.id),
+    );
+
+    if (uniqueDelta.length === 0) {
+      return room;
+    }
+
+    const messages = dedupeMessagesByOfferId(
+      [...room.messages, ...uniqueDelta].sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      ),
+    );
+
+    const lastMessage = messages.at(-1)?.text ?? room.lastMessage;
+    const timestamp = messages.at(-1)?.timestamp ?? room.timestamp;
+
+    return {
+      ...room,
+      messages,
+      lastMessage,
+      timestamp,
+      threadHydrated: true,
     };
   });
 }

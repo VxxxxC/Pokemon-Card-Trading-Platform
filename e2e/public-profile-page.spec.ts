@@ -4,26 +4,32 @@ import {
   getMerchantProductDetailFixtures,
   hasCoreMerchantFixtures,
   hasPublicProfileFixtures,
-  hasSellerUsernameFixture,
 } from "./fixtures/test-data";
+import { getProfilePublicSlug, resolveE2eMarketplaceFixture } from "./fixtures/supabase-admin";
+import { dismissBlockingOverlays } from "./helpers/overlays";
+import { expectPublicProfileShell } from "./helpers/public-profile-contract";
+import {
+  expectMerchantProductDetailLoaded,
+  publicProfileRatingLink,
+} from "./helpers/marketplace-contract";
 
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(120_000);
 
-async function dismissBlockingOverlays(page: Page): Promise<void> {
-  const pwaClose = page.getByRole("button", { name: "✕" }).first();
-  if (await pwaClose.isVisible().catch(() => false)) {
-    await pwaClose.click();
-  }
-}
+let resolvedSellerUsername: string | null = null;
 
-async function expectPublicProfileShell(page: Page): Promise<void> {
-  await expect(page.getByText("總完成交易")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("上架中的商品")).toBeVisible();
-  await expect(page.getByText("最近收到的信用評價")).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看全部 →" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看更多評價 →" })).toBeVisible();
-}
+test.beforeAll(async () => {
+  if (!hasPublicProfileFixtures()) {
+    return;
+  }
+  const result = await resolveE2eMarketplaceFixture();
+  if (!result.ok) {
+    return;
+  }
+  resolvedSellerUsername =
+    getMerchantProductDetailFixtures().sellerUsername ??
+    (await getProfilePublicSlug(result.fixture.sellerId));
+});
 
 test.describe("Public profile page", () => {
   test("guest sees seller profile by UUID", async ({ page }, testInfo) => {
@@ -44,18 +50,18 @@ test.describe("Public profile page", () => {
 
   test("guest resolves seller profile by username", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "guest", "Guest-only username route");
-    if (!hasSellerUsernameFixture()) {
-      test.skip(true, "Missing E2E_SELLER_USERNAME or E2E_LISTING_ID");
+    if (!resolvedSellerUsername) {
+      test.skip(true, "Could not resolve seller username for profile route");
     }
 
-    const { sellerUsername } = getMerchantProductDetailFixtures();
-    await page.goto(buildPublicProfilePath(sellerUsername!), {
+    await page.goto(buildPublicProfilePath(resolvedSellerUsername!), {
       waitUntil: "domcontentloaded",
     });
     await dismissBlockingOverlays(page);
-
     await expectPublicProfileShell(page);
-    await expect(page.getByText(`@${sellerUsername}`)).toBeVisible();
+    await expect(page.locator("main").getByText(/^@/)).toBeVisible({
+      timeout: 20_000,
+    });
   });
 
   test("guest sees not-found for unknown profile key", async ({
@@ -109,16 +115,15 @@ test.describe("Public profile page", () => {
     const href = await listingLink.first().getAttribute("href");
     expect(href).toMatch(/\/product\//);
 
-    await listingLink.first().click();
+    await page.goto(href!, { waitUntil: "domcontentloaded" });
+    await dismissBlockingOverlays(page);
     await expect(page).toHaveURL(
       new RegExp(
         `/marketplace/${sellerId!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/product/`,
       ),
       { timeout: 20_000 },
     );
-    await expect(page.getByText("店主獨立出讓一口價")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expectMerchantProductDetailLoaded(page);
   });
 
   test("guest can open full rating list from profile preview", async ({
@@ -136,7 +141,7 @@ test.describe("Public profile page", () => {
     await dismissBlockingOverlays(page);
     await expectPublicProfileShell(page);
 
-    const ratingLink = page.getByRole("link", { name: "查看更多評價 →" });
+    const ratingLink = publicProfileRatingLink(page);
     const href = await ratingLink.getAttribute("href");
     expect(href).toMatch(
       new RegExp(

@@ -13,8 +13,10 @@ import { PublicPersonaProfileHeader } from "@/app/components/profile/PublicPerso
 import { AccordionFilters } from "@/app/components/marketplace/filters/AccordionFilters";
 import { SmartSearch } from "@/app/components/marketplace/filters/SmartSearch";
 import { SlideOver } from "@/app/components/ui/SlideOver";
+import { SlidersHorizontal } from "lucide-react";
 import { useHkCardVaultStore } from "@/app/store/useHkCardVaultStore";
 import type { MarketplaceSellerProfile } from "@/app/lib/marketplace/types";
+import type { ReviewPersona } from "@/app/lib/reviews/types";
 import {
   useMarketplaceSellerSearch,
   type MarketplaceSellerSearchInitialData,
@@ -29,10 +31,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
+import { SECTION_TITLE_CLASS } from "@/lib/ui/section-title-ui";
 
 interface MerchantStorefrontPageClientProps {
   seller: MarketplaceSellerProfile | null;
+  storefrontPersona?: ReviewPersona;
   initialListings?: MarketplaceSellerSearchInitialData;
   currentUserId?: string | null;
   bootstrapError?: string;
@@ -40,6 +43,7 @@ interface MerchantStorefrontPageClientProps {
 
 export function MerchantStorefrontPageClient({
   seller,
+  storefrontPersona = "merchant",
   initialListings,
   currentUserId = null,
   bootstrapError,
@@ -73,6 +77,7 @@ export function MerchantStorefrontPageClient({
     useMarketplaceSellerSearch(
       {
         sellerId: seller?.id ?? "",
+        sellerPersona: storefrontPersona,
         query,
         rarities: activeRarities,
         grades: activeGrades,
@@ -164,67 +169,38 @@ export function MerchantStorefrontPageClient({
   const displayError = bootstrapError ?? error;
   const listingCount = meta.total;
 
-  return (
-    <main className="flex-1 max-w-[1360px] mx-auto w-full px-4 lg:px-8 py-6 pb-28 lg:pb-12 animate-fadeIn">
-      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-6">
-        <PublicPersonaProfileHeader
-          profile={seller}
-          rating={seller.ratingScore}
-          reviewCount={0}
-          variant="storefront"
-          listingCount={listingCount}
-          onStorefrontChat={() => {
-            if (!seller) return;
-            openChatWithPartner(seller.id, seller.username, "merchant");
-          }}
-        />
-      </div>
+  const isMemberStorefront = storefrontPersona === "member";
+  const searchPlaceholder = isMemberStorefront
+    ? "搜尋此會員掛單…"
+    : "搜尋此商戶櫥窗內卡牌…";
 
-      <div className="hidden lg:flex items-center mb-6 gap-2 self-start xl:self-start shrink-0">
-        <span className="font-mono text-[10px] text-[#8A8680] uppercase tracking-wider font-bold select-none">
-          排序
-        </span>
-        <Select
-          value={sortKey}
-          onValueChange={(value) => setSortKey(value as SortKey)}
-        >
-          <SelectTrigger className="w-40 min-w-40 h-9 bg-[#26211C] border border-white/5 rounded-[8px] text-[#eae1da] font-sans text-[12px] hover:bg-[#322a24] hover:border-white/10 transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
-            <SelectValue placeholder="選擇排序規則" />
-          </SelectTrigger>
-          <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
-            <SelectItem
-              value="最新"
-              className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-            >
-              上架時間：最新
-            </SelectItem>
-            <SelectItem
-              value="價格：由低到高"
-              className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-            >
-              價格：由低到高
-            </SelectItem>
-            <SelectItem
-              value="價格：由高到低"
-              className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-            >
-              價格：由高到低
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        {isRefreshing ? (
-          <span className="font-mono text-[10px] text-[#8A8680]">更新中…</span>
-        ) : null}
-      </div>
+  return (
+    <main className="flex-1 max-w-[1100px] mx-auto w-full px-4 py-3 pb-28 lg:pb-10 space-y-3 animate-fadeIn">
+      <PublicPersonaProfileHeader
+        profile={seller}
+        rating={seller.ratingScore}
+        reviewCount={0}
+        variant="storefront"
+        viewPersona={storefrontPersona}
+        listingCount={listingCount}
+        onStorefrontChat={() => {
+          if (!seller) return;
+          openChatWithPartner(
+            seller.id,
+            seller.username,
+            storefrontPersona === "merchant" ? "merchant" : "member",
+          );
+        }}
+      />
 
       <div
         ref={searchContainerRef}
-        className="relative mb-6 flex gap-2 items-center"
+        className="relative flex gap-2 items-center"
       >
         <button
           type="button"
           onClick={() => setIsMobileFilterOpen(!isMobileFilterOpen)}
-          className="lg:hidden h-12 px-4 rounded-[10px] font-sans font-bold text-[12.5px] border border-brand/20 bg-[#26211C] text-[#eae1da] hover:border-brand/40 hover:bg-[rgba(212,165,116,0.06)] transition-all flex items-center gap-2 shrink-0 select-none focus:outline-none active:scale-[0.97]"
+          className="lg:hidden h-10 px-3 rounded-lg font-sans font-bold text-[12px] border border-white/[0.06] bg-[#26211C] text-[#eae1da] hover:border-brand/30 transition-all flex items-center gap-2 shrink-0 select-none focus:outline-none active:scale-[0.97]"
           title="開啟或關閉行動篩選面板"
         >
           <svg
@@ -249,8 +225,8 @@ export function MerchantStorefrontPageClient({
           </svg>
         </button>
 
-        <div className="relative flex-1">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+        <div className="relative flex-1 min-w-0">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
             <svg
               width="16"
               height="16"
@@ -271,8 +247,8 @@ export function MerchantStorefrontPageClient({
               setQuery(event.target.value);
               setIsSearchFocused(true);
             }}
-            placeholder="搜尋此商戶櫥窗內官方卡牌名稱、編號..."
-            className="w-full h-12 pl-11 pr-4 bg-[#26211C] border border-white/5 rounded-[10px] text-[13.5px] text-[#eae1da] focus:outline-none"
+            placeholder={searchPlaceholder}
+            className="w-full h-10 pl-10 pr-3 bg-[#26211C] border border-white/[0.06] rounded-lg text-[13px] text-[#eae1da] placeholder:text-[#8A8680]/70 focus:outline-none focus:border-brand/30"
           />
           <SmartSearch
             query={query}
@@ -285,11 +261,48 @@ export function MerchantStorefrontPageClient({
           />
         </div>
 
+        <div className="hidden lg:flex items-center gap-2 shrink-0">
+          <span className="font-mono text-[10px] text-[#8A8680] uppercase tracking-wider font-bold select-none">
+            排序
+          </span>
+          <Select
+            value={sortKey}
+            onValueChange={(value) => setSortKey(value as SortKey)}
+          >
+            <SelectTrigger className="w-40 min-w-40 h-10 bg-[#26211C] border border-white/5 rounded-lg text-[#eae1da] font-sans text-[12px] hover:bg-[#322a24] hover:border-white/10 transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
+              <SelectValue placeholder="選擇排序規則" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
+              <SelectItem
+                value="最新"
+                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+              >
+                上架時間：最新
+              </SelectItem>
+              <SelectItem
+                value="價格：由低到高"
+                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+              >
+                價格：由低到高
+              </SelectItem>
+              <SelectItem
+                value="價格：由高到低"
+                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+              >
+                價格：由高到低
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {isRefreshing ? (
+            <span className="font-mono text-[10px] text-[#8A8680]">更新中…</span>
+          ) : null}
+        </div>
+
         <button
           type="button"
           onClick={handleResetAllFilters}
           disabled={!hasActiveFilters}
-          className={`h-12 px-4 rounded-[10px] font-sans font-bold text-[12.5px] border transition-all flex items-center gap-1.5 shrink-0 select-none focus:outline-none ${
+          className={`h-10 px-3 rounded-lg font-sans font-bold text-[12px] border transition-all flex items-center gap-1.5 shrink-0 select-none focus:outline-none ${
             hasActiveFilters
               ? "border-brand/40 text-brand bg-[rgba(212,165,116,0.06)] hover:border-brand hover:bg-[rgba(212,165,116,0.1)] cursor-pointer active:scale-[0.97]"
               : "border-white/5 text-text-disabled bg-[#26211C]/40 opacity-40 cursor-not-allowed"
@@ -314,70 +327,44 @@ export function MerchantStorefrontPageClient({
       <SlideOver
         isOpen={isMobileFilterOpen}
         onClose={() => setIsMobileFilterOpen(false)}
-        title="📊 篩選"
+        title="篩選"
         subtitle="ADVANCE FILTER"
+        icon={SlidersHorizontal}
       >
-        <div className="mb-6 rounded-xl border border-white/8 bg-[#26211C] p-5">
-          <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
+        <div className="rounded-xl border border-white/[0.06] bg-[#26211C] p-3">
+          <h3 className={SECTION_TITLE_CLASS}>
             商品排序
           </h3>
-          <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-            SORT PRODUCTS
-          </p>
-          <Select
-            value={sortKey}
-            onValueChange={(value) => setSortKey(value as SortKey)}
-          >
-            <SelectTrigger className="w-full h-11 bg-[#17130f] border border-white/5 rounded-[8px] text-[#eae1da] font-sans text-[12.5px] hover:bg-[#322a24] hover:border-white/10 transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
-              <SelectValue placeholder="選擇排序規則" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
-              <SelectItem
-                value="最新"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                上架時間：最新
-              </SelectItem>
-              <SelectItem
-                value="價格：由低到高"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                價格：由低到高
-              </SelectItem>
-              <SelectItem
-                value="價格：由高到低"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                價格：由高到低
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="mb-6 rounded-xl border border-white/8 bg-[#26211C] p-5">
-          <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
-            市場現貨價格區間 (HK$)
-          </h3>
-          <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-            PRICE RANGE FILTER
-          </p>
-          <div className="flex items-center justify-between mb-4">
-            <span className="font-mono text-[13px] text-brand font-bold">
-              HK$ {priceRange[0].toLocaleString()}
-            </span>
-            <span className="font-mono text-[11px] text-[#8A8680]">—</span>
-            <span className="font-mono text-[13px] text-brand font-bold">
-              HK$ {priceRange[1].toLocaleString()}
-            </span>
+          <div className="mt-2">
+            <Select
+              value={sortKey}
+              onValueChange={(value) => setSortKey(value as SortKey)}
+            >
+              <SelectTrigger className="w-full h-9 bg-[#17130f] border border-white/[0.06] rounded-lg text-[#eae1da] font-sans text-[12px] hover:bg-[#322a24] transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
+                <SelectValue placeholder="選擇排序規則" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
+                <SelectItem
+                  value="最新"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  上架時間：最新
+                </SelectItem>
+                <SelectItem
+                  value="價格：由低到高"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  價格：由低到高
+                </SelectItem>
+                <SelectItem
+                  value="價格：由高到低"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  價格：由高到低
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Slider
-            value={priceRange}
-            onValueChange={(val) => setPriceRange(val as [number, number])}
-            min={absoluteMinPrice}
-            max={absoluteMaxPrice}
-            step={50}
-            className="w-full"
-          />
         </div>
 
         <AccordionFilters
@@ -389,37 +376,16 @@ export function MerchantStorefrontPageClient({
           onGradeToggle={(grade) => toggleFilterValue(grade, setActiveGrades)}
           hideTypeSection={true}
           hideProductKindSection={true}
+          compact
+          priceRange={priceRange}
+          onPriceRangeChange={(val) => setPriceRange(val)}
+          priceMin={absoluteMinPrice}
+          priceMax={absoluteMaxPrice}
         />
       </SlideOver>
 
       <div className="lg:grid lg:grid-cols-[260px_1fr] lg:gap-8 items-start">
-        <aside className="hidden lg:block lg:sticky lg:top-[5.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto space-y-4 scrollbar-none">
-          <div className="rounded-xl border border-white/8 bg-[#26211C] p-4">
-            <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
-              市場現貨價格區間 (HK$)
-            </h3>
-            <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-              PRICE RANGE FILTER
-            </p>
-            <div className="flex items-center justify-between mb-4">
-              <span className="font-mono text-[13px] text-brand font-bold">
-                HK$ {priceRange[0].toLocaleString()}
-              </span>
-              <span className="font-mono text-[11px] text-[#8A8680]">—</span>
-              <span className="font-mono text-[13px] text-brand font-bold">
-                HK$ {priceRange[1].toLocaleString()}
-              </span>
-            </div>
-            <Slider
-              value={priceRange}
-              onValueChange={(val) => setPriceRange(val as [number, number])}
-              min={absoluteMinPrice}
-              max={absoluteMaxPrice}
-              step={50}
-              className="w-full"
-            />
-          </div>
-
+        <aside className="hidden lg:block lg:sticky lg:top-[5.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-none">
           <AccordionFilters
             activeRarities={activeRarities}
             onRarityToggle={(rarity) =>
@@ -429,6 +395,11 @@ export function MerchantStorefrontPageClient({
             onGradeToggle={(grade) => toggleFilterValue(grade, setActiveGrades)}
             hideTypeSection={true}
             hideProductKindSection={true}
+            compact
+            priceRange={priceRange}
+            onPriceRangeChange={(val) => setPriceRange(val)}
+            priceMin={absoluteMinPrice}
+            priceMax={absoluteMaxPrice}
           />
         </aside>
 
@@ -438,16 +409,21 @@ export function MerchantStorefrontPageClient({
               {displayError}
             </div>
           ) : storefrontListings.length === 0 ? (
-            <div className="py-20 text-center bg-[#26211C] border border-dashed border-white/5 rounded-2xl font-sans text-[13.5px] text-text-disabled">
-              此商戶私域櫥窗暫時沒有符合篩選條件的商品
+            <div className="py-16 text-center bg-[#26211C] border border-dashed border-white/[0.06] rounded-xl font-sans text-[13px] text-text-disabled">
+              {isMemberStorefront
+                ? "此會員暫無符合篩選條件的公開掛單"
+                : "此商戶私域櫥窗暫時沒有符合篩選條件的商品"}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
-              {storefrontListings.map((listing) => (
+            <div className="grid grid-cols-3 gap-2 md:gap-3 lg:grid-cols-4 lg:gap-4">
+              {storefrontListings.map((listing, index) => (
                 <MarketplaceCard
                   key={listing.id}
                   listing={listing}
                   currentUserId={currentUserId}
+                  showSeller={isMemberStorefront}
+                  showMerchantBadge={isMemberStorefront}
+                  imagePriority={index < 4}
                 />
               ))}
             </div>

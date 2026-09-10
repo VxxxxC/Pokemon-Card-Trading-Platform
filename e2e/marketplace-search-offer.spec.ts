@@ -3,14 +3,19 @@ import {
   getMerchantProductDetailFixtures,
   hasBuyerAuthFixtures,
   hasCoreMerchantFixtures,
+  buildMerchantProductDetailPath,
 } from "./fixtures/test-data";
 import {
   ensureDbChatRoom,
+  ensureListingActive,
   getLatestOfferForListing,
-  getListingMarketplaceFixture,
   getProfileIdByEmail,
+  resetE2eListingTradingFixture,
+  resolveE2eMarketplaceFixture,
   type ListingMarketplaceFixture,
 } from "./fixtures/supabase-admin";
+import { marketplaceSearchInput } from "./helpers/marketplace-contract";
+import { dismissBlockingOverlays } from "./helpers/overlays";
 
 // AML: E2E buyer is <14 days old (HK$300 cap) and fixture listing has no market price.
 // Use $299 to pass rpc_make_offer guards; raise after fixture buyer ages or listing auth changes.
@@ -31,13 +36,6 @@ test.describe("Marketplace search + make offer", () => {
     return `HK$ ${amount.toLocaleString("en-HK")}`;
   }
 
-  async function dismissBlockingOverlays(page: Page): Promise<void> {
-    const pwaClose = page.getByRole("button", { name: "✕" }).first();
-    if (await pwaClose.isVisible().catch(() => false)) {
-      await pwaClose.click();
-    }
-  }
-
   function fixtureGridCardLink(page: Page, fixture: ListingMarketplaceFixture) {
     return page
       .locator(`a[href="/marketplace/product/${fixture.productId}"]`)
@@ -47,7 +45,7 @@ test.describe("Marketplace search + make offer", () => {
   }
 
   async function searchFixtureProduct(page: Page, fixture: ListingMarketplaceFixture) {
-    const searchInput = page.getByPlaceholder("搜尋官方卡牌名稱、編號...");
+    const searchInput = marketplaceSearchInput(page);
     await searchInput.fill(fixture.searchKeyword);
     await page.getByRole("heading", { name: "大盤市場" }).click();
 
@@ -66,7 +64,7 @@ test.describe("Marketplace search + make offer", () => {
     }
 
     const { listingId } = getMerchantProductDetailFixtures();
-    const result = await getListingMarketplaceFixture(listingId!);
+    const result = await resolveE2eMarketplaceFixture();
     if (!result.ok) {
       testInstance.skip(true, result.skipReason);
       return null;
@@ -139,14 +137,20 @@ test.describe("Marketplace search + make offer", () => {
       expect(fixture.searchKeyword.length).toBeGreaterThan(0);
       expect(fixture.lowestPrice).toBeGreaterThan(0);
       expect(fixture.listingPrice).toBeGreaterThan(0);
+      await resetE2eListingTradingFixture({
+        listingId: fixture.listingId,
+        buyerId,
+        sellerId: fixture.sellerId,
+      });
+      await ensureListingActive(fixture.listingId);
     });
 
     await test.step("Step 2 — open marketplace", async () => {
       await page.goto("/marketplace", { waitUntil: "domcontentloaded" });
       await dismissBlockingOverlays(page);
-      await expect(
-        page.getByPlaceholder("搜尋官方卡牌名稱、編號..."),
-      ).toBeVisible({ timeout: 15_000 });
+      await expect(marketplaceSearchInput(page)).toBeVisible({
+        timeout: 15_000,
+      });
     });
 
     await test.step("Step 3 — keyword search triggers filtered grid", async () => {
@@ -160,7 +164,12 @@ test.describe("Marketplace search + make offer", () => {
     });
 
     await test.step("Step 5 — navigate via card link to public product page", async () => {
-      await fixtureGridCardLink(page, fixture).click();
+      const cardLink = fixtureGridCardLink(page, fixture);
+      const productHref = await cardLink.getAttribute("href");
+      expect(productHref).toMatch(
+        new RegExp(`/marketplace/product/${escapeRegex(fixture.productId)}`),
+      );
+      await page.goto(productHref!, { waitUntil: "domcontentloaded" });
 
       await expect(page).toHaveURL(
         new RegExp(
@@ -170,55 +179,79 @@ test.describe("Marketplace search + make offer", () => {
       );
     });
 
-    await test.step("Step 6 — order book lists fixture seller", async () => {
-      await expect(page.locator("#live-order-book-panel")).toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.getByText(fixture.sellerName, { exact: true })).toBeVisible({
-        timeout: 20_000,
-      });
+    await test.step("Step 6 — merchant detail footer exposes executable listing", async () => {
+      await ensureListingActive(fixture.listingId);
+      await page.goto(
+        buildMerchantProductDetailPath(fixture.sellerId, fixture.listingId),
+        { waitUntil: "domcontentloaded" },
+      );
+      await dismissBlockingOverlays(page);
+      await expect
+        .poll(
+          async () =>
+            page
+              .locator("#exe-negotiation-price")
+              .isVisible()
+              .catch(() => false),
+          { timeout: 30_000 },
+        )
+        .toBe(true);
     });
 
-    await test.step("Step 7 — open execution slide-over from seller row", async () => {
-      const sellerRow = page
-        .locator("#live-order-book-panel [role='button']")
-        .filter({ hasText: fixture.sellerName })
-        .first();
-      await expect(sellerRow).toBeVisible({ timeout: 15_000 });
-      await sellerRow.click();
-
-      const slideOver = page.locator("div.fixed.inset-0.z-\\[400\\]");
-      await expect(slideOver).toBeVisible({ timeout: 15_000 });
-      await expect(slideOver.getByText("對接賣家商號")).toBeVisible();
-      await expect(
-        slideOver.getByText(new RegExp(escapeRegex(formatHkd(fixture.listingPrice)))),
-      ).toBeVisible();
-      await expect(slideOver.locator("#exe-negotiation-price")).toBeVisible();
+    await test.step("Step 7 — embedded footer shows negotiation controls", async () => {
+      await expect(page.getByRole("button", { name: /立即購買/ })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator("#exe-negotiation-price")).toBeVisible();
     });
 
-    await test.step("Step 8 — submit AML-safe offer from slide-over", async () => {
+    await test.step("Step 8 — submit offer and assert pending DB row", async () => {
       await page.locator("#exe-negotiation-price").fill(OFFER_AMOUNT);
-      await page.getByRole("button", { name: "發送叫價至聊天室" }).click();
+      await page.getByRole("button", { name: "發送議價" }).click();
 
-      await expect(page.getByText("議價要約已成功送出")).toBeVisible({
-        timeout: 20_000,
-      });
-    });
-
-    await test.step("Step 9 — DB offer row is pending", async () => {
       await expect
         .poll(
           async () => {
+            const errorToast = page
+              .locator('[data-sonner-toast][data-type="error"]')
+              .first();
+            if (await errorToast.isVisible().catch(() => false)) {
+              const message = await errorToast
+                .innerText()
+                .catch(() => "unknown offer error");
+              throw new Error(`Offer submission failed: ${message}`);
+            }
+
             const offer = await getLatestOfferForListing({
               roomId,
               listingId: fixture.listingId,
               buyerId,
             });
-            return offer?.status === "pending";
+            if (offer?.status === "pending") {
+              return true;
+            }
+
+            const fallbackOffer = await getLatestOfferForListing({
+              listingId: fixture.listingId,
+              buyerId,
+            });
+            return fallbackOffer?.status === "pending";
           },
-          { timeout: 25_000 },
+          { timeout: 45_000 },
         )
         .toBe(true);
+    });
+
+    await test.step("Step 9 — duplicate pending offer is blocked", async () => {
+      await expect(page.getByText("等待賣家回應中")).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const pendingOffers = await getLatestOfferForListing({
+        listingId: fixture.listingId,
+        buyerId,
+      });
+      expect(pendingOffers?.status).toBe("pending");
     });
   });
 });

@@ -1,7 +1,5 @@
 import { redirect } from "next/navigation";
 import { getMerchantPerformanceAnalytics } from "@/app/actions/merchant-performance";
-import { getDualPersonaContext } from "@/app/actions/profile";
-import { EMPTY_DUAL_PERSONA_CONTEXT } from "@/lib/auth/dual-persona";
 import { MERCHANT_PERF_DEFAULT_RANGE } from "@/lib/dashboard/merchant-performance-ranges";
 import { getOptionalAuthUser } from "@/lib/auth/session";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -17,10 +15,9 @@ export async function MerchantPerformancePageData() {
     redirect("/auth?redirect=/profile/merchant/performance");
   }
 
-  const [analyticsResult, dualPersonaResult] = await Promise.all([
-    getMerchantPerformanceAnalytics(MERCHANT_PERF_DEFAULT_RANGE),
-    getDualPersonaContext(),
-  ]);
+  const analyticsResult = await getMerchantPerformanceAnalytics(
+    MERCHANT_PERF_DEFAULT_RANGE,
+  );
 
   if (!analyticsResult.success && analyticsResult.error === "無商戶權限") {
     redirect("/profile/user");
@@ -29,11 +26,6 @@ export async function MerchantPerformancePageData() {
   return (
     <MerchantPerformanceClient
       initialData={analyticsResult.success ? analyticsResult.data : null}
-      dualPersona={
-        dualPersonaResult.success
-          ? dualPersonaResult.data
-          : EMPTY_DUAL_PERSONA_CONTEXT
-      }
       bootstrapError={analyticsResult.success ? undefined : analyticsResult.error}
     />
   );

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState, useSyncExternalStore } from "r
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  getMemberOrderDetail,
+  getUserOrderDetail,
   type MemberOrderDetail,
 } from "@/app/actions/orders";
 import { ReviewModal } from "@/app/components/trading/ReviewModal";
@@ -41,7 +41,7 @@ export default function UserOrderDetailPage() {
     }
 
     setIsLoading(true);
-    const result = await getMemberOrderDetail(orderId);
+    const result = await getUserOrderDetail(orderId);
     setIsLoading(false);
 
     if (!result.success) {
@@ -88,7 +88,7 @@ export default function UserOrderDetailPage() {
 
   if (!isMounted || isLoading) {
     return (
-      <div className="min-h-screen bg-[#17130f] flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="w-9 h-9 rounded-full border-2 border-brand border-t-transparent animate-spin" />
       </div>
     );
@@ -97,7 +97,7 @@ export default function UserOrderDetailPage() {
   if (!isOrderReady) {
     if (fetchError) {
       return (
-        <div className="min-h-screen bg-[#17130f] text-text-primary p-6 flex flex-col items-center justify-center gap-4">
+        <div className="py-16 text-center space-y-4">
           <p className="font-sans text-[14px] text-text-disabled">{fetchError}</p>
           <Link
             href="/profile/user/trading"
@@ -110,7 +110,7 @@ export default function UserOrderDetailPage() {
     }
 
     return (
-      <div className="min-h-screen bg-[#17130f] flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="w-9 h-9 rounded-full border-2 border-brand border-t-transparent animate-spin" />
       </div>
     );
@@ -118,7 +118,7 @@ export default function UserOrderDetailPage() {
 
   if (fetchError || !order) {
     return (
-      <div className="min-h-screen bg-[#17130f] text-text-primary p-6 flex flex-col items-center justify-center gap-4">
+      <div className="py-16 text-center space-y-4">
         <p className="font-sans text-[14px] text-text-disabled">
           {fetchError ?? "找不到指定的交易訂單記錄。"}
         </p>

@@ -168,13 +168,55 @@ interface Message {
 
 ## 5. 託管結帳與金流 (Escrow Checkout & Settlement)
 
+### 5.1 B2C 商戶託管結帳與 Connect 撥款（✅ 已落地，Payment Milestone 1–2）
+
+`app/actions/merchant-checkout.ts` / `app/actions/buy-now.ts` — 詳細契約見 [merchant-checkout/backend.md](./follow-up/merchant-checkout/backend.md) · [buy-now-chat/backend.md](./follow-up/buy-now-chat/backend.md)。
+
 | 方法 | 路徑 | 請求 Payload | 回應圖譜 | 權限 |
 |------|------|--------------|----------|------|
-| `POST` | `/api/checkout/quote` | `QuoteInput` | `QuoteResult` | USER+ |
-| `POST` | `/api/checkout/create-payment-intent` | `{ listingId, ...QuoteInput }` | `{ clientSecret, ledgerCode }` | USER+ |
-| `GET` | `/api/orders/[id]` | — | `Order` | 買賣雙方 |
-| `GET` | `/api/orders?role=buyer\|seller&scope=active\|completed` | query | `Order[]` | 本人 |
-| `PATCH` | `[Server Action] shipOrder` | `{ orderId, trackingNo }` | `Order` | 賣家 |
+| `POST` | `[Server Action] buyNowListing` | `(listingId, useAuth?)` | `{ orderId, orderNumber, orderKind, roomId, offerId, paymentHref, … }` | 買家（非自售） |
+| `POST` | `[Server Action] buyNowMerchantListing` | `(listingId, useAuth?)` | 同上（`buyNowListing` 別名） | 買家（非自售） |
+| `GET` | `[Server Action] loadMerchantCheckoutOrder` | `(orderIdOrNumber)` | `MerchantCheckoutOrder` | 訂單買家 |
+| `POST` | `[Server Action] createMerchantOrderPaymentIntent` | `(orderIdOrNumber, { shippingMethod, useAuth, userRewardId? })` | `{ clientSecret, publishableKey, itemSubtotal, shippingFee, authFee, totalAmount, buyerTotalAmount, platformSubsidyAmount }` | 訂單買家 |
+| `GET` | `[Server Action] listCheckoutEligibleCoupons` | `(orderId, { shippingMethod? })` | `CheckoutEligibleCoupon[]` | 訂單買家（非鑑定 merchant_direct） |
+| `GET` | `[Server Action] getMerchantCheckoutPaymentStatus` | `(orderIdOrNumber)` | `{ escrowStatus, totalAmount, paidAt }` | 訂單買家 |
+| `POST` | `[Server Action] completeMerchantOrder` | `(orderId)` | `{ success }` | 訂單買家 |
+
+金額由 DB 權威計算（`rpc_prepare_merchant_order_payment`）：`total_amount` = gross；非鑑定直發及 **鑑定商戶訂單（Phase 2b）** 可選一張券，`buyer_total_amount = gross − platform_subsidy_amount`，PI 用買家實付（鑑定為 manual capture authorize）。鑑定免運以順豐報價作補貼基數。詳見 [platform-rewards-v2 QA](./follow-up/platform-rewards-v2/QA_CHECKLIST.md)。
+
+### 5.2 Member 鑑定託管結帳（✅ 已落地，Payment Milestone 1.5）
+
+`app/actions/member-auth-checkout.ts` — 僅 `member_orders.use_authentication=true`；P2P 無鑑定不接 Stripe。詳見 [member-auth-checkout/backend.md](./follow-up/member-auth-checkout/backend.md)。
+
+| 方法 | 路徑 | 請求 Payload | 回應圖譜 | 權限 |
+|------|------|--------------|----------|------|
+| `GET` | `[Server Action] loadMemberAuthCheckoutOrder` | `(orderIdOrNumber)` | `MemberAuthCheckoutOrder` | 訂單買賣雙方 |
+| `POST` | `[Server Action] createMemberAuthPaymentIntent` | `(orderIdOrNumber)` | `{ clientSecret, publishableKey, itemSubtotal, authFee, totalAmount }` | 訂單買家 |
+| `GET` | `[Server Action] getMemberAuthPaymentStatus` | `(orderIdOrNumber)` | `{ escrowStatus, paymentConfirmedAt, paymentCaptureStatus, totalAmount }` | 訂單參與方 |
+
+金額：`final_price + HK$150` 鑑定費（`rpc_prepare_member_auth_order_payment`）。PI `capture_method: manual`；webhook `payment_intent.amount_capturable_updated`（`order_kind=member_auth`）→ `authorized` + `custody`；Admin 入庫 partial capture 鑑定費 → `auth_fee_captured` + `grading`。
+
+### 5.2.1 統一結帳 Wizard（✅ 已落地）
+
+`app/actions/checkout.ts` + `lib/checkout/*` — 商戶 B2C + Member 鑑定託管共用 `/checkout/[orderId]` 兩步精靈。詳見 [unified-checkout/backend.md](./follow-up/unified-checkout/backend.md)。
+
+**入款兩 route：** 非鑑定 merchant → PI `automatic` ✅；鑑定單 → **single capture**（新單）／legacy multicapture 🟡 Partner QA（[capture-policy](./capture-policy.md) · [PARTNER_HANDOFF](./follow-up/admin-grading/PARTNER_HANDOFF.md)）。**出款（非 checkout）：** Member 鑑定 → FPS + T+3 `payout_requests` + admin 銷帳；Merchant → Connect + T+7 cron。FPS gate：`bun run test:integration:fps-payout`。
+
+| 方法 | 路徑 | 請求 Payload | 回應圖譜 | 權限 |
+|------|------|--------------|----------|------|
+| `GET` | `[Server Action] loadCheckoutSession` | `(orderIdOrNumber)` | `CheckoutSession`（`merchant_direct` \| `merchant_auth` \| `member_auth`） | 訂單買家 |
+| `GET` | `[Server Action] getCheckoutPaymentStatus` | `(orderIdOrNumber)` | `{ orderKind, isPaid, isProcessing, totalAmount }` | 訂單買家 / 參與方 |
+| `POST` | `lib/checkout/prepare-payment` | `(session, merchantDirectForm?)` | `{ clientSecret, publishableKey, totalAmount }` | client 呼叫（包裝既有 PI actions） |
+
+### 5.3 規劃中 / 未落地的 REST 介面
+
+| 方法 | 路徑 | 請求 Payload | 回應圖譜 | 權限 |
+|------|------|--------------|----------|------|
+| `POST` | `/api/checkout/quote` | `QuoteInput` | `QuoteResult` | USER+ ⏳ |
+| `POST` | `/api/checkout/create-payment-intent` | `{ listingId, ...QuoteInput }` | `{ clientSecret, ledgerCode }` | USER+ ⏳（已由 5.1 server action 取代） |
+| `GET` | `/api/orders/[id]` | — | `Order` | 買賣雙方 ⏳ |
+| `GET` | `/api/orders?role=buyer\|seller&scope=active\|completed` | query | `Order[]` | 本人 ⏳ |
+| `PATCH` | `[Server Action] shipOrder` | `{ orderId, trackingNo }` | `Order` | 賣家 ⏳ |
 
 ```ts
 // 對齊 checkout/[id]/page.tsx 計算引擎
@@ -225,6 +267,23 @@ interface Order {
 | 方法 | 路徑 / Action | 請求 | 回應 | 權限 |
 |------|---------------|------|------|------|
 | `POST` | `[Server Action] executeCheckIn` | `{}` | `{ streakDay, pointsAwarded, pointsBalance }` | USER+ |
+
+### 7.1a Platform rewards v2 (admin templates + flash campaigns)
+
+| Action | Input | Output | 權限 |
+|--------|-------|--------|------|
+| `listAdminRewardTemplates` | `{ status?, page?, pageSize? }` | `{ rows, total }` | ADMIN |
+| `upsertAdminRewardTemplate` | `AdminRewardTemplateUpsertInput` | `{ templateId, row }` | ADMIN |
+| `setAdminRewardTemplateStatus` | `(templateId, status)` | `{ ok }` | ADMIN |
+| `listAdminRewardCampaigns` | `{ status?, page?, pageSize? }` | `{ rows, total }` | ADMIN |
+| `upsertAdminRewardCampaign` | campaign payload | `{ campaignId, row }` | ADMIN |
+| `setAdminRewardCampaignStatus` | `(campaignId, status)` | `{ ok }` | ADMIN |
+| `listActiveFlashCampaigns` | — | `FlashCampaignView[]` | USER+ |
+| `claimFlashReward` | `(campaignId)` | `{ userRewardId }` | USER+ |
+| `getUserRewardCoupons` | — | wallet + locked catalog | USER+ |
+| `listCheckoutEligibleCoupons` | `(orderId, opts?)` | eligible coupons | USER+ |
+
+Flash claim RPC：`rpc_claim_flash_reward` — atomic stock + HKT daily cap + `fn_issue_reward_from_template` dedup `flash:{campaign_id}:{date}`。`flash_only` 模板不會出現在 `get_reward_coupon_center` locked 列表。
 
 ### 7.2 願望清單 (`product_watchlists`)
 
@@ -377,6 +436,25 @@ type MemberDashboardTradingStats = {
 | `PATCH` | `[Server Action] toggleBan` | `{ userId, isBanned }` | `Profile` | ADMIN |
 | `POST` | `[Server Action] upsertPlatformSetting` | `{ key, value }` | `{ ok: true }` | ADMIN |
 | `POST` | `[Server Action] triggerScraperJob` | `{ jobType: 'mercari'\|'skunk' }` | `{ jobId }` | ADMIN |
+| `GET` | `[Server Action] searchAdminGradingOrders` | `{ tab, orderKind?, keyword?, page?, pageSize? }` | `{ rows, total, page, pageSize }` | ADMIN |
+| `POST` | `[Server Action] adminConfirmGradingIntake` | `{ orderKind, orderId }` | `{ applied: true }` | ADMIN |
+| `POST` | `[Server Action] adminPassGrading` | `{ orderKind, orderId, gradingOptionId, notes? }` | `{ applied: true }` — goods capture saga → `fully_captured` + `auth_grading_*` | ADMIN |
+| `POST` | `[Server Action] adminSubmitGradingOutbound` | `{ orderKind, orderId, trackingNo }` | `{ applied: true }` | ADMIN |
+| `POST` | `[Server Action] adminFailGradingAndRefund` | `{ orderKind, orderId, faultParty, reason? }` | `{ applied: true }` — single buyer: capture auth_fee; single seller/platform: PI cancel; legacy: capture(0) | ADMIN |
+| `GET` | `[Server Action] getAdminGradingAuditHistory` | `{ orderKind, orderId }` | `AuditRow[]` | ADMIN |
+| `POST` | `[Server Action] submitUserReport` | `{ reportedUserId, category, details?, chatRoomId?, attachmentIds? }` | `{ success, reportId?, caseId?, caseNumber? }` | USER+ |
+| `GET` | `[Server Action] getUnacknowledgedReportOutcomes` ✅ Phase G+ | — | `{ reportId, caseNumber, resolution, message }[]` — copy from `moderation_cases.resolution` | USER+ |
+| `POST` | `[Server Action] acknowledgeReportOutcomes` ✅ Phase G+ | `reportIds[]` | `{ updated }` | USER+ |
+| `POST` | `/api/reports/upload-evidence` | multipart image (≤5MB, max 3) | `{ attachmentId, publicUrl }` | USER+ |
+| `GET` | `[Server Action] searchAdminModerationCases` ✅ Phase C | `{ page?, status?, category?, minScore?, search? }` | `{ rows, total, pendingCount }` — rows include `subjectPriorUpheldCount` (Phase G) | ADMIN |
+| `GET` | `[Server Action] getAdminModerationCase` ✅ Phase C | `caseId` | case bundle (reports, attachments, chatAccess, auditLog, activeSanctions, **relatedOrders**; read-only order summaries) | ADMIN |
+| `GET` | `[Server Action] getAdminSubjectModerationHistory` ✅ Phase G | `{ subjectUserId, excludeCaseId? }` | prior cases + sanction history + stats | ADMIN |
+| `GET` | `[Server Action] getAdminModerationChatThread` ✅ Phase D | `{ caseId, roomId, before? }` | paginated messages + audit `view_chat` on first page | ADMIN |
+| `POST` | `[Server Action] adjustAdminModerationCaseScore` ✅ Phase E | `{ caseId, adjustment, reason? }` | `{ caseId }` | ADMIN |
+| `POST` | `[Server Action] resolveAdminModerationCase` ✅ Phase E/E+ | `{ caseId, resolution, violationPersona?, sanction?, evidenceOverrideReason?, notifyReporter? }` | `{ caseId, status, resolution, authBanWarning? }` — `notifyReporter` default true; permanent `ban` triggers `auth.admin` ban | ADMIN |
+| `GET` | `[RPC] moderation_get_account_access_restriction` ✅ Phase E+ | `{ p_user_id }` (self or admin) | `{ blocked, type?, endsAt?, reason? }` — used by `proxy.ts` |
+
+> 完整契約見 [follow-up/admin-moderation/backend.md](./follow-up/admin-moderation/backend.md)。
 
 ---
 

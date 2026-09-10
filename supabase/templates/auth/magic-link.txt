@@ -1,0 +1,9 @@
+登入 Cardvault HK
+
+請使用以下連結登入帳戶。
+此連結僅可使用一次。
+
+登入: {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=magiclink&next=/profile/user
+
+Cardvault HK
+如非本人操作，請忽略此郵件或聯絡客服。

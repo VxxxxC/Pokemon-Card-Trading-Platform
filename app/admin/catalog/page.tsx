@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { Search, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,7 +12,7 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -19,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,15 +27,32 @@ import { SmartSearch } from "@/app/components/marketplace/filters/SmartSearch";
 import { CatalogCard } from "@/app/components/admin/CatalogCard";
 import { ImageViewer } from "@/app/components/shared/ImageViewer";
 import { Pagination } from "@/app/components/ui/Pagination";
+import { SECTION_TITLE_CLASS } from "@/lib/ui/section-title-ui";
 import {
   listAdminCatalogEntries,
   type AdminCatalogEntry,
   type AdminCatalogItemKind,
+  type ListAdminCatalogParams,
 } from "@/app/actions/adminCatalog";
 import {
-  CATALOG_TYPE_LABELS,
   type CatalogType,
 } from "@/lib/constants/commerce";
+import {
+  FILTER_CHIP_CLASS,
+  FILTER_CHIP_SM_CLASS,
+  FILTER_INPUT_CLASS,
+  FILTER_SEARCH_CLASS,
+  FILTER_SELECT_TRIGGER_CLASS,
+  MANUAL_FIELD_ERROR_CLASS,
+  MANUAL_FORM_BLOCK_CLASS,
+  MANUAL_INPUT_CLASS,
+  MANUAL_INPUT_MONO_CLASS,
+  MANUAL_LABEL_CLASS,
+  MANUAL_SECTION_CLASS,
+  MANUAL_SELECT_TRIGGER_CLASS,
+  SELECT_CONTENT_CLASS,
+  SELECT_ITEM_CLASS,
+} from "./catalog-ui";
 
 const PAGE_SIZE = 24;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -59,6 +76,19 @@ const BOX_SET_CATEGORY_OPTIONS: { value: CatalogType | "jan_code"; label: string
   { value: "starter_deck", label: "起始牌組" },
   { value: "jan_code", label: "JAN 條碼規格" },
 ];
+
+const RARITY_LABEL_BY_VALUE = Object.fromEntries(
+  RARITY_OPTIONS.map((option) => [option.value, option.label]),
+) as Record<string, string>;
+
+const BOX_SET_CATEGORY_LABEL_BY_VALUE = Object.fromEntries(
+  BOX_SET_CATEGORY_OPTIONS.map((option) => [option.value, option.label]),
+) as Record<string, string>;
+
+const RARITY_FILTER_LABEL_BY_VALUE: Record<string, string> = {
+  all: "全部罕有度",
+  ...RARITY_LABEL_BY_VALUE,
+};
 
 type ManualEntryBase = {
   id: string;
@@ -92,24 +122,50 @@ type FormErrors = {
   rarity?: boolean;
 };
 
-const TABS_TRIGGER_CLASS =
-  "min-h-[44px] px-4 py-2 rounded-lg font-sans text-[13px] transition-colors data-[state=active]:bg-bg-elevated data-[state=active]:text-brand data-[state=active]:font-semibold text-text-secondary hover:text-text-primary";
+const BTN_OUTLINE_CLASS =
+  "shrink-0 border-[rgba(237,232,224,0.12)] bg-transparent hover:border-brand/30 hover:bg-brand/10 hover:text-brand text-text-primary text-[12px] active:scale-[0.98]";
 
-const getCategoryLabel = (cat: CatalogType | "jan_code") => {
-  if (cat === "jan_code") return "JAN 條碼規格";
-  return CATALOG_TYPE_LABELS[cat as CatalogType] || cat;
-};
+function formatCatalogCount(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+function buildCatalogListParams(
+  filters: {
+    query?: string;
+    setCode?: string;
+    rarity?: string;
+  },
+  itemKind: AdminCatalogItemKind,
+  page: number,
+  pageSize: number,
+): ListAdminCatalogParams {
+  return {
+    query: filters.query,
+    itemKind,
+    page,
+    pageSize,
+    ...(filters.setCode ? { setCode: filters.setCode } : {}),
+    ...(filters.rarity ? { rarity: filters.rarity } : {}),
+  };
+}
 
 export default function AdminCatalogPage() {
   // ── Catalog browsing state
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [setCodeFilter, setSetCodeFilter] = useState("");
+  const [debouncedSetCode, setDebouncedSetCode] = useState("");
+  const [rarityFilter, setRarityFilter] = useState("all");
   const [itemKind, setItemKind] = useState<AdminCatalogItemKind>("card");
   const [page, setPage] = useState(1);
   const [entries, setEntries] = useState<AdminCatalogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [kindCounts, setKindCounts] = useState<Record<AdminCatalogItemKind, number>>({
+    card: 0,
+    box_set: 0,
+  });
 
   // ── Manual entry local state (db has no INSERT policy yet)
   const [manualEntries, setManualEntries] = useState<ManualEntry[]>([]);
@@ -152,6 +208,15 @@ export default function AdminCatalogPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
 
+  const catalogFilters = useMemo(
+    () => ({
+      query: debouncedQuery || undefined,
+      setCode: debouncedSetCode || undefined,
+      rarity: rarityFilter !== "all" ? rarityFilter : undefined,
+    }),
+    [debouncedQuery, debouncedSetCode, rarityFilter],
+  );
+
   // ── Search debounce
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -161,8 +226,40 @@ export default function AdminCatalogPage() {
   }, [query]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSetCode(setCodeFilter.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [setCodeFilter]);
+
+  useEffect(() => {
     setPage(1);
-  }, [debouncedQuery, itemKind]);
+  }, [debouncedQuery, debouncedSetCode, rarityFilter, itemKind]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([
+      listAdminCatalogEntries(
+        buildCatalogListParams(catalogFilters, "card", 1, 1),
+      ),
+      listAdminCatalogEntries(
+        buildCatalogListParams(catalogFilters, "box_set", 1, 1),
+      ),
+    ]).then(([cardResult, boxSetResult]) => {
+      if (cancelled) {
+        return;
+      }
+      setKindCounts({
+        card: cardResult.success ? cardResult.total : 0,
+        box_set: boxSetResult.success ? boxSetResult.total : 0,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogFilters]);
 
   // ── Fetch catalog entries with race-condition guard
   useEffect(() => {
@@ -172,12 +269,9 @@ export default function AdminCatalogPage() {
       setIsLoading(true);
       setError(null);
 
-      const result = await listAdminCatalogEntries({
-        query: debouncedQuery,
-        itemKind,
-        page,
-        pageSize: PAGE_SIZE,
-      });
+      const result = await listAdminCatalogEntries(
+        buildCatalogListParams(catalogFilters, itemKind, page, PAGE_SIZE),
+      );
 
       if (stale) return;
 
@@ -191,6 +285,7 @@ export default function AdminCatalogPage() {
 
       setEntries(result.data);
       setTotal(result.total);
+      setKindCounts((prev) => ({ ...prev, [itemKind]: result.total }));
       setError(null);
       setIsLoading(false);
     }
@@ -200,7 +295,7 @@ export default function AdminCatalogPage() {
     return () => {
       stale = true;
     };
-  }, [debouncedQuery, itemKind, page]);
+  }, [catalogFilters, itemKind, page]);
 
   // 手動錄入條目僅存在於前端 local state（product_catalog 未有 INSERT policy）。
   //
@@ -484,82 +579,127 @@ export default function AdminCatalogPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* ── Page Header ───────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-        <div>
-          <h1 className="font-sans font-bold text-[24px] text-text-primary">
-            卡牌字典資料庫
-          </h1>
-          <p className="font-sans text-[13px] text-text-secondary mt-0.5">
-            檢視並管理 product_catalog 卡牌資料；手動錄入工具供無 API
-            覆蓋的小眾或舊版卡牌條目使用。
-          </p>
-        </div>
-      </div>
+    <div className="space-y-5 pb-8">
+      <p className="font-sans text-[13px] text-text-secondary">
+        檢視平台卡牌字典；手動錄入供無 API 覆蓋的小眾或舊版卡牌
+      </p>
 
-      {/* ── Search + Manual Entry Trigger ─────────────────────────────── */}
-      <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-4 space-y-4">
-        <div className="relative w-full">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled pointer-events-none"
+      <div className="sticky top-0 z-20 -mx-4 space-y-1.5 border-b border-white/[0.08] bg-[#17130f]/95 px-4 pb-2 backdrop-blur-sm lg:-mx-6 lg:px-6">
+        <div className="flex w-full min-w-0 items-center gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-text-disabled"
+              aria-hidden="true"
+            />
+            <Input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋編號、卡名、系列…"
+              className={FILTER_SEARCH_CLASS}
+            />
+            <SmartSearch
+              query={query}
+              onSelect={() => {}}
+              listings={[]}
+              isOpen={false}
+              suppressDropdown
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleOpenManualDialog}
+            className={`h-8 shrink-0 px-2.5 text-[11px] sm:px-3 ${BTN_OUTLINE_CLASS}`}
           >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+            <Plus className="size-3.5 sm:mr-1" aria-hidden="true" />
+            <span className="hidden sm:inline">手動錄入</span>
+            <span className="sm:hidden">錄入</span>
+          </Button>
+          <div className="hidden sm:flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setItemKind("card")}
+              className={FILTER_CHIP_SM_CLASS(itemKind === "card")}
+            >
+              獨立卡 ({formatCatalogCount(kindCounts.card)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setItemKind("box_set")}
+              className={FILTER_CHIP_SM_CLASS(itemKind === "box_set")}
+            >
+              Box ({formatCatalogCount(kindCounts.box_set)})
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 overflow-x-auto sm:hidden">
+          <button
+            type="button"
+            onClick={() => setItemKind("card")}
+            className={FILTER_CHIP_SM_CLASS(itemKind === "card")}
+          >
+            獨立卡 ({formatCatalogCount(kindCounts.card)})
+          </button>
+          <button
+            type="button"
+            onClick={() => setItemKind("box_set")}
+            className={FILTER_CHIP_SM_CLASS(itemKind === "box_set")}
+          >
+            Box ({formatCatalogCount(kindCounts.box_set)})
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
           <Input
             type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜尋編號、卡名、系列代碼或 JAN Code..."
-            className="w-full h-11 pl-10 pr-4 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl font-sans text-[14px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40"
+            value={setCodeFilter}
+            onChange={(e) => setSetCodeFilter(e.target.value)}
+            placeholder="系列代碼"
+            className={`w-24 sm:w-28 ${FILTER_INPUT_CLASS}`}
+            aria-label="系列代碼篩選"
           />
-          <SmartSearch
-            query={query}
-            onSelect={() => {}}
-            listings={[]}
-            isOpen={false}
-            suppressDropdown
-          />
+          <Select
+            value={rarityFilter}
+            onValueChange={(value) => setRarityFilter(value ?? "")}
+          >
+            <SelectTrigger className={FILTER_SELECT_TRIGGER_CLASS}>
+              <SelectValue placeholder="罕有度">
+                {RARITY_FILTER_LABEL_BY_VALUE[rarityFilter] ?? rarityFilter}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className={SELECT_CONTENT_CLASS}>
+              <SelectItem value="all" className={SELECT_ITEM_CLASS}>
+                全部罕有度
+              </SelectItem>
+              {RARITY_OPTIONS.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  className={SELECT_ITEM_CLASS}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {setCodeFilter || rarityFilter !== "all" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSetCodeFilter("");
+                setRarityFilter("all");
+              }}
+              className="font-sans text-[11px] text-brand hover:text-text-primary"
+            >
+              清除篩選
+            </button>
+          ) : null}
         </div>
-
-        <Button
-          type="button"
-          onClick={handleOpenManualDialog}
-          className="w-full min-h-[44px] bg-brand text-[#17130f] font-sans font-bold text-[14px] rounded-lg hover:bg-brand-hover active:scale-[0.98] transition-transform shadow-lg shadow-brand/10"
-        >
-          手動錄入卡牌
-        </Button>
       </div>
 
-      {/* ── Catalog Tabs & Grid ───────────────────────────────────────── */}
-      <Tabs
-        value={itemKind}
-        onValueChange={(value) => setItemKind(value as AdminCatalogItemKind)}
-        className="space-y-4"
-      >
-        <TabsList className="bg-bg-card border border-[rgba(237,232,224,0.08)] p-1 rounded-xl">
-          <TabsTrigger value="card" className={TABS_TRIGGER_CLASS}>
-            獨立卡
-          </TabsTrigger>
-          <TabsTrigger value="box_set" className={TABS_TRIGGER_CLASS}>
-            Box / Set
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="card" className="space-y-4">
-          {renderGrid()}
-        </TabsContent>
-        <TabsContent value="box_set" className="space-y-4">
-          {renderGrid()}
-        </TabsContent>
-      </Tabs>
+      {renderGrid()}
 
       <ImageViewer
         isOpen={viewerOpen}
@@ -578,61 +718,109 @@ export default function AdminCatalogPage() {
           className="fixed inset-0 top-0 left-0 z-[70] w-full max-w-full sm:max-w-full h-[100dvh] max-h-[100dvh] translate-x-0 translate-y-0 rounded-none p-0 gap-0 flex flex-col overflow-hidden bg-bg-card border-0 ring-0"
         >
           {/* Sticky header */}
-          <DialogHeader className="shrink-0 flex flex-row items-center justify-between gap-4 px-5 py-4 border-b border-[rgba(237,232,224,0.08)] bg-bg-card">
-            <DialogTitle className="font-sans font-bold text-[18px] text-text-primary">
+          <DialogHeader className="shrink-0 flex flex-row items-center justify-between gap-3 px-4 py-3 border-b border-[rgba(237,232,224,0.08)] bg-bg-card">
+            <DialogTitle className="font-sans font-semibold text-[16px] text-text-primary">
               手動錄入卡牌
             </DialogTitle>
             <button
               type="button"
               onClick={handleCloseManualDialog}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
+              className="flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-bg-elevated hover:text-text-primary"
               aria-label="關閉"
             >
               ✕
             </button>
           </DialogHeader>
 
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <Tabs
-              value={manualTab}
-              onValueChange={(value) =>
-                setManualTab(value as AdminCatalogItemKind)
-              }
-              className="space-y-5"
-            >
-              <TabsList className="bg-bg-page border border-[rgba(237,232,224,0.08)] p-1 rounded-xl">
-                <TabsTrigger value="card" className={TABS_TRIGGER_CLASS}>
-                  獨立卡
-                </TabsTrigger>
-                <TabsTrigger value="box_set" className={TABS_TRIGGER_CLASS}>
-                  Box / Set
-                </TabsTrigger>
-              </TabsList>
+          <div className="flex-1 overflow-y-auto px-4 py-2">
+            <div className="mx-auto max-w-3xl space-y-3">
+              <div className={`${MANUAL_FORM_BLOCK_CLASS} flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between`}>
+                <div className="space-y-1.5 shrink-0">
+                  <span className={MANUAL_SECTION_CLASS}>類型</span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setManualTab("card")}
+                      className={FILTER_CHIP_SM_CLASS(manualTab === "card")}
+                    >
+                      獨立卡
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualTab("box_set")}
+                      className={FILTER_CHIP_SM_CLASS(manualTab === "box_set")}
+                    >
+                      Box / Set
+                    </button>
+                  </div>
+                </div>
 
-              <TabsContent value="card" className="space-y-5">
-                {renderManualForm("card")}
-              </TabsContent>
-              <TabsContent value="box_set" className="space-y-5">
-                {renderManualForm("box_set")}
-              </TabsContent>
-            </Tabs>
+                {manualTab === "box_set" ? (
+                  <div className="min-w-0 flex-1 space-y-1 sm:max-w-[14rem]">
+                    <Label className={MANUAL_LABEL_CLASS}>
+                      品類 <span className="text-warning">*</span>
+                    </Label>
+                    <Select
+                      value={
+                        (pendingManualEntries.box_set as ManualBoxSetEntry).category
+                      }
+                      onValueChange={(value) =>
+                        updateBoxSetField(
+                          "category",
+                          (value as CatalogType | "jan_code") ?? "booster_pack",
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        className={`${MANUAL_SELECT_TRIGGER_CLASS} ${
+                          formErrors.category ? MANUAL_FIELD_ERROR_CLASS : ""
+                        }`}
+                      >
+                        <SelectValue placeholder="選擇品類">
+                          {BOX_SET_CATEGORY_LABEL_BY_VALUE[
+                            (pendingManualEntries.box_set as ManualBoxSetEntry)
+                              .category
+                          ]}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className={SELECT_CONTENT_CLASS}>
+                        {BOX_SET_CATEGORY_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            className={SELECT_ITEM_CLASS}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+
+              {manualTab === "card"
+                ? renderManualForm("card")
+                : renderManualForm("box_set")}
+            </div>
           </div>
 
           {/* Sticky footer */}
-          <DialogFooter className="shrink-0 flex-col sm:flex-row justify-end gap-2 px-5 py-4 border-t border-[rgba(237,232,224,0.08)] bg-bg-page rounded-none m-0">
+          <DialogFooter
+            className="shrink-0 flex-row justify-stretch gap-2 border-t border-[rgba(237,232,224,0.08)] bg-bg-page px-4 py-2 m-0 rounded-none"
+          >
             <Button
               type="button"
               variant="outline"
               onClick={handleCloseManualDialog}
-              className="min-h-[44px] px-5 rounded-lg border-[rgba(237,232,224,0.12)] bg-bg-card text-text-secondary font-sans font-semibold text-[13px] hover:bg-bg-elevated hover:text-text-primary active:scale-[0.98]"
+              className="h-8 min-h-0 flex-1 px-3 rounded-lg border-[rgba(237,232,224,0.12)] bg-bg-card text-text-secondary font-sans font-semibold text-[12px] hover:bg-bg-elevated hover:text-text-primary active:scale-[0.98] sm:flex-none sm:min-w-[5rem]"
             >
               取消
             </Button>
             <Button
               type="button"
               onClick={handleManualSubmit}
-              className="min-h-[44px] px-5 bg-brand text-[#17130f] font-sans font-bold text-[13px] rounded-lg hover:bg-brand-hover active:scale-[0.98]"
+              className="h-8 min-h-0 flex-1 px-3 bg-brand text-[#17130f] font-sans font-bold text-[12px] rounded-lg hover:bg-brand-hover active:scale-[0.98] sm:flex-none sm:min-w-[5rem]"
             >
               送出
             </Button>
@@ -645,20 +833,15 @@ export default function AdminCatalogPage() {
   function renderGrid() {
     if (isLoading) {
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-3 lg:grid-cols-5">
           {Array.from({ length: 24 }).map((_, i) => (
             <div
               key={i}
-              className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-3 flex flex-col justify-between h-full space-y-3"
+              className="rounded-lg border border-white/[0.08] bg-bg-card/40 p-2 space-y-2"
             >
-              <Skeleton className="w-full aspect-[3/4] rounded-xl bg-[#26211C]" />
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-3/4 bg-[#26211C]" />
-                <div className="flex items-center justify-between gap-2">
-                  <Skeleton className="h-3 w-1/3 bg-[#26211C]" />
-                  <Skeleton className="h-3 w-1/4 bg-[#26211C]" />
-                </div>
-              </div>
+              <Skeleton className="w-full aspect-[3/4] rounded-lg bg-bg-card" />
+              <Skeleton className="h-3 w-3/4 bg-bg-card" />
+              <Skeleton className="h-3 w-1/2 bg-bg-card" />
             </div>
           ))}
         </div>
@@ -667,7 +850,7 @@ export default function AdminCatalogPage() {
 
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center py-16 px-4 bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)]">
+        <div className="rounded-lg border border-white/[0.08] bg-bg-card/30 px-4 py-12 text-center">
           <p className="font-sans text-[15px] text-warning text-center">
             {error}
           </p>
@@ -680,7 +863,7 @@ export default function AdminCatalogPage() {
 
     if (manualForKind.length === 0 && entries.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center py-16 px-4 bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)]">
+        <div className="rounded-lg border border-white/[0.08] bg-bg-card/30 px-4 py-12 text-center">
           <p className="font-sans text-[15px] text-text-primary text-center">
             暫無符合條件的卡牌資料
           </p>
@@ -691,8 +874,17 @@ export default function AdminCatalogPage() {
       );
     }
 
+    const pageStart =
+      total === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+    const pageEnd = total === 0 ? 0 : Math.min(safePage * PAGE_SIZE, total);
+
     return (
-      <>
+      <div className="space-y-3">
+        <p className="font-mono text-[12px] text-text-disabled">
+          顯示第 {formatCatalogCount(pageStart)}–{formatCatalogCount(pageEnd)}{" "}
+          筆 · 本類型共 {formatCatalogCount(total)} 筆
+        </p>
+
         {/* ── Pending manual entries — 獨立區塊，不參與 DB 分頁 ───────── */}
         <AnimatePresence>
           {manualForKind.length > 0 && (
@@ -703,12 +895,12 @@ export default function AdminCatalogPage() {
               className="overflow-hidden"
               aria-labelledby="pending-manual-heading"
             >
-              <div className="space-y-3 p-4 rounded-2xl bg-[rgba(212,165,116,0.06)] border border-brand/20">
+              <div className="space-y-2 rounded-lg border border-brand/20 bg-brand/5 p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-brand text-[13px]">✎</span>
                   <h3
                     id="pending-manual-heading"
-                    className="font-sans text-[13px] font-semibold text-text-primary"
+                    className={SECTION_TITLE_CLASS}
                   >
                     待寫入資料庫的手動錄入條目
                     <span className="ml-2 font-mono text-brand">
@@ -721,7 +913,7 @@ export default function AdminCatalogPage() {
                   <span className="font-mono"> product_catalog</span>
                   ，重新整理後將會消失。
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-3 gap-3 lg:grid-cols-5">
                   {manualForKind.map((entry, i) => (
                     <div key={entry.id} className="relative">
                       <div className="absolute -top-2 -right-2 z-10">
@@ -745,7 +937,7 @@ export default function AdminCatalogPage() {
         <motion.div
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+          className="grid grid-cols-3 gap-3 lg:grid-cols-5"
         >
           {entries.map((entry, i) => (
             <motion.div
@@ -772,7 +964,7 @@ export default function AdminCatalogPage() {
           itemLabel="筆資料"
           enableScroll={true}
         />
-      </>
+      </div>
     );
   }
 
@@ -783,136 +975,104 @@ export default function AdminCatalogPage() {
       (current as ManualBoxSetEntry).category === "jan_code";
 
     return (
-      <div className="max-w-3xl mx-auto space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Category Dropdown at the VERY TOP for Box/Set */}
-          {kind === "box_set" && (
-            <div className="space-y-1.5 min-w-0 sm:col-span-2">
-              <Label className="font-mono text-[11px] text-text-secondary">
-                Category <span className="text-warning">*</span>
+      <div className="space-y-3">
+        <section className={MANUAL_FORM_BLOCK_CLASS}>
+          <h3 className={MANUAL_SECTION_CLASS}>基本資訊</h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-1 min-w-0">
+              <Label className={MANUAL_LABEL_CLASS}>
+                編號 <span className="text-warning">*</span>
               </Label>
-              <Select
-                value={(current as ManualBoxSetEntry).category}
-                onValueChange={(value) =>
-                  updateBoxSetField(
-                    "category",
-                    (value as CatalogType | "jan_code") ?? "booster_pack",
-                  )
+              <Input
+                type={isJanCodeCategory ? "number" : "text"}
+                value={current.cardNumber}
+                onChange={(e) =>
+                  updateManualField(kind, "cardNumber", e.target.value)
                 }
-              >
-                <SelectTrigger
-                  className={`h-10 w-full min-w-0 max-w-full overflow-hidden truncate bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-sans text-[13px] text-text-primary ${
-                    formErrors.category ? "border-warning" : ""
-                  }`}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#26211C] w-[var(--radix-select-trigger-width)] max-w-full">
-                  {BOX_SET_CATEGORY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder={
+                  isJanCodeCategory ? "4904140548311" : "promo-102"
+                }
+                className={`${MANUAL_INPUT_MONO_CLASS} ${
+                  formErrors.cardNumber ? MANUAL_FIELD_ERROR_CLASS : ""
+                }`}
+              />
             </div>
-          )}
 
-          {/* 編號 (Renamed from 卡牌編號) */}
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
-              編號 <span className="text-warning">*</span>
-            </Label>
-            <Input
-              type={isJanCodeCategory ? "number" : "text"}
-              value={current.cardNumber}
-              onChange={(e) =>
-                updateManualField(kind, "cardNumber", e.target.value)
-              }
-              placeholder={
-                isJanCodeCategory ? "例：4904140548311" : "例：promo-102"
-              }
-              className={`h-10 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-mono text-[13px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                formErrors.cardNumber ? "border-warning" : ""
-              }`}
-            />
-            {isJanCodeCategory && (
-              <p className="text-brand text-[11px] font-mono mt-1">
-                💡 提示：輸入之 JAN Code 必須為全數字 13 位條碼
-              </p>
-            )}
+            <div className="space-y-1 min-w-0">
+              <Label className={MANUAL_LABEL_CLASS}>
+                系列代碼 <span className="text-warning">*</span>
+              </Label>
+              <Input
+                type="text"
+                value={current.setCode}
+                onChange={(e) =>
+                  updateManualField(kind, "setCode", e.target.value)
+                }
+                placeholder="SV2a"
+                className={`${MANUAL_INPUT_MONO_CLASS} ${
+                  formErrors.setCode ? MANUAL_FIELD_ERROR_CLASS : ""
+                }`}
+              />
+            </div>
+          </div>
+          {isJanCodeCategory ? (
+            <p className="font-mono text-[11px] text-brand">
+              JAN Code 須為 13 位全數字
+            </p>
+          ) : null}
+        </section>
+
+        <section className={MANUAL_FORM_BLOCK_CLASS}>
+          <h3 className={MANUAL_SECTION_CLASS}>名稱（至少填一種）</h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="space-y-1 min-w-0">
+              <Label className={MANUAL_LABEL_CLASS}>英文</Label>
+              <Input
+                type="text"
+                value={current.nameEn}
+                onChange={(e) =>
+                  updateManualField(kind, "nameEn", e.target.value)
+                }
+                placeholder="Pikachu PROMO"
+                className={`${MANUAL_INPUT_CLASS} ${
+                  formErrors.nameLanguages ? MANUAL_FIELD_ERROR_CLASS : ""
+                }`}
+              />
+            </div>
+
+            <div className="space-y-1 min-w-0">
+              <Label className={MANUAL_LABEL_CLASS}>中文</Label>
+              <Input
+                type="text"
+                value={current.nameZh}
+                onChange={(e) =>
+                  updateManualField(kind, "nameZh", e.target.value)
+                }
+                placeholder="皮卡丘 推廣卡"
+                className={`${MANUAL_INPUT_CLASS} ${
+                  formErrors.nameLanguages ? MANUAL_FIELD_ERROR_CLASS : ""
+                }`}
+              />
+            </div>
+
+            <div className="space-y-1 min-w-0">
+              <Label className={MANUAL_LABEL_CLASS}>日文</Label>
+              <Input
+                type="text"
+                value={current.nameJa}
+                onChange={(e) =>
+                  updateManualField(kind, "nameJa", e.target.value)
+                }
+                placeholder="ピカチュウ"
+                className={`${MANUAL_INPUT_CLASS} ${
+                  formErrors.nameLanguages ? MANUAL_FIELD_ERROR_CLASS : ""
+                }`}
+              />
+            </div>
           </div>
 
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
-              系列/卡包代碼 <span className="text-warning">*</span>
-            </Label>
-            <Input
-              type="text"
-              value={current.setCode}
-              onChange={(e) =>
-                updateManualField(kind, "setCode", e.target.value)
-              }
-              placeholder="例：SV2a"
-              className={`h-10 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-mono text-[13px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                formErrors.setCode ? "border-warning" : ""
-              }`}
-            />
-          </div>
-
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
-              英文名稱
-            </Label>
-            <Input
-              type="text"
-              value={current.nameEn}
-              onChange={(e) =>
-                updateManualField(kind, "nameEn", e.target.value)
-              }
-              placeholder="例：Pikachu PROMO"
-              className={`h-10 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-sans text-[13px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                formErrors.nameLanguages ? "border-warning" : ""
-              }`}
-            />
-          </div>
-
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
-              中文名稱
-            </Label>
-            <Input
-              type="text"
-              value={current.nameZh}
-              onChange={(e) =>
-                updateManualField(kind, "nameZh", e.target.value)
-              }
-              placeholder="例：皮卡丘 推廣卡"
-              className={`h-10 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-sans text-[13px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                formErrors.nameLanguages ? "border-warning" : ""
-              }`}
-            />
-          </div>
-
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
-              日文名稱
-            </Label>
-            <Input
-              type="text"
-              value={current.nameJa}
-              onChange={(e) =>
-                updateManualField(kind, "nameJa", e.target.value)
-              }
-              placeholder="例：ピカチュウ"
-              className={`h-10 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-sans text-[13px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                formErrors.nameLanguages ? "border-warning" : ""
-              }`}
-            />
-          </div>
-
-          <div className="space-y-1.5 min-w-0">
-            <Label className="font-mono text-[11px] text-text-secondary">
+          <div className="space-y-1">
+            <Label className={MANUAL_LABEL_CLASS}>
               罕有度 <span className="text-warning">*</span>
             </Label>
             <Select
@@ -922,43 +1082,47 @@ export default function AdminCatalogPage() {
               }
             >
               <SelectTrigger
-                className={`h-10 w-full min-w-0 max-w-full overflow-hidden truncate bg-bg-page border-[rgba(237,232,224,0.12)] rounded-xl px-3 font-mono text-[13px] text-text-primary ${
-                  formErrors.rarity ? "border-warning" : ""
+                className={`${MANUAL_SELECT_TRIGGER_CLASS} font-mono ${
+                  formErrors.rarity ? MANUAL_FIELD_ERROR_CLASS : ""
                 }`}
               >
-                <SelectValue placeholder="請選擇罕有度 *" />
+                <SelectValue placeholder="選擇罕有度">
+                  {current.rarity
+                    ? (RARITY_LABEL_BY_VALUE[current.rarity] ?? current.rarity)
+                    : null}
+                </SelectValue>
               </SelectTrigger>
-              <SelectContent className="bg-[#26211C] w-[var(--radix-select-trigger-width)] max-w-full">
+              <SelectContent className={SELECT_CONTENT_CLASS}>
                 {RARITY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className={SELECT_ITEM_CLASS}
+                  >
                     {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        </div>
 
-        {formErrors.nameLanguages && (
-          <p className="font-sans text-[12px] text-warning">
-            請至少輸入一種語言嘅卡牌名稱（英文／中文／日文）
-          </p>
-        )}
+          {formErrors.nameLanguages ? (
+            <p className="font-sans text-[11px] text-warning">
+              請至少輸入一種語言名稱（英文／中文／日文）
+            </p>
+          ) : null}
+        </section>
 
-        {/* Image upload */}
-        <div className="space-y-1.5">
-          <Label className="font-mono text-[11px] text-text-secondary">
-            卡牌圖片 <span className="text-warning">*</span>
-          </Label>
-          <div className="flex gap-4">
-            <div className="shrink-0">
-              {imagePreview ? (
-                <div className="relative w-20 h-[110px]">
+        <section className={MANUAL_FORM_BLOCK_CLASS}>
+          <h3 className={MANUAL_SECTION_CLASS}>卡牌圖片</h3>
+          <div className="flex gap-2.5">
+            {imagePreview ? (
+              <div className="relative h-20 w-14 shrink-0">
                   <Image
                     src={imagePreview}
                     alt="預覽"
                     fill
-                    className="rounded-lg object-cover border border-[rgba(237,232,224,0.12)]"
+                    className="rounded-lg object-cover border border-white/10"
                   />
                   <button
                     type="button"
@@ -967,16 +1131,16 @@ export default function AdminCatalogPage() {
                       updateManualField(kind, "imageSource", "");
                     }}
                     aria-label="移除圖片"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-warning text-white text-[10px] font-bold flex items-center justify-center active:scale-[0.9] transition-transform"
+                    className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-white active:scale-[0.9] transition-transform"
                   >
                     ✕
                   </button>
                 </div>
               ) : (
-                <div className="w-20 h-[110px] rounded-lg bg-bg-page border border-dashed border-[rgba(237,232,224,0.16)] flex items-center justify-center">
+                <div className="flex h-20 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-white/[0.12] bg-transparent">
                   <svg
-                    width="22"
-                    height="22"
+                    width="20"
+                    height="20"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="#50453b"
@@ -988,45 +1152,31 @@ export default function AdminCatalogPage() {
                   </svg>
                 </div>
               )}
-            </div>
-
-            <div className="flex-1 space-y-2">
+            <div className="min-w-0 flex-1 space-y-1.5">
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
-                className="w-full text-[11px] font-mono text-text-secondary file:mr-3 file:h-9 file:px-3 file:rounded-lg file:border-0 file:bg-[rgba(212,165,116,0.15)] file:text-brand file:font-sans file:font-bold file:text-[11px] file:cursor-pointer hover:file:bg-[rgba(212,165,116,0.25)]"
+                className="w-full text-[10px] font-sans text-text-disabled file:mr-2 file:h-7 file:rounded-md file:border-0 file:bg-brand/15 file:px-2.5 file:text-[10px] file:font-semibold file:text-brand file:cursor-pointer hover:file:bg-brand/25"
               />
               <Input
                 type="text"
                 value={current.imageSource}
                 onChange={handleImageUrlChange}
-                placeholder="或貼上圖片 URL（備援）"
-                className={`h-9 bg-bg-page border-[rgba(237,232,224,0.12)] rounded-lg px-3 font-mono text-[12px] text-text-primary placeholder:text-text-disabled focus-visible:border-brand/40 ${
-                  formErrors.image ? "border-warning" : ""
+                placeholder="或貼上圖片 URL"
+                className={`${MANUAL_INPUT_MONO_CLASS} h-8 text-[11px] ${
+                  formErrors.image ? MANUAL_FIELD_ERROR_CLASS : ""
                 }`}
               />
-              {imageFileName && (
-                <p className="font-mono text-[10px] text-text-disabled truncate">
+              {imageFileName ? (
+                <p className="truncate font-mono text-[10px] text-text-disabled">
                   已選：{imageFileName}
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
-        </div>
-
-        {/* Type preview */}
-        <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-page p-3">
-          <p className="font-sans text-[12px] text-text-secondary">
-            即將新增條目類型：
-            <span className="text-brand font-semibold ml-1">
-              {kind === "card"
-                ? "獨立卡（single_card）"
-                : `Box/Set（${getCategoryLabel((current as ManualBoxSetEntry).category)}）`}
-            </span>
-          </p>
-        </div>
+        </section>
       </div>
     );
   }

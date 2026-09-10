@@ -1,0 +1,44 @@
+name: FPS Payout Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 4 * * *"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+jobs:
+  fps-payout-integration:
+    name: FPS Payout Vitest Integration
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'fps-payout'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v7.0.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+          cache: true
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Run FPS payout integration tests
+        run: bun run test:integration:fps-payout
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_BUYER_EMAIL: ${{ secrets.E2E_BUYER_EMAIL }}
+          E2E_BUYER_PASSWORD: ${{ secrets.E2E_BUYER_PASSWORD }}
+          E2E_SELLER_EMAIL: ${{ secrets.E2E_SELLER_EMAIL }}
+          E2E_SELLER_PASSWORD: ${{ secrets.E2E_SELLER_PASSWORD }}
+          E2E_LISTING_ID: ${{ secrets.E2E_LISTING_ID }}
+          E2E_SELLER_ID: ${{ secrets.E2E_SELLER_ID }}

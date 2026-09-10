@@ -170,6 +170,7 @@ export function NewListingForm() {
     }
 
     const price = Number(formData.get("ask-price"));
+    const extraShippingFee = Number(formData.get("extraShippingFee") ?? 0);
 
     const imageFiles = photos
       .map((photo) => photo.file)
@@ -191,6 +192,7 @@ export function NewListingForm() {
     const result = await submitSealedListingWithProgress({
       productId: catalogSearch.selected.id,
       price,
+      extraShippingFee,
       sellerPersona: "merchant",
       imageFiles,
       sealState,
@@ -363,6 +365,32 @@ export function NewListingForm() {
               className="flex-1 h-full bg-transparent px-3 font-mono text-[14px] text-text-primary focus:outline-none"
             />
           </div>
+        </div>
+        <div>
+          <label
+            htmlFor="extra-shipping-fee"
+            className="font-mono text-[12px] text-text-secondary block mb-1.5"
+          >
+            附加運費 (HK$)
+          </label>
+          <div className={INPUT_GROUP_BASE}>
+            <span className="px-3 font-mono text-[13px] text-text-disabled border-r border-white/5 shrink-0">
+              HK$
+            </span>
+            <input
+              id="extra-shipping-fee"
+              name="extraShippingFee"
+              type="number"
+              min={0}
+              max={200}
+              step={1}
+              placeholder="0"
+              className="flex-1 h-full bg-transparent px-3 font-mono text-[14px] text-text-primary focus:outline-none"
+            />
+          </div>
+          <p className="mt-1 font-mono text-[11px] text-text-disabled">
+            選填，疊加店舖基本運費
+          </p>
         </div>
       </div>
 

@@ -77,7 +77,7 @@ Use these for profile/avatar links instead of string templates like `/profile/${
 - [ ] Logout error toast (if `logout()` throws)
 - [ ] Loading overlay on settings page during logout (modal already shows `登出中…`)
 - [ ] Merchant nav: add dashboard shortcut when `mockRole === "MERCHANT"` (see `docs/Role-Based-Access-Control.md`)
-- [ ] `PENDING_MERCHANT` banner on user profile when KYC flow ships
+- [x] `PENDING_MERCHANT` banner on merchant dashboard when KYC pending (`MerchantOverviewClient`)
 
 ## Acceptance test
 

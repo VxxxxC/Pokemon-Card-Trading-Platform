@@ -1,5 +1,13 @@
 import type { Tables } from "@/types/supabase";
 
+export type HomeBannerItem = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  linkUrl?: string;
+  altText?: string;
+};
+
 export type HomeListingCard = {
   listingId: string;
   productId: string;

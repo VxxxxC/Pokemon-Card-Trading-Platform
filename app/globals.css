@@ -37,6 +37,25 @@
     html {
         @apply font-sans;
     }
+
+    /* Native date inputs — brand calendar picker icon (site-wide) */
+    input[type="date"] {
+        color-scheme: dark;
+        accent-color: var(--brand);
+    }
+
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        cursor: pointer;
+        opacity: 0.9;
+        filter: brightness(0) saturate(100%) invert(74%) sepia(32%) saturate(497%)
+            hue-rotate(346deg) brightness(95%) contrast(90%);
+    }
+
+    input[type="date"]:hover::-webkit-calendar-picker-indicator {
+        opacity: 1;
+        filter: brightness(0) saturate(100%) invert(78%) sepia(30%) saturate(800%)
+            hue-rotate(347deg) brightness(102%) contrast(92%);
+    }
 }
 
 @theme inline {
@@ -212,6 +231,25 @@ body {
 }
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
+}
+
+/* Alias — same as global input[type="date"] (explicit marker in forms) */
+.input-date-theme {
+    color-scheme: dark;
+    accent-color: var(--brand);
+}
+
+.input-date-theme::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.9;
+    filter: brightness(0) saturate(100%) invert(74%) sepia(32%) saturate(497%)
+        hue-rotate(346deg) brightness(95%) contrast(90%);
+}
+
+.input-date-theme:hover::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    filter: brightness(0) saturate(100%) invert(78%) sepia(30%) saturate(800%)
+        hue-rotate(347deg) brightness(102%) contrast(92%);
 }
 
 :root {

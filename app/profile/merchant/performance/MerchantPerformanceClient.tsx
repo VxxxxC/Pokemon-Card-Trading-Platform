@@ -1,10 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { IoChevronBack } from "react-icons/io5";
 import {
   ComposedChart,
   Area,
@@ -32,8 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getMerchantPerformanceAnalytics } from "@/app/actions/merchant-performance";
-import { ProfilePersonaSwitch } from "@/app/components/profile/ProfilePersonaSwitch";
-import type { DualPersonaContext } from "@/lib/auth/dual-persona";
 import {
   MERCHANT_PERF_RANGES,
   RANGE_LABEL_MAP,
@@ -42,9 +38,13 @@ import {
 } from "@/lib/dashboard/merchant-performance-ranges";
 import type {
   MerchantPerformanceAnalytics,
+  MerchantPerformanceMetricBlock,
   MerchantPerformanceRange,
 } from "@/lib/dashboard/merchant-performance-types";
 import { DEFAULT_AVATAR_URL } from "@/lib/profile/avatar";
+import { cn } from "@/lib/utils";
+import { SECTION_TITLE_CLASS } from "@/lib/ui/section-title-ui";
+import { ChartLine } from "lucide-react";
 
 const chartConfig = {
   turnover: {
@@ -61,18 +61,90 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
+function hasIntervalChartData(
+  interval: MerchantPerformanceMetricBlock,
+  series: MerchantPerformanceAnalytics["series"],
+): boolean {
+  if (interval.txCount > 0 || interval.turnover > 0) {
+    return true;
+  }
+
+  return series.some(
+    (point) => point.txCount > 0 || point.turnover > 0 || point.avgPrice > 0,
+  );
+}
+
+function ChartIntervalEmptyState({ rangeLabel }: { rangeLabel: string }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center px-4 py-10 sm:py-12 text-center"
+      role="status"
+    >
+      <div
+        className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-brand/20 bg-bg-page/60"
+        aria-hidden
+      >
+        <ChartLine className="h-6 w-6 text-brand/70" strokeWidth={1.5} />
+      </div>
+      <p className="font-sans font-semibold text-[13px] text-text-primary">
+        {rangeLabel}內暫無成交紀錄
+      </p>
+      <p className="mt-1 max-w-[280px] font-sans text-[12px] text-text-disabled leading-relaxed">
+        完成首筆訂單後，營收、價格與成交量趨勢將顯示於此
+      </p>
+      <p className="mt-3 font-mono text-[10px] text-text-disabled/80">
+        可嘗試切換其他時間區間
+      </p>
+    </div>
+  );
+}
+
+function ChartSeriesToggle({
+  label,
+  color,
+  checked,
+  onChange,
+}: {
+  label: string;
+  color: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      aria-pressed={checked}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] transition-colors focus:outline-none",
+        checked
+          ? "border-[rgba(237,232,224,0.12)] bg-bg-elevated/60 text-text-primary"
+          : "border-transparent text-text-disabled opacity-55 hover:opacity-80",
+      )}
+    >
+      <span
+        className="w-2 h-2 rounded-full shrink-0"
+        style={{
+          backgroundColor: checked ? color : "transparent",
+          border: `1.5px solid ${color}`,
+          opacity: checked ? 1 : 0.45,
+        }}
+        aria-hidden
+      />
+      {label}
+    </button>
+  );
+}
+
 type MerchantPerformanceClientProps = {
   initialData: MerchantPerformanceAnalytics | null;
-  dualPersona: DualPersonaContext;
   bootstrapError?: string;
 };
 
 export function MerchantPerformanceClient({
   initialData,
-  dualPersona,
   bootstrapError,
 }: MerchantPerformanceClientProps) {
-  const router = useRouter();
   const [range, setRange] = useState<MerchantPerformanceRange>(
     initialData?.timeRange ?? "7d",
   );
@@ -133,11 +205,12 @@ export function MerchantPerformanceClient({
   const topProducts = analytics?.topProducts ?? [];
   const topSpenders = analytics?.topSpenders ?? [];
   const currentRangeLabel = RANGE_LABEL_MAP[range] || "當前區間";
+  const hasChartData = hasIntervalChartData(intervalMetrics, activeData);
 
   return (
     <section
-      aria-labelledby="performance-heading"
-      className="space-y-6 animate-fadeIn p-4 md:p-6 bg-bg-page min-h-screen text-text-primary"
+      aria-label="店舖經營與業績分析"
+      className="space-y-4 animate-fadeIn text-text-primary"
     >
       {bootstrapError ? (
         <div className="mb-4 px-4 py-3 bg-[rgba(239,68,68,0.06)] border border-warning/25 rounded-xl">
@@ -147,133 +220,106 @@ export function MerchantPerformanceClient({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            aria-label="返回"
-            className="w-10 h-10 rounded-full bg-[#26211C] border border-[rgba(237,232,224,0.12)] text-text-secondary hover:text-brand hover:border-brand/40 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-[0.97] cursor-pointer shadow-md shrink-0 focus:outline-none"
-          >
-            <IoChevronBack className="w-5 h-5" />
-          </button>
-          <div>
-            <h1
-              id="performance-heading"
-              className="font-sans font-black text-[22px] lg:text-[26px] text-text-primary tracking-tight"
-            >
-              店舖經營與業績分析
-            </h1>
+      <section
+        className="rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)]"
+        aria-label="歷史累計業績"
+      >
+        <div className="flex divide-x divide-[rgba(237,232,224,0.06)]">
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              歷史累計總營業額
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-[#d4a574] leading-tight mt-1 truncate tabular-nums">
+              HK$ {allTimeMetrics.turnover.toLocaleString()}
+            </p>
+          </div>
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              歷史累計平均單價
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-[#00D2FF] leading-tight mt-1 truncate tabular-nums">
+              HK$ {allTimeMetrics.avgPrice.toLocaleString()}
+            </p>
+          </div>
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              歷史累計總成交次數
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-[#10b981] leading-tight mt-1 truncate tabular-nums">
+              {allTimeMetrics.txCount.toLocaleString()}
+              <span className="text-text-secondary font-normal text-[10px] sm:text-[11px]">
+                {" "}
+                次
+              </span>
+            </p>
           </div>
         </div>
-        {dualPersona.hasDualPersona ? (
-          <ProfilePersonaSwitch
-            activeContext="merchant"
-            context={dualPersona}
-          />
+      </section>
+
+      <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card overflow-hidden">
+        <div className="px-3.5 py-3 sm:px-4 border-b border-[rgba(237,232,224,0.06)] flex items-center justify-between gap-3 flex-wrap">
+          <p className={SECTION_TITLE_CLASS}>
+            營收、價格與成交量
+          </p>
+          <div className="w-[110px] shrink-0">
+            <Select value={range} onValueChange={handleRangeChange}>
+              <SelectTrigger className="w-full h-8 bg-bg-page/50 border border-[rgba(237,232,224,0.08)] rounded-lg text-text-primary text-[12px] font-mono">
+                <SelectValue>
+                  {SELECT_DISPLAY_MAP[range] || "選擇時間"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#1A1612] border border-white/10 text-text-primary">
+                {MERCHANT_PERF_RANGES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {SELECT_DISPLAY_MAP[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {hasChartData ? (
+          <div className="px-3.5 sm:px-4 py-2 flex flex-wrap justify-center gap-2">
+            <ChartSeriesToggle
+              label="平均價"
+              color={chartConfig.avgPrice.color}
+              checked={displayArea}
+              onChange={() => setDisplayArea((value) => !value)}
+            />
+            <ChartSeriesToggle
+              label="營業額"
+              color={chartConfig.turnover.color}
+              checked={displayLine}
+              onChange={() => setDisplayLine((value) => !value)}
+            />
+            <ChartSeriesToggle
+              label="成交總數"
+              color={chartConfig.txCount.color}
+              checked={displayBar}
+              onChange={() => setDisplayBar((value) => !value)}
+            />
+          </div>
         ) : null}
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="w-full bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 shadow-sm relative group overflow-hidden">
-          <p className="font-sans text-[12px] text-text-secondary font-medium tracking-tight mb-2">
-            歷史累計總營業額
-          </p>
-          <p className="font-mono text-[24px] font-black text-[#d4a574] leading-none tracking-tight">
-            HK$ {allTimeMetrics.turnover.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="w-full bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 shadow-sm relative group overflow-hidden">
-          <p className="font-sans text-[12px] text-text-secondary font-medium tracking-tight mb-2">
-            歷史累計平均單價
-          </p>
-          <p className="font-mono text-[24px] font-black text-[#00D2FF] leading-none tracking-tight">
-            HK$ {allTimeMetrics.avgPrice.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="w-full bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 shadow-sm relative group overflow-hidden">
-          <p className="font-sans text-[12px] text-text-secondary font-medium tracking-tight mb-2">
-            歷史累計總成交次數
-          </p>
-          <p className="font-mono text-[24px] font-black text-[#10b981] leading-none tracking-tight">
-            {allTimeMetrics.txCount.toLocaleString()} 次
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5">
-        <div className="flex flex-col">
-          <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
-            <div>
-              <p className="font-sans font-bold text-[15px] text-text-primary tracking-tight">
-                營收、價格與成交量
-              </p>
-            </div>
-
-            <div className="w-[125px] shrink-0">
-              <Select value={range} onValueChange={handleRangeChange}>
-                <SelectTrigger className="w-full bg-[#1A1612] border border-white/5 rounded-xl text-text-primary text-[13px] font-sans h-9">
-                  <SelectValue>
-                    {SELECT_DISPLAY_MAP[range] || "選擇時間"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="bg-[#1A1612] border border-white/10 text-text-primary">
-                  {MERCHANT_PERF_RANGES.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {SELECT_DISPLAY_MAP[option]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-row justify-evenly text-text-secondary text-sm">
-            <div className="flex flex-row items-center gap-x-2">
-              <p>平均價</p>
-              <input
-                type="checkbox"
-                checked={displayArea}
-                onChange={() => setDisplayArea(!displayArea)}
-              />
-            </div>
-            <div className="flex flex-row items-center gap-x-2">
-              <p>營業額</p>
-              <input
-                type="checkbox"
-                checked={displayLine}
-                onChange={() => setDisplayLine(!displayLine)}
-              />
-            </div>
-            <div className="flex flex-row items-center gap-x-2">
-              <p>成交總數</p>
-              <input
-                type="checkbox"
-                checked={displayBar}
-                onChange={() => setDisplayBar(!displayBar)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="relative h-72 w-full">
+        <div
+          className={cn(
+            "relative w-full px-1",
+            hasChartData ? "h-56 sm:h-64" : "min-h-[200px]",
+          )}
+        >
           {isChartLoading ? (
             <div className="absolute inset-0 z-[2] flex items-center justify-center bg-[#17130f]/50 rounded-xl">
               <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
             </div>
           ) : null}
-          {activeData.length === 0 && !isChartLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="font-sans text-[13px] text-text-disabled">
-                此區間暫無成交紀錄
-              </p>
-            </div>
+          {!hasChartData && !isChartLoading ? (
+            <ChartIntervalEmptyState rangeLabel={currentRangeLabel} />
           ) : null}
-          <ChartContainer config={chartConfig} className="h-full w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={activeData}>
+          {hasChartData ? (
+            <ChartContainer config={chartConfig} className="h-full w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={activeData}>
                 <defs>
                   <linearGradient id="mixAvgPrice" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#00D2FF" stopOpacity={0.4} />
@@ -343,58 +389,95 @@ export function MerchantPerformanceClient({
                   hide={!displayBar}
                 />
 
-                <ChartLegend content={<ChartLegendContent className="mt-4" />} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </ChartContainer>
+                  <ChartLegend content={<ChartLegendContent className="mt-4" />} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+          ) : null}
         </div>
 
-        <div className="mt-6 pt-5 border-t border-white/5 w-full">
-          <h4 className="font-sans font-bold text-[13.5px] text-brand tracking-tight mb-4">
-            📊 區間營收轉化動態分析 ({currentRangeLabel})
-          </h4>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <div className="bg-[#17130f] border border-white/5 rounded-xl px-4 py-3 flex flex-col">
-              <span className="font-mono text-[10.5px]">區間總營業額</span>
-              <span className="text-[#d4a574] font-mono text-[16px] font-bold mt-1">
-                HK$ {intervalMetrics.turnover.toLocaleString()}
-              </span>
+        <div className="border-t border-[rgba(237,232,224,0.06)]">
+          <div className="px-3.5 py-2.5 sm:px-4 border-b border-[rgba(237,232,224,0.06)]">
+            <h2 className={SECTION_TITLE_CLASS}>
+              區間營收轉化 ({currentRangeLabel})
+            </h2>
+          </div>
+          <div className="flex divide-x divide-[rgba(237,232,224,0.06)]">
+            <div className="flex-1 min-w-0 px-3 py-3 sm:px-4">
+              <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate">
+                區間總營業額
+              </p>
+              <p
+                className={cn(
+                  "font-mono font-bold text-[13px] sm:text-[15px] mt-1 truncate tabular-nums",
+                  hasChartData ? "text-[#d4a574]" : "text-text-disabled",
+                )}
+              >
+                {hasChartData
+                  ? `HK$ ${intervalMetrics.turnover.toLocaleString()}`
+                  : "—"}
+              </p>
             </div>
-            <div className="bg-[#17130f] border border-white/5 rounded-xl px-4 py-3 flex flex-col">
-              <span className="font-mono text-[10.5px]">區間平均價 (AOV)</span>
-              <span className="text-[#00D2FF] font-mono text-[16px] font-bold mt-1">
-                HK$ {intervalMetrics.avgPrice.toLocaleString()}
-              </span>
+            <div className="flex-1 min-w-0 px-3 py-3 sm:px-4">
+              <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate">
+                區間平均價 (AOV)
+              </p>
+              <p
+                className={cn(
+                  "font-mono font-bold text-[13px] sm:text-[15px] mt-1 truncate tabular-nums",
+                  hasChartData ? "text-[#00D2FF]" : "text-text-disabled",
+                )}
+              >
+                {hasChartData
+                  ? `HK$ ${intervalMetrics.avgPrice.toLocaleString()}`
+                  : "—"}
+              </p>
             </div>
-            <div className="bg-[#17130f] border border-white/5 rounded-xl px-4 py-3 flex flex-col">
-              <span className="font-mono text-[10.5px]">區間總交易筆數</span>
-              <span className="text-[#10b981] font-mono text-[16px] font-bold mt-1">
-                {intervalMetrics.txCount.toLocaleString()} 次
-              </span>
+            <div className="flex-1 min-w-0 px-3 py-3 sm:px-4">
+              <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate">
+                區間總交易筆數
+              </p>
+              <p
+                className={cn(
+                  "font-mono font-bold text-[13px] sm:text-[15px] mt-1 truncate tabular-nums",
+                  hasChartData ? "text-[#10b981]" : "text-text-disabled",
+                )}
+              >
+                {hasChartData ? (
+                  <>
+                    {intervalMetrics.txCount.toLocaleString()}
+                    <span className="text-text-secondary font-normal text-[10px] sm:text-[11px]">
+                      {" "}
+                      次
+                    </span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
-        <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5">
-          <div className="mb-4">
-            <h3 className="font-sans font-bold text-[15px] text-text-primary tracking-tight">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 w-full">
+        <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card overflow-hidden">
+          <div className="px-3.5 py-2.5 sm:px-4 border-b border-[rgba(237,232,224,0.06)]">
+            <h3 className={SECTION_TITLE_CLASS}>
               暢銷商品排行榜
             </h3>
           </div>
 
           {topProducts.length === 0 ? (
-            <p className="font-sans text-[13px] text-text-disabled py-6 text-center">
+            <p className="font-sans text-[12px] text-text-disabled py-8 text-center">
               暫無成交商品紀錄
             </p>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-[rgba(237,232,224,0.06)]">
               {topProducts.map((prod) => (
                 <div
                   key={`${prod.rank}-${prod.productId}`}
-                  className="flex items-center justify-between py-3 text-[13.5px]"
+                  className="flex items-center justify-between py-2.5 px-3.5 sm:px-4 text-[13px]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
@@ -439,23 +522,23 @@ export function MerchantPerformanceClient({
           )}
         </div>
 
-        <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5">
-          <div className="mb-4">
-            <h3 className="font-sans font-bold text-[15px] text-text-primary tracking-tight">
+        <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card overflow-hidden">
+          <div className="px-3.5 py-2.5 sm:px-4 border-b border-[rgba(237,232,224,0.06)]">
+            <h3 className={SECTION_TITLE_CLASS}>
               高價值客戶
             </h3>
           </div>
 
           {topSpenders.length === 0 ? (
-            <p className="font-sans text-[13px] text-text-disabled py-6 text-center">
+            <p className="font-sans text-[12px] text-text-disabled py-8 text-center">
               暫無高價值客戶紀錄
             </p>
           ) : (
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-[rgba(237,232,224,0.06)]">
               {topSpenders.map((client) => (
                 <div
                   key={client.buyerId}
-                  className="flex items-center justify-between py-3 text-[13.5px]"
+                  className="flex items-center justify-between py-2.5 px-3.5 sm:px-4 text-[13px]"
                 >
                   <Link
                     href={`/profile/${client.buyerId}`}

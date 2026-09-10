@@ -178,6 +178,16 @@ export function isRawGradingOptionId(id: string): boolean {
   return option != null && isRawGradingOption(option);
 }
 
+/** Platform auth pass: all graded options (PSA/BGS/CGC/ARS/OTHER), excluding 裸卡. */
+export function getAuthPassGradingOptions(): GradingOption[] {
+  return GRADING_OPTIONS.filter((option) => option.group !== "RAW");
+}
+
+export function isAuthPassGradingOptionId(id: string): boolean {
+  const option = gradingOptionById.get(id);
+  return option != null && option.group !== "RAW";
+}
+
 export function getGradingOptionsByGroup(
   group: GradingOption["group"],
 ): GradingOption[] {

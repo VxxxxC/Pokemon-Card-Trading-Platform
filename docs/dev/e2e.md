@@ -1,5 +1,7 @@
 # Playwright E2E
 
+> **Production Gate（Merge Full E2E）：** [PRODUCTION_GATE.md](./PRODUCTION_GATE.md) §2 — 用 `bun run start`，唔用 `bun run dev`。
+
 End-to-end tests for:
 
 1. **Merchant product detail** — `/marketplace/[id]/product/[productId]`
@@ -30,13 +32,16 @@ Add these to **`.env`** (`playwright.config.ts` loads `.env` / `.env.local` for 
 |----------|--------------|-------------|
 | `E2E_SELLER_ID` | Core happy-path tests | Seller `profiles.id` (UUID) |
 | `E2E_SELLER_USERNAME` | Username route test (A2) | Same seller's `profiles.username` |
-| `E2E_LISTING_ID` | Core happy-path tests | Active `listings.id` owned by seller |
+| `E2E_LISTING_ID` | Core happy-path tests | Active `listings.id` owned by `E2E_SELLER_ID` (merchant grading: same user as `E2E_SELLER_EMAIL` session; run `bun run discover:merchant-grading-e2e`) |
 | `E2E_LISTING_DISPLAY_ID` | Display ID route test (A3) | `product_catalog.display_id` for that listing (not used for marketplace search keyword) |
-| `E2E_LISTING_PRODUCT_ID` | Product ID route test (A4) | `product_catalog.id` / `listings.product_id` |
+| `E2E_LISTING_PRODUCT_ID` | Product ID route test (A4) · L2 `product-detail` | `product_catalog.id` / `listings.product_id` |
+| `E2E_CHECKOUT_ORDER_ID` | L2 `checkout-wizard` (`/checkout/[id]`) | Pending-payment `merchant_orders.id`; seeded by `bun run seed:e2e-marketplace-listing` |
 | `E2E_BUYER_EMAIL` | Buyer auth setup | Member account email |
 | `E2E_BUYER_PASSWORD` | Buyer auth setup | Member account password |
 | `E2E_SELLER_EMAIL` | Seller auth setup (chat-realtime) | Same seller account as `E2E_SELLER_ID` |
 | `E2E_SELLER_PASSWORD` | Seller auth setup (chat-realtime) | Seller login password |
+| `E2E_ADMIN_EMAIL` | `admin-moderation.spec.ts` admin flows | Admin account email (`profiles.role = admin`) |
+| `E2E_ADMIN_PASSWORD` | `admin-moderation.spec.ts` admin flows | Admin login password |
 | `SUPABASE_SERVICE_ROLE_KEY` | DB asserts + cleanup | Service role key for `e2e/fixtures/supabase-admin.ts` |
 | `BUNNY_STORAGE_ZONE_NAME` | Merch listing E2E | `AddAssetModal` card photo upload |
 | `BUNNY_STORAGE_ACCESS_KEY` | Merch listing E2E | Bunny storage API key |
@@ -45,6 +50,20 @@ Add these to **`.env`** (`playwright.config.ts` loads `.env` / `.env.local` for 
 | `E2E_WRONG_SELLER_ID` | Cross-seller test (B3) | Another valid seller UUID who does **not** own `E2E_LISTING_ID` |
 
 When required variables are missing, tests call `test.skip()` with a reason instead of failing the suite.
+
+### Merchant grading integration (G-W2M / G-BF*M)
+
+For Vitest merchant grading + connect payout + commission-rate cases, `E2E_LISTING_ID` must be a **merchant** listing owned by `E2E_SELLER_ID` with `use_authentication=true`, and `E2E_SELLER_EMAIL` must sign in as that user. Misaligned env: integration tests **skip** merchant cases; `bun run verify:merchant-grading-e2e` still **fails** (prelaunch blocker).
+
+```bash
+bun run discover:merchant-grading-e2e      # diagnose (ok=false when env misaligned)
+bun run preflight:merchant-grading-e2e     # discover + verify (diagnostic loop)
+bun run verify:merchant-grading-e2e        # must pass before merge
+```
+
+`discover` sets `ok` only when KYC ready, a recommended listing exists, **and** `E2E_LISTING_ID` (if set) is env-aligned (`envAligned`). `test:prelaunch:check-env` runs verify and auto-prints discover JSON on failure.
+
+After fixing listing/KYC: `bunx supabase db push` through migration `20260927120000`.
 
 ## How to collect fixture IDs
 
@@ -74,6 +93,14 @@ limit 5;
 ```
 
 For `E2E_WRONG_SELLER_ID`, pick a different `profiles.id` that is not the listing owner.
+
+### L2 UI scan bootstrap (recommended)
+
+```bash
+bun run seed:e2e-marketplace-listing
+```
+
+Prints `E2E_LISTING_PRODUCT_ID`, `E2E_CHECKOUT_ORDER_ID` (pending-payment order), and related vars. Nightly runs `scripts/bootstrap-e2e-l2-env.sh` before `test:e2e:ui-l2` so CI does not rely on stale secrets for dynamic routes.
 
 ## Route resolution (backend contract)
 
@@ -173,7 +200,7 @@ Keyword search on `/marketplace` → verify grid `lowestPrice` → click card li
 
 | Variable | Notes |
 |----------|-------|
-| `E2E_SELLER_ID` / `E2E_LISTING_ID` | Active listing owned by seller |
+| `E2E_SELLER_ID` / `E2E_LISTING_ID` | `E2E_LISTING_ID` must belong to `E2E_SELLER_ID`; merchant grading also requires `E2E_SELLER_EMAIL` session = same id |
 | `E2E_BUYER_EMAIL` / `E2E_BUYER_PASSWORD` | Buyer project only (`setup` auth) |
 | `SUPABASE_SERVICE_ROLE_KEY` | `getListingMarketplaceFixture` + offer DB assert |
 
@@ -407,12 +434,103 @@ bun run test:e2e -- e2e/member-offer-negotiation.spec.ts --project=member-tradin
 
 Uses `E2E_SELLER_ID` / `E2E_SELLER_USERNAME` / `E2E_LISTING_ID` (same fixtures as merchant detail).
 
+### Admin moderation (`guest` / `buyer` / `seller`)
+
+`e2e/admin-moderation.spec.ts`:
+
+| Project | Test |
+|---------|------|
+| `guest` | Unauthenticated `/admin/disputes` → `/auth`; admin login + disputes list/detail; chat thread + `view_chat` audit |
+| `buyer` | Member cannot access `/admin/disputes` (redirect to `/profile/user`) |
+| `seller` | Merchant cannot access `/admin/disputes` (redirect to `/profile/merchant` or `/profile/user`) |
+
+Requires `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` for admin flow tests (skipped if unset). Chat thread test also needs a chat-linked moderation case — seed via user-report E2E first.
+
+```bash
+# Optional: create chat-linked moderation case
+bun run test:e2e e2e/user-report.spec.ts --project=buyer -g "buyer submits report from chat console"
+
+# Guest project only (access control + admin flows)
+bun run test:e2e e2e/admin-moderation.spec.ts --project=guest
+
+# Full suite (guest + buyer + seller access control)
+bun run test:e2e e2e/admin-moderation.spec.ts
+```
+
+### Prelaunch gate（H1 / H2 前人手 QA 前）
+
+Rewards + 舉報 + 鑑定 fail + Stripe E2E 的統一順序見 **[prelaunch-gate.md](./prelaunch-gate.md)**。
+
+```bash
+bun run test:prelaunch:gate:1a
+bun run stripe:webhook:listen   # 另一 terminal
+PRELAUNCH_RUN_1B=1 bun run test:prelaunch:gate
+```
+
+### Moderation release gate (`MODERATION_GATE`)
+
+Full pre-release bundle (same env as integration + E2E above):
+
+| Variable | Used for |
+|----------|----------|
+| `E2E_BUYER_*` | Reporter flows, outcome modal |
+| `E2E_ADMIN_*` | Admin resolve (UI + `resolveModerationCaseForE2e`) |
+| `E2E_SELLER_ID` | Subject fixture |
+| `E2E_SELLER_EMAIL` / `E2E_SELLER_PASSWORD` | **Required** for full moderation integration matrix (`hasFullModerationIntegrationEnv`) — I-E3, I-N6, AB-9 |
+
+```bash
+# Fast: tsc + integration (31) + unit/PBT helpers
+bun run test:moderation:gate
+
+# Full: fast + PBT + Stryker mutation + seed + E2E (user-report, admin-moderation, report-outcome-notification; includes seller project)
+MODERATION_GATE=1 bun run test:moderation:gate:full
+```
+
+E2E order in gate: `user-report` → `admin-moderation` → `report-outcome-notification` (E2E-N1 is self-contained on buyer project). New cases: **E2E-R6**, **E2E-G5**, **E2E-N1**, **E2E-AB5a/b**, **E2E-AB6**, **E2E-AB7**, **E2E-AB8**.
+
+**E2E-R6（duplicate chat report）：** UI 提交首報；duplicate 斷言用 `submitChatReportViaBuyerRpc`（同 I-R6 integration 契約）— 唔再 double-submit UI（避免 `提交中…` hang）。
+
+**Admin grading smoke（v2 PR-C）：** `e2e/admin-grading.spec.ts` — `bun run test:e2e:admin-grading`（`--project=setup --project=guest`）；fixture 對齊 `verify:merchant-grading-e2e`。
+
+**Production Gate rewards E2E：** 預設 `test:e2e:rewards-gate:production`（exclude matrix M-A1）；全量加 `PRODUCTION_GATE_INCLUDE_MATRIX=1`。
+
+**Production Gate E2E harness：** `bun run test:production:gate` 會起 `next start` 並設 `PLAYWRIGHT_SKIP_WEBSERVER=1`；本地單跑 Playwright 預設仍用 `dev`，除非設 `PRODUCTION_GATE=1`。
+
+CI:
+
+- [`.github/workflows/moderation-integration.yml`](../../.github/workflows/moderation-integration.yml) — label `moderation`, nightly, or `workflow_dispatch`; `bun run test:integration:moderation` + full `E2E_*` secrets.
+- [`.github/workflows/nightly-test-coverage.yml`](../../.github/workflows/nightly-test-coverage.yml) — **03:00 HKT** serial `bun run test:nightly:coverage` (L2 platform → L4 cron → L5 appendix-A incl. TC-M42 → L2 UI → L1 P2 E2E → L6 member → L3 matrix); PR labels `platform` / `nightly-e2e`. SSOT: [test-coverage-ssot.md](./test-coverage-ssot.md) §8–§9.
+- [`.github/workflows/rewards.yml`](../../.github/workflows/rewards.yml) — **05:00 HKT** schedule: vitest rewards + `test:e2e:rewards-gate:production` (no matrix); dispatch / PR label `rewards` runs full `test:e2e:rewards-gate`.
+
+### Moderation Stripe refund smoke (I-H14, pre-release)
+
+Real `merchant_direct` checkout → buyer confirm (in refund window) → admin resolve with optional refund → Stripe + DB terminal state.
+
+| Variable | Required |
+|----------|----------|
+| `STRIPE_SECRET_KEY` | Yes |
+| `E2E_BUYER_EMAIL` / `E2E_BUYER_PASSWORD` | Yes |
+| `E2E_SELLER_EMAIL` / `E2E_SELLER_PASSWORD` / `E2E_SELLER_ID` | Yes (aligned) |
+| `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes |
+| `PLAYWRIGHT_BASE_URL` | Optional (default `http://localhost:3000`; set for staging) |
+
+```bash
+bun run stripe:webhook:listen
+bun run test:e2e:moderation-stripe-smoke
+# alias:
+bun run test:moderation:stripe-smoke
+```
+
+Playwright starts `bun run dev` via `webServer` unless a server is already running (`reuseExistingServer`). Skips cleanly when `STRIPE_SECRET_KEY` is unset. Requires migration `20260911120000`.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|----------------|
 | All tests skipped | `E2E_SELLER_ID` / `E2E_LISTING_ID` not set in `.env` |
 | Setup skipped, buyer tests fail auth | `E2E_BUYER_EMAIL` / `E2E_BUYER_PASSWORD` missing or wrong |
+| Admin moderation admin tests skipped | `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` missing or account not `admin` |
 | Chat-realtime skipped | Missing seller creds, `SUPABASE_SERVICE_ROLE_KEY`, or core listing fixtures |
 | Login timeout in setup | Supabase env unset or invalid credentials |
 | 404 on happy path | Listing inactive, wrong seller, or ID mismatch |

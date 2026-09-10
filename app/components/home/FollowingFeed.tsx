@@ -2,6 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import {
+  HOME_SECTION_CLASS,
+  HOME_SECTION_HEADER_ROW_CLASS,
+  HOME_SECTION_LINK_CLASS,
+  HOME_SECTION_TITLE_CLASS,
+} from "@/app/components/home/home-section-ui";
 
 // TODO: [API] Fetch user's following feed from Supabase — JOIN `user_favorites` + `listings` for lowest-price followed cards
 // TODO: [database] Create compound index on `user_favorites(user_id, listing_id)` and `(user_id, merchant_id)` for optimized query
@@ -17,18 +23,15 @@ const feedCards = [
 
 export function FollowingFeed() {
   return (
-    <section className="mb-8" aria-labelledby="following-heading">
-      <div className="flex items-center justify-between mb-4">
-        <h2
-          id="following-heading"
-          className="font-sans font-semibold text-[20px] text-text-primary"
-        >
+    <section className={HOME_SECTION_CLASS} aria-labelledby="following-heading">
+      <div className={HOME_SECTION_HEADER_ROW_CLASS}>
+        <h2 id="following-heading" className={HOME_SECTION_TITLE_CLASS}>
           我的心水情報
         </h2>
         <Link
           href="/profile/user"
           prefetch={false}
-          className="font-mono text-[12px] text-brand hover:text-brand-hover transition-colors"
+          className={HOME_SECTION_LINK_CLASS}
         >
           管理追蹤 →
         </Link>

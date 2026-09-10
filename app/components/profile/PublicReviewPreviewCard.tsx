@@ -29,7 +29,7 @@ export function PublicReviewPreviewCard({
 
   const cardClassName =
     variant === "embedded"
-      ? "flex flex-row gap-x-2 bg-[#17130f] rounded-xl border border-[rgba(237,232,224,0.04)] p-4"
+      ? "flex flex-row gap-x-2 px-4 py-3 border-b border-[rgba(237,232,224,0.06)] last:border-b-0"
       : "flex flex-row gap-x-2 bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-4 hover:border-[rgba(237,232,224,0.15)] transition-colors";
 
   return (

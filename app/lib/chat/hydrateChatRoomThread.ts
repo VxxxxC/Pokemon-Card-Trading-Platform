@@ -1,22 +1,44 @@
 "use client";
 
 import {
+  getChatRoomMessagesSince,
   getChatRoomThread,
   loadOlderChatRoomMessages,
 } from "@/app/actions/chat";
+import { batchGetOfferCardContexts } from "@/app/actions/offers";
 import { CHAT_THREAD_PAGE_SIZE, isDbChatRoomId } from "@/app/lib/chat/constants";
+import { extractOfferIdsFromMessages } from "@/app/lib/chat/extractOfferIdsFromMessages";
 import {
-  mergeLatestThreadPageFromDb,
+  appendDeltaMessagesToRoom,
   mergeRoomThreadFromDb,
   prependOlderRoomMessages,
 } from "@/app/lib/chat/mergeChatRooms";
-import { roomNeedsThreadHydration } from "@/app/lib/chat/roomHydration";
+import { writeCachedOfferCardContext } from "@/app/lib/chat/offerCardContextCache";
+import {
+  roomHasPersistedThreadTail,
+  roomNeedsThreadHydration,
+} from "@/app/lib/chat/roomHydration";
 import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
+import { getLastPersistedMessageTimestamp } from "@/app/lib/chat/realtimeChatMessages";
 import { useHkCardVaultStore } from "@/app/store/useHkCardVaultStore";
+import type { Message } from "@/app/store/useHkCardVaultStore";
 
 type HydrateChatRoomThreadOptions = {
   force?: boolean;
+  markRead?: boolean;
 };
+
+async function maybeMarkRoomRead(
+  roomId: string,
+  readAt: string | undefined,
+  markRead: boolean,
+): Promise<void> {
+  if (!markRead) {
+    return;
+  }
+
+  await persistMarkRoomReadAsync(roomId, readAt);
+}
 
 function getOldestPersistedTimestamp(
   messages: { id: string; timestamp: string }[],
@@ -24,6 +46,53 @@ function getOldestPersistedTimestamp(
   const persisted = messages.filter((message) => !message.id.startsWith("opt-"));
   const oldest = persisted[0];
   return oldest?.timestamp ?? null;
+}
+
+async function populateOfferCardContextCache(messages: Message[]): Promise<void> {
+  const offerIds = extractOfferIdsFromMessages(messages);
+  if (offerIds.length === 0) {
+    return;
+  }
+
+  const result = await batchGetOfferCardContexts(offerIds);
+  if (!result.success) {
+    return;
+  }
+
+  for (const [offerId, context] of Object.entries(result.data)) {
+    writeCachedOfferCardContext(offerId, context);
+  }
+}
+
+async function syncChatRoomThreadDelta(
+  roomId: string,
+  sinceCreatedAt: string,
+  markRead: boolean,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const deltaResult = await getChatRoomMessagesSince(roomId, sinceCreatedAt);
+  if (!deltaResult.success) {
+    return { success: false, error: deltaResult.error };
+  }
+
+  if (deltaResult.data.messages.length > 0) {
+    await populateOfferCardContextCache(deltaResult.data.messages);
+    useHkCardVaultStore.getState().setChats((currentRooms) =>
+      appendDeltaMessagesToRoom(
+        currentRooms,
+        roomId,
+        deltaResult.data.messages,
+      ),
+    );
+  }
+
+  const updatedRoom = useHkCardVaultStore
+    .getState()
+    .chats.find((entry) => entry.id === roomId);
+  const lastTs =
+    updatedRoom?.messages.at(-1)?.timestamp ?? updatedRoom?.timestamp;
+  await maybeMarkRoomRead(roomId, lastTs, markRead);
+
+  return { success: true };
 }
 
 export async function hydrateChatRoomThread(
@@ -34,14 +103,26 @@ export async function hydrateChatRoomThread(
     return { success: false, error: "請選擇有效的聊天室" };
   }
 
+  const markRead = options?.markRead ?? false;
   const room = useHkCardVaultStore
     .getState()
     .chats.find((entry) => entry.id === roomId);
 
+  if (roomHasPersistedThreadTail(room)) {
+    const persistedRoom = room!;
+    const since = getLastPersistedMessageTimestamp(persistedRoom.messages);
+    if (since) {
+      const deltaResult = await syncChatRoomThreadDelta(roomId, since, markRead);
+      if (deltaResult.success) {
+        return { success: true };
+      }
+    }
+  }
+
   if (!options?.force && !roomNeedsThreadHydration(room)) {
     const lastTs =
       room?.messages.at(-1)?.timestamp ?? room?.timestamp ?? undefined;
-    await persistMarkRoomReadAsync(roomId, lastTs);
+    await maybeMarkRoomRead(roomId, lastTs, markRead);
     return { success: true };
   }
 
@@ -52,21 +133,15 @@ export async function hydrateChatRoomThread(
     return { success: false, error: result.error };
   }
 
-  useHkCardVaultStore.getState().setChats((currentRooms) => {
-    if (options?.force && room?.threadHydrated) {
-      return mergeLatestThreadPageFromDb(
-        currentRooms,
-        result.data,
-        result.hasMore,
-      );
-    }
+  await populateOfferCardContextCache(result.data.messages);
 
-    return mergeRoomThreadFromDb(currentRooms, result.data, result.hasMore);
-  });
+  useHkCardVaultStore.getState().setChats((currentRooms) =>
+    mergeRoomThreadFromDb(currentRooms, result.data, result.hasMore),
+  );
 
   const lastTs =
     result.data.messages.at(-1)?.timestamp ?? result.data.timestamp;
-  await persistMarkRoomReadAsync(roomId, lastTs);
+  await maybeMarkRoomRead(roomId, lastTs, markRead);
 
   return { success: true };
 }
@@ -106,6 +181,8 @@ export async function loadOlderChatRoomThread(
     );
     return { success: true, hasMore: false };
   }
+
+  await populateOfferCardContextCache(result.data.messages);
 
   useHkCardVaultStore.getState().setChats((currentRooms) =>
     prependOlderRoomMessages(

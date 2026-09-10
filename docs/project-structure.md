@@ -6,10 +6,10 @@
 - **主要目錄**: 13 個（`app/`, `components/`, `lib/`, `types/`, `scripts/`, `e2e/`, `supabase/`, `docs/`, `public/`, `.stitch/`, `.agents/`, `.github/`, `.vscode/`）
 - **總檔案數**: 740+ 個（排除 `node_modules`、`.next`）
 - **TypeScript/TSX 檔案**: 410+ 個
-- **DB migrations**: 110 檔（`supabase/migrations/`）
+- **DB migrations**: 143 檔（`supabase/migrations/`）
 - **語言**: TypeScript/TSX, CSS, JSON, Markdown, SQL
 - **框架**: Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui, Zustand, Serwist (PWA), Playwright (E2E)
-- **後端整合**: **大部分已接線** — Supabase（Auth、RLS、RPC、Server Actions、Realtime、Cron）；商戶 trading / 雙身分 persona 訂單與聊天已接；Stripe B2C checkout 仍待整合
+- **後端整合**: Supabase（Auth、RLS、RPC、Server Actions、Realtime、Cron）；Member 鑑定託管 + Stripe manual capture（P0）；Merchant B2C checkout + Connect 撥款；**Member FPS payout pipeline**（T+3 hold → cron → admin FPS 表）
 - **Package manager**: Bun only（`bun.lock`；見 `.cursorrules` §7）
 
 ---
@@ -25,7 +25,7 @@ Pokemon-Card-Trading-Platform-Client/
 │   ├── eslint.config.mjs
 │   ├── postcss.config.mjs
 │   ├── playwright.config.ts         # Playwright E2E（讀 `.env` / `.env.local`）
-│   ├── vercel.json                  # Cron: ingest-platform-trades + aggregate-prices
+│   ├── vercel.json                  # Cron: 市場價 ingest/aggregate、merchant 付款逾時、member FPS payout ready
 │   ├── components.json              # shadcn/ui
 │   ├── middleware.ts                # Supabase session + RBAC（env 未設定時安全跳過）
 │   ├── .cursorrules                 # 開發守則（含 §8 CI-safe Supabase / prerender）
@@ -65,13 +65,16 @@ app/
 │
 ├── actions/                         # ⭐ Server Actions（前後端契約）
 │   ├── auth.ts                      # 登入 / 註冊 / 密碼重設
-│   ├── profile.ts                   # 用戶設定、頭像
+│   ├── profile.ts                   # 用戶設定、頭像、FPS 收款資料（fps_id + fps_name）
 │   ├── marketplace.ts               # 搜尋、商品詳情、掛單簿、成交紀錄、市場價格、商戶櫥窗
 │   ├── productCatalog.ts            # 目錄搜尋（Hero / AddAsset）
 │   ├── listings.ts                  # 上架提交（Bunny + listings insert）
 │   ├── offers.ts                    # 出價 / 接受 / 拒絕 / 修改 / OfferCard context
 │   ├── chat.ts                      # inbox, sendMessage, markRoomRead → RPC
-│   ├── orders.ts                    # searchUser/MerchantTradingOrders, complete/cancel, B2C merchant_orders, order detail
+│   ├── orders.ts                    # searchUser/MerchantTradingOrders, complete/cancel, member order detail, auth escrow actions
+│   ├── member-auth-checkout.ts      # Member 鑑定單 Stripe PI（manual capture；新單 single / legacy multicapture）
+│   ├── merchant-checkout.ts         # Merchant B2C Stripe checkout + Connect payout saga
+│   ├── buy-now.ts                   # 立即購買 → 聊天 / 訂單
 │   ├── reviews.ts                   # 雙盲評價 + member/merchant reviewed-order batch + 公開檔案評價列表
 │   ├── reports.ts                   # submitUserReport（聊天 / 檔案檢舉）
 │   ├── home.ts                      # 首頁三區塊 bootstrap（願望清單 / 商戶 / C2C）
@@ -82,16 +85,31 @@ app/
 │   ├── member-dashboard.ts          # 用戶總覽 dashboard stats
 │   ├── merchant-dashboard.ts        # 商戶總覽 dashboard stats
 │   ├── merchant-settings.ts         # 店鋪設定
+│   ├── merchant-kyc.ts              # 商戶 KYC 申請
 │   ├── merchant-performance.ts      # 商戶績效 analytics RPC
 │   ├── merchant-product-analytics.ts # 單 SKU 瀏覽/互動 analytics
-│   └── admin-member-orders.ts       # Dev/admin：鑑定託管狀態推進（mock flow）
+│   ├── admin-dashboard.ts           # 管理員數據總覽
+│   ├── admin-payouts.ts             # Admin 財務：Stripe balance、Merchant Connect ledger、Member FPS ledger
+│   ├── admin-grading.ts             # Admin 鑑定工作台（intake / pass / fail / outbound）
+│   ├── admin-kyc.ts                 # Admin KYC 審核
+│   ├── admin-member-orders.ts       # Dev/admin：鑑定託管狀態推進（mock flow）
+│   └── adminCatalog.ts              # Admin 目錄管理
 │
 ├── api/
 │   ├── cron/
-│   │   ├── ingest-platform-trades/route.ts  # Cron Job 1b：平台成交快照 ingest
-│   │   └── aggregate-prices/route.ts        # Cron Job 2：快照聚合 → market_prices cache
+│   │   ├── ingest-platform-trades/route.ts       # Cron：平台成交快照 ingest
+│   │   ├── aggregate-prices/route.ts           # Cron：快照聚合 → market_prices cache
+│   │   ├── expire-merchant-pending-payment/route.ts  # Cron：B2C 未付款逾時 + PI cancel
+│   │   └── member-fps-payout-ready/route.ts      # Cron：T+3 hold 到期 → payout_requests
+│   ├── stripe/
+│   │   ├── webhook/route.ts         # Stripe webhook（merchant + member_auth capture saga）
+│   │   └── connect/onboard/route.ts # Merchant Connect 入駐
+│   ├── kyc/upload-document/route.ts
 │   ├── listings/upload-image/route.ts
-│   └── profile/upload-avatar/route.ts
+│   ├── profile/upload-avatar/route.ts
+│   └── merchant/
+│       ├── upload-avatar/route.ts
+│       └── upload-top-banner/route.ts
 │
 ├── auth/                            # 認證
 │   ├── page.tsx                     # 登入 / 註冊
@@ -138,8 +156,20 @@ app/
 │   ├── HomeMerchantSectionData.tsx
 │   ├── HomeC2cSectionData.tsx
 │   └── HomeSectionSkeletons.tsx
-├── checkout/[id]/                   # 結帳
-├── admin/                           # 管理員 RBAC
+├── checkout/[id]/                   # B2C / Member auth Stripe 結帳
+├── admin/                           # 管理員 RBAC（多數已接 Supabase）
+│   ├── dashboard/                 # 數據總覽
+│   ├── grading/                   # 鑑定工作台（Member + Merchant）
+│   ├── payouts/                   # 財務與結算（Connect ledger + Member FPS）
+│   │   ├── page.tsx
+│   │   ├── AdminPayoutsClient.tsx
+│   │   └── components/
+│   │       ├── FpsLedgerTab.tsx           # Member FPS 提現表
+│   │       ├── MerchantConnectLedgerTab.tsx
+│   │       └── PlatformBalanceSection.tsx
+│   ├── merchants/                   # KYC / 商戶管理
+│   ├── catalog/ · campaigns/ · disputes/ · settings/ · user_control/ · announcements/
+│   └── layout.tsx
 ├── search/page.tsx
 ├── ~offline/page.tsx
 ├── serwist/[path]/route.ts
@@ -217,13 +247,14 @@ app/
     ├── profile/                     # ProfileAvatar, PublicPersonaProfileHeader, ProfileHeaderWithChat…
     ├── rewards/                     # CheckInCard, RewardUnlockedModal, UserProfileDashboardShell…
     ├── transactions/
-    │   ├── GlobalTxButtons.tsx      # BuyButton（→ 全域 slide-over）、AuctionButton（mock）
+    │   ├── GlobalTxButtons.tsx      # BuyButton（→ 全域 slide-over）
     │   ├── ExecutionSlideOverHost.tsx
     │   ├── ExecutionSlideOver.tsx
-    │   ├── MemberAuthMockPaymentPanel.tsx
+    │   ├── MemberAuthMockPaymentPanel.tsx   # dev：mock 付款
+    │   ├── MemberAuthStripePaymentPanel.tsx # prod：Stripe manual capture
     │   └── OrderLifecycleStepper.tsx
     ├── trading/                     # ReviewModal（交易評價彈窗）
-    ├── user/                        # UserOrderRow, MemberOrderDetailView, P2P/Auth 發票與時間軸…
+    ├── user/                        # UserOrderRow, MemberOrderDetailView, FpsIdCollectDialog, P2P/Auth 發票與時間軸…
     ├── chat/                        # GlobalChatOverlay, GlobalChatConsole, ChatUnreadDot, OfferCard, ChatReportDialogBody…
     ├── merchant/                    # MerchantOrderRow, MerchantOrderDetailView, MerchantTradingClient…
     └── …                            # admin, pwa, cards, ticker…
@@ -313,19 +344,37 @@ lib/
 │   └── constants.ts
 │
 ├── member-order/
-│   ├── auth-escrow.ts               # escrow 狀態常數 / 顯示輔助
+│   ├── auth-escrow.ts               # escrow 狀態常數 / canPay·canConfirmReceipt guards
+│   ├── seller-payout.ts             # 賣家 FPS 撥款狀態中文 label
 │   ├── member-order-rpc.ts          # complete/cancel RPC 封裝
 │   ├── resolve-order-id.ts / resolve-listing-id.ts
 │   ├── repair-listing-id.ts
 │   ├── order-kind.ts / constants.ts
-│   ├── dev-mock-flow.ts
+│   ├── dev-mock-flow.ts             # dev：一鍵推進鑑定單（⚠️ 跳過 FPS pipeline）
 │   └── perf-log.ts
 │
 ├── payments/
-│   └── member-auth-payment.ts
+│   ├── member-auth-payment.ts
+│   ├── auth-capture-saga.ts         # Admin intake：auth fee partial capture
+│   ├── goods-capture-saga.ts        # Admin pass：goods final capture → fully_captured
+│   ├── auth-grading-fail-void-saga.ts
+│   └── escrow-payment-intent.ts
+│
+├── admin-payouts/
+│   ├── types.ts                     # FpsPayoutRow, MerchantTransferRow…
+│   ├── format.ts
+│   └── fps-batch-config.ts
+│
+├── admin-dashboard/
+│   ├── types.ts
+│   ├── format.ts
+│   └── hkt-month-bounds.ts
+│
+├── stripe/
+│   └── platform-balance.ts          # Admin 平台 Stripe balance / today inflow
 │
 ├── profile/
-│   ├── validation.ts
+│   ├── validation.ts                #含 validateFpsPayoutDetails（姓名 + ID）
 │   ├── avatar.ts
 │   ├── client-upload.ts
 │   ├── load-profile-snippets.ts     # persona-aware listing seller snippets
@@ -377,6 +426,8 @@ components/
 ```
 scripts/
 ├── generate-supabase-md.ts          # `supabase:types` 後自動生成 types/supabase.md
+├── dev/
+│   └── seed-fps-payout-requests.sql # dev：Admin FPS 表 mixed-status seed（idempotent）
 ├── test-product-catalog-search.ts   # `bun run test:catalog-search`
 ├── test-member-order-complete-rpc.ts
 ├── test-chat-mark-read.ts
@@ -410,6 +461,7 @@ e2e/
 ├── member-auth-escrow.spec.ts
 ├── member-auth-inbound.spec.ts
 ├── member-auth-settings.spec.ts
+├── admin-stripe-finance.spec.ts     # Admin payouts / FPS tab smoke
 ├── member-collection-wishlist.spec.ts
 ├── member-collection-operations.spec.ts
 ├── member-inventory.spec.ts
@@ -430,16 +482,14 @@ e2e/
 ```
 supabase/
 ├── config.toml
-└── migrations/                      # 110 檔，按時間戳排序；`bunx supabase db push`
+└── migrations/                      # 143 檔，按時間戳排序；`bunx supabase db push`
     ├── 20260702100000_product_catalog_public_read.sql
-    ├── …                            # auth, marketplace search, listings, offers, chat, orders…
-    ├── 20260717130000_chat_room_persona.sql
-    ├── 20260717140000_dual_persona_trading_rules.sql
-    ├── 20260717150000_search_merchant_trading_orders.sql
-    ├── 20260718100000_accept_offer_merchant_persona.sql
-    ├── 20260718110000_rpc_complete_merchant_order.sql
-    ├── 20260718130000_merchant_trading_helpers.sql
-    └── 20260718140000_chat_inbox_merchant_order_id.sql
+    ├── …                            # auth, marketplace, offers, chat, orders, escrow…
+    ├── 20260729190000_admin_grading_workbench.sql
+    ├── 20260731100000_escrow_p1_goods_capture_fail_void.sql
+    ├── 20260801120000_member_fps_payout.sql          # payout_requests, profiles.fps_id
+    ├── 20260802120000_member_fps_payout_pipeline.sql # T+3 hold + cron RPCs
+    └── 20260803120200_profiles_fps_name.sql           # profiles.fps_name + fps_name_snapshot
 ```
 
 **Regenerate types:** `bun run supabase:types` → `types/supabase.ts` + `types/supabase.md`
@@ -453,7 +503,8 @@ docs/dev/
 ├── INTEGRATION_QUEUE.md             # ⭐ 前後端整合狀態總表
 ├── api.md                           # Server Actions 契約
 ├── database.md
-├── server.md
+├── server.md                        # 含 Cron routes §9（member-fps-payout-ready）
+├── escrow-payment-policy.md         # 託管 / capture / FPS T+3 SSOT
 ├── e2e.md                           # Playwright 環境變數與測試矩陣
 ├── reports/                         # 實作報告（跨 workflow）
 │   └── 2026-07-18-persona-orders-and-chat-report.md
@@ -462,21 +513,29 @@ docs/dev/
     ├── auth-password-recovery/
     ├── marketplace-search/
     ├── marketplace-product-detail/
-    ├── marketplace-performance/     # PERF_REPORT
+    ├── marketplace-performance/
     ├── market-pricing-cron/
     ├── product-catalog-search/
     ├── user-profile-settings/
     ├── role-based-routing/
     ├── offers-negotiation/
+    ├── buy-now-chat/
     ├── chat-offers-inbox/
     ├── dual-persona-trading/
     ├── persona-reputation-split/
     ├── merchant-trading/
+    ├── merchant-checkout/
+    ├── merchant-kyc/
     ├── merchant-dashboard/
     ├── merchant-settings/
     ├── merchant-performance/
     ├── merchant-product-analytics/
+    ├── member-auth-checkout/
     ├── member-auth-escrow/
+    ├── member-fps-payout/           # 1A–1C pipeline + e2e-checklist.md
+    ├── admin-grading/
+    ├── admin-payouts/
+    ├── admin-dashboard/
     ├── marketplace-storefront/
     ├── home-sections/
     ├── public-profile-page/
@@ -523,13 +582,18 @@ docs/dev/
 | `/profile/merchant/orderDetail/[id]` | 商戶 B2C 訂單詳情 | `getMerchantOrderDetail` |
 | `/profile/user/orderDetail/[id]` | 訂單詳情 | P2P + 鑑定託管（`MemberOrderDetailView`） |
 | `/profile/user/rewards` | 折價券中心 | `rewards.ts` |
-| `/profile/user/settings` | 用戶設定 | `getUserSettings` |
+| `/profile/user/settings` | 用戶設定（含 FPS 姓名 + ID） | `getUserSettings` / `updateUserProfile` |
 | `/profile/[id]` | 公開檔案 | `getPublicProfilePageBootstrap` |
 | `/profile/[id]/rating` | 公開評價列表 | `getPublicProfileReviews` |
-| `/checkout/[id]` | 結帳 | mock（待整合） |
-| `/admin/*` | 管理後台 | mock + RBAC |
+| `/checkout/[id]` | B2C / Member auth Stripe 結帳 | `merchant-checkout.ts` / `member-auth-checkout.ts` |
+| `/admin/dashboard` | 管理員數據總覽 | `admin-dashboard.ts` |
+| `/admin/grading` | 鑑定工作台 | `admin-grading.ts` + capture sagas |
+| `/admin/payouts` | 財務與結算（Connect + Member FPS） | `admin-payouts.ts` |
 | `/api/cron/ingest-platform-trades` | 平台成交快照 cron | `platform_trade_snapshots` |
 | `/api/cron/aggregate-prices` | 市場價聚合 cron | `product_price_snapshots` → `product_grading_market_prices` |
+| `/api/cron/expire-merchant-pending-payment` | B2C 未付款逾時 | `merchant_orders` + Stripe PI cancel |
+| `/api/cron/member-fps-payout-ready` | Member FPS T+3 → `payout_requests` | `rpc_finalize_member_fps_payout_ready` |
+| `/api/stripe/webhook` | Stripe 非同步事件 | merchant + member_auth capture |
 
 ---
 
@@ -544,7 +608,7 @@ docs/dev/
 | **商戶櫥窗** | `app/marketplace/[id]/` | ✅ Wired |
 | **市場價聚合 (Cron)** | `app/api/cron/*`, `lib/marketplace/market-price.ts` | ✅ Wired（ingest + aggregate） |
 | **首頁三區塊** | `app/home/`, `app/actions/home.ts` | ✅ SSR + BuyButton |
-| **用戶設定 / 頭像** | `app/profile/user/settings/`, `app/api/profile/upload-avatar/` | ✅ Wired |
+| **用戶設定 / 頭像** | `app/profile/user/settings/`, `profiles.fps_id` + `fps_name` | ✅ Wired |
 | **卡牌上架** | `AddAssetModal`, `listings.ts`, Bunny | ✅ Backend ready |
 | **收藏 portfolio** | `collection.ts`, `UserCollectionClient` | ✅ Wired |
 | **賣家庫存** | `inventory.ts`, `InventoryAccordion` | ✅ Wired（user）；⏳ merchant page |
@@ -555,12 +619,15 @@ docs/dev/
 | **聊天收件匣** | `chat.ts`, `GlobalChatConsole`, `partnerRoomKey.ts` | 🟡 DB inbox + persona 分房 + Realtime；mock 房間保留 |
 | **用戶訂單** | `orders.ts`, `UserTradingClient`, `MemberOrderDetailView` | 🟡 列表 + P2C 買家合併 + 詳情 + 完結/評價已接 |
 | **商戶訂單** | `orders.ts`, `MerchantTradingClient`, `MerchantOrderDetailView` | ✅ B2C 列表 + 詳情 + `rpc_complete_merchant_order` |
-| **鑑定託管** | `member-auth-escrow`, `MemberAuthMockPaymentPanel` | ✅ Mock pay flow wired |
+| **鑑定託管** | `member-auth-checkout`, `admin-grading`, `MemberAuthStripePaymentPanel` | 🟡 Single capture（新單）；legacy multicapture 在途；gate：`test:integration:fps-payout` |
+| **Member FPS payout** | `member-fps-payout` pipeline, `FpsIdCollectDialog`, cron | ✅ 1A–1C wired；E2E 待 Stripe 開通（見 e2e-checklist） |
+| **Admin 財務** | `/admin/payouts`, `admin-payouts.ts` | 🟡 Connect ledger + FPS ledger MVP ✅ |
+| **Admin 鑑定** | `/admin/grading`, capture sagas | ✅ P1 wired |
 | **交易評價** | `reviews.ts`, `ReviewModal` | ✅ 雙盲 + member/merchant order persona（交易頁 + 聊天） |
 | **公開檔案** | `app/profile/[id]/` | ✅ Wired |
-| **結帳 / Stripe B2C** | checkout | ⏳ Mock；merchant P2P accept 已寫 `merchant_orders` |
+| **結帳 / Stripe B2C** | `merchant-checkout.ts`, `/checkout/[id]` | 🟡 Milestone 1–2 wired；樣式待精修 |
 | **商戶 dashboard** | `merchant-dashboard.ts`, analytics | ✅ 總覽 + 績效 + SKU analytics |
-| **E2E** | `e2e/`, `playwright.config.ts` | ✅ 20+ specs（需 Supabase fixture env） |
+| **E2E** | `e2e/`, `playwright.config.ts` | ✅ 20+ specs（含 `admin-stripe-finance`） |
 
 ---
 
@@ -620,6 +687,10 @@ bun run test:e2e          # Playwright（需 .env fixture；見 docs/dev/e2e.md�
 | 整合狀態 | `docs/dev/INTEGRATION_QUEUE.md` |
 | E2E 測試 | `e2e/`, `docs/dev/e2e.md` |
 | 訂單詳情 UI | `app/components/user/MemberOrderDetailView.tsx` |
+| FPS 收集 dialog | `app/components/user/FpsIdCollectDialog.tsx` |
+| Member FPS E2E 測試清單 | `docs/dev/follow-up/member-fps-payout/e2e-checklist.md` |
+| Admin 財務 handoff | `docs/dev/follow-up/admin-payouts/` |
+| 託管 / capture 政策 | `docs/dev/escrow-payment-policy.md` |
 | 收藏 / 庫存 / 願望清單 | `docs/dev/follow-up/user-collection/`, `user-inventory/`, `wishlist/` |
 | 出價協商 handoff | `docs/dev/follow-up/offers-negotiation/` |
 | Persona 實作報告 | `docs/dev/reports/2026-07-18-persona-orders-and-chat-report.md` |
@@ -636,6 +707,6 @@ bun run test:e2e          # Playwright（需 .env fixture；見 docs/dev/e2e.md�
 
 ---
 
-**最後更新**: 2026-07-18  
-**版本**: Full-Depth v5.1  
+**最後更新**: 2026-07-31  
+**版本**: Full-Depth v5.2  
 **維護者**: HKCardVault 開發團隊

@@ -10,6 +10,14 @@ export type GradeFilter = {
 
 export type MarketplaceTrendSource = "snkrdunk" | "platform";
 
+/** Merchant B2C shipping quote surfaced on marketplace surfaces. */
+export type MarketplaceMerchantShippingFields = {
+  baseCourierShippingFee?: number;
+  listingExtraShippingFee?: number;
+  courierShippingTotal?: number;
+  deliverySummary?: string;
+};
+
 export type MarketplaceProductRow = {
   productId: string;
   productName: string;
@@ -37,7 +45,7 @@ export type MarketplaceProductRow = {
   marketAvgPrice: number | null;
   marketReferenceSource: MarketplaceTrendSource | null;
   priceVsMarketPct: number | null;
-};
+} & MarketplaceMerchantShippingFields;
 
 export type MarketplacePaginationMeta = {
   total: number;
@@ -124,10 +132,11 @@ export type MarketplaceProductListingRow = {
   sellerAvatarUrl: string;
   sellerRating: number;
   sellerTotalTrades: number;
+  sellerPublicReviewCount: number;
   sellerPersona: Database["public"]["Enums"]["seller_persona_type"];
   useAuthentication: boolean;
   createdAt: string;
-};
+} & MarketplaceMerchantShippingFields;
 
 /** Full listing payload for slide-over / detail views (fetched on demand). */
 export type MarketplaceListingDetail = {
@@ -143,7 +152,7 @@ export type MarketplaceListingDetail = {
   images: string[];
   imagesDetail?: ListingImage[];
   useAuthentication: boolean;
-};
+} & MarketplaceMerchantShippingFields;
 
 export type MarketplaceListingDetailResult =
   | { success: true; data: MarketplaceListingDetail }
@@ -170,7 +179,10 @@ export type MarketplaceProductListingsResult =
 export type MarketplaceProductTradeHistoryRow = {
   orderId: string;
   createdAt: string;
+  /** Preformatted label — prefer GradeBadge + grading fields in UI */
   grade: string;
+  gradingCompany: string;
+  gradingScore: string | null;
   price: number;
 };
 
@@ -247,6 +259,7 @@ export type MarketplaceSellerListingRow = {
   displayId: string | null;
   rarity: string | null;
   imageUrl: string;
+  catalogImageUrl: string | null;
   gradingCompany: string;
   gradingScore: string | null;
   price: number;
@@ -258,10 +271,11 @@ export type MarketplaceSellerListingRow = {
   marketAvgPrice: number | null;
   marketReferenceSource: MarketplaceTrendSource | null;
   priceVsMarketPct: number | null;
-};
+} & MarketplaceMerchantShippingFields;
 
 export type MarketplaceSellerListingsInput = {
   sellerId: string;
+  sellerPersona?: Database["public"]["Enums"]["seller_persona_type"];
   query?: string;
   rarities?: string[];
   gradeFilters?: GradeFilter[];

@@ -13,7 +13,13 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".agents/**",
+    ".stryker-tmp/**",
+    "reports/mutation/**",
     "public/sw.js",
+    "public/vendor/**",
+    "public/onesignal/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
   {
     rules: {

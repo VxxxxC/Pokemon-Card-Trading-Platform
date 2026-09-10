@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import Image from "next/image";
+import { Rocket, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { addToCollection } from "@/app/actions/collection";
 import { submitCardListingWithProgress } from "@/lib/listings/submit-card-listing";
@@ -18,50 +18,31 @@ import { useProductCatalogSearch } from "@/app/lib/hooks/useProductCatalogSearch
 import type { ProductCatalogSuggestion } from "@/app/actions/productCatalog";
 import {
   DEFAULT_GRADING_OPTION_ID,
-  GRADING_OPTION_GROUPS,
   getGradingOption,
-  getGradingOptionsByGroup,
   gradingOptionToFields,
   isRawGradingOption,
 } from "@/lib/grading/options";
-import type { ListingImage } from "@/lib/listings/images";
 import {
   LISTING_IMAGE_MAX,
   LISTING_PHOTO_SLOT_LABELS,
+  type ListingImage,
 } from "@/lib/listings/images";
+import { createEmptyCreatePhotoSlots } from "@/lib/listings/card-listing-photo-slots";
 import {
   LISTING_DESCRIPTION_MAX,
   validateCreateCardListing,
   validateCreateSealedListing,
   validateImageFile,
 } from "@/lib/listings/validation";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  LISTING_AUTH_SERVICE_TOOLTIP_BODY,
-  LISTING_AUTH_SERVICE_TOOLTIP_TITLE,
-} from "@/lib/listings/auth-service-copy";
+import { CardListingMerchFields } from "@/app/components/listings/CardListingMerchFields";
+import { ListingGradingSelect } from "@/app/components/listings/ListingGradingSelect";
+import { useListingGradingAuthFields } from "@/lib/listings/use-listing-grading-auth-fields";
 import {
   catalogItemKindFromType,
   defaultSealedProductScore,
   type SealedProductScore,
 } from "@/lib/catalog/item-kind";
 import type { CatalogType } from "@/lib/constants/commerce";
-import { CircleHelp } from "lucide-react";
 
 type LocalPhotoSlot = {
   file: File | null;
@@ -70,11 +51,7 @@ type LocalPhotoSlot = {
 };
 
 function createEmptyPhotoSlots(): LocalPhotoSlot[] {
-  return Array.from({ length: LISTING_IMAGE_MAX }, () => ({
-    file: null,
-    previewUrl: null,
-    description: "",
-  }));
+  return createEmptyCreatePhotoSlots();
 }
 
 function revokePhotoSlots(slots: LocalPhotoSlot[]) {
@@ -136,7 +113,6 @@ export function AddAssetModal() {
   const addAssetSellerPersona = useUIStore((state) => state.addAssetSellerPersona);
   const closeAddAssetModal = useUIStore((state) => state.closeAddAssetModal);
   const isMemberPersonaActive = useIsMemberPersonaActive();
-
   // 模式 Toggle 狀態
   const [mode, setMode] = useState<"hobby" | "merch">("hobby");
 
@@ -151,29 +127,27 @@ export function AddAssetModal() {
     enabled: isOpen,
   });
 
-  const [selectedGradingId, setSelectedGradingId] = useState(
-    DEFAULT_GRADING_OPTION_ID,
-  );
   const [sealState, setSealState] = useState<SealedProductScore>(
     defaultSealedProductScore(),
   );
-  const [acceptsBuyerAuth, setAcceptsBuyerAuth] = useState(false);
-  const selectedGrading = useMemo(
-    () => getGradingOption(selectedGradingId),
-    [selectedGradingId],
-  );
-  const isRawCardListing = isRawGradingOption(selectedGrading);
-
-  const handleGradingChange = (gradingId: string) => {
-    setSelectedGradingId(gradingId);
-    setAcceptsBuyerAuth(isRawGradingOption(getGradingOption(gradingId)));
-  };
+  const {
+    gradingOptionId,
+    setGradingOptionId,
+    setGradingOptionIdState,
+    acceptsBuyerAuth,
+    setAcceptsBuyerAuth,
+    resolvedUseAuthentication,
+    showListingAuthToggle,
+  } = useListingGradingAuthFields({
+    enableAuthOnRawGradingSelect: true,
+  });
 
   // 收藏愛好專屬欄位
   const [purchasePrice, setPurchasePrice] = useState("");
 
   // 新增商品專屬欄位
   const [sellingPrice, setSellingPrice] = useState("");
+  const [extraShippingFee, setExtraShippingFee] = useState("");
   const [collectionAddPrompt, setCollectionAddPrompt] =
     useState<CollectionAddAfterListingPayload | null>(null);
 
@@ -223,10 +197,6 @@ export function AddAssetModal() {
       ? "收藏愛好"
       : "新增商品";
 
-  const filledPhotoCount = useMemo(
-    () => photoSlots.filter((slot) => slot.file).length,
-    [photoSlots],
-  );
   const boxSetBadge = useMemo(() => {
     if (itemType !== "box_set" || !catalogSearch.query) return null;
     const lower = catalogSearch.query.toLowerCase();
@@ -257,7 +227,7 @@ export function AddAssetModal() {
         setMode("merch");
         setItemType(sellPrefill.itemKind ?? catalogItemKindFromType(suggestion.type));
         setSet(sellPrefill.catalog.setCode);
-        setSelectedGradingId(sellPrefill.gradingOptionId);
+        setGradingOptionIdState(sellPrefill.gradingOptionId);
         setSealState(sellPrefill.sealState ?? defaultSealedProductScore());
         setSellingPrice(String(sellPrefill.sellingPrice));
         setAcceptsBuyerAuth(
@@ -272,10 +242,11 @@ export function AddAssetModal() {
         setMode(globalMode);
         setItemType("card");
         setSet("");
-        setSelectedGradingId(DEFAULT_GRADING_OPTION_ID);
+        setGradingOptionIdState(DEFAULT_GRADING_OPTION_ID);
         setSealState(defaultSealedProductScore());
         setPurchasePrice("");
         setSellingPrice("");
+        setExtraShippingFee("");
         setAcceptsBuyerAuth(false);
         setHobbyImages([]);
         resetPhotoSlots();
@@ -483,7 +454,7 @@ export function AddAssetModal() {
 
       const result = await addToCollection({
         productId: catalogSearch.selected.id,
-        gradingOptionId: selectedGradingId,
+        gradingOptionId: gradingOptionId,
         purchasePrice: parsedPurchasePrice,
         sealState: itemType === "box_set" ? sealState : undefined,
       });
@@ -544,6 +515,10 @@ export function AddAssetModal() {
         imageFiles,
         photosRemark,
         sealState,
+        extraShippingFee:
+          addAssetSellerPersona === "merchant" && extraShippingFee.trim()
+            ? Number(extraShippingFee)
+            : undefined,
       });
 
       if (!result.success) {
@@ -584,7 +559,7 @@ export function AddAssetModal() {
       const validationError = validateCreateCardListing(
         {
           productId: catalogSearch.selected?.id ?? "",
-          gradingOptionId: selectedGradingId,
+          gradingOptionId: gradingOptionId,
           price: Number(sellingPrice),
           sellerDescription: conditionDesc || undefined,
         },
@@ -613,14 +588,18 @@ export function AddAssetModal() {
       const result = await submitCardListingWithProgress({
         mode: "create",
         productId: catalogSearch.selected.id,
-        gradingOptionId: selectedGradingId,
+        gradingOptionId: gradingOptionId,
         price: Number(sellingPrice),
         sellerDescription: conditionDesc || undefined,
-        useAuthentication: isRawCardListing ? acceptsBuyerAuth : false,
+        useAuthentication: resolvedUseAuthentication,
         sourceCollectionId: sellPrefill?.collectionId,
         sellerPersona: addAssetSellerPersona,
         imageFiles,
         photosRemark,
+        extraShippingFee:
+          addAssetSellerPersona === "merchant" && extraShippingFee.trim()
+            ? Number(extraShippingFee)
+            : undefined,
       });
 
       if (!result.success) {
@@ -628,7 +607,7 @@ export function AddAssetModal() {
       }
 
       const hadSellPrefill = Boolean(sellPrefill);
-      const gradingFields = gradingOptionToFields(selectedGrading);
+      const gradingFields = gradingOptionToFields(getGradingOption(gradingOptionId));
 
       const payload: GlobalAssetPayload = {
         id: result.data.listingId,
@@ -678,7 +657,7 @@ export function AddAssetModal() {
       if (!hadSellPrefill && catalogSearch.selected && isMemberPersonaActive) {
         setCollectionAddPrompt({
           productId: catalogSearch.selected.id,
-          gradingOptionId: selectedGradingId,
+          gradingOptionId: gradingOptionId,
           productName: catalogSearch.selected.name,
         });
       }
@@ -686,109 +665,176 @@ export function AddAssetModal() {
     }
   };
 
-  const showListingAuthToggle =
-    mode === "merch" && itemType === "card" && isRawCardListing;
-
-  const listingAuthToggle = showListingAuthToggle ? (
-    <div className="bg-[#17130f] border border-brand/20 rounded-xl p-4 space-y-2 animate-fadeIn">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="font-sans font-bold text-[#d4c4b7] text-[12.5px]">
-            接受買家加購平台鑑定
-          </span>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger
-                type="button"
-                className="shrink-0 text-[#8A8680] hover:text-brand"
-                aria-label="平台鑑定託管說明"
-              >
-                <CircleHelp className="size-4" />
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                className="max-w-xs whitespace-pre-line text-left leading-relaxed"
-              >
-                <span className="font-bold block mb-1">
-                  {LISTING_AUTH_SERVICE_TOOLTIP_TITLE}
-                </span>
-                {LISTING_AUTH_SERVICE_TOOLTIP_BODY}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-        <Switch
-          checked={acceptsBuyerAuth}
-          onCheckedChange={setAcceptsBuyerAuth}
-          className="data-checked:bg-brand data-unchecked:bg-[#39342f] shrink-0"
-        />
-      </div>
-      <p className="text-[11px] text-text-secondary leading-relaxed">
-        僅裸卡適用。已評級卡（PSA／CGC 等）無需平台複鑑；開啟後買家可選加購（HK$150
-        由買家承擔）。
-      </p>
-    </div>
-  ) : null;
+  const showMerchAuthToggle =
+    mode === "merch" && itemType === "card" && showListingAuthToggle;
 
   return (
     <>
-    <div className="fixed inset-0 z-[350] flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-[350] flex items-center justify-center p-2 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="add-asset-modal-title"
+    >
       <div
         className="absolute inset-0 bg-black/75 backdrop-blur-xs"
         onClick={handleCloseAndReset}
       />
 
-      <div className="relative bg-[#2e2925] border border-[rgba(237,232,224,0.15)] rounded-2xl p-6 w-full max-w-md shadow-2xl text-left flex flex-col max-h-[92vh] overflow-hidden animate-scaleUp">
-        <div className="font-sans font-bold text-xl text-brand mb-4">
-          {displayMode}
+      <div className="relative bg-[#2e2925] border border-white/[0.08] rounded-xl w-full max-w-md shadow-2xl text-left flex flex-col max-h-[calc(100dvh-1rem)] overflow-y-auto animate-scaleUp">
+        <div className="shrink-0 px-3 pt-1.5 pb-1 border-b border-white/[0.06] flex items-start justify-between gap-2">
+          <h2
+            id="add-asset-modal-title"
+            className="font-sans font-bold text-[16px] text-brand leading-tight min-w-0"
+          >
+            {displayMode}
+          </h2>
+          <button
+            type="button"
+            onClick={handleCloseAndReset}
+            className="shrink-0 inline-flex w-8 h-8 items-center justify-center rounded-lg text-[#d4c4b7] hover:bg-white/5 hover:text-[#eae1da] transition-colors focus:outline-none cursor-pointer -mr-1 -mt-0.5"
+            aria-label="關閉"
+          >
+            <X className="size-4" strokeWidth={2.25} aria-hidden />
+          </button>
         </div>
-        <form
-          onSubmit={handleSubmit}
-          className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-none pb-1 text-[13px]"
-        >
-          {/* Symmetrical Item-Type Sharding Switch Chassis */}
+        <form onSubmit={handleSubmit} className="text-[13px]">
+          <div className="px-3 py-1.5 space-y-1.5">
           {!sellPrefill ? (
-          <div className="relative flex bg-[#17130f] rounded-xl p-1 border border-[rgba(237,232,224,0.08)] w-full max-w-xs mb-4 select-none mx-auto lg:mx-0">
-            <div
-              className="absolute top-1 bottom-1 rounded-lg bg-[rgba(212,165,116,0.14)] border border-[rgba(212,165,116,0.22)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
-              style={{
-                width: "calc(50% - 4px)",
-                transform:
+          <div className="flex items-stretch gap-2">
+            <div className="relative flex shrink-0 w-[4.75rem] h-9 bg-[#17130f] rounded-lg p-0.5 border border-white/[0.06] select-none">
+              <div
+                className="absolute top-0.5 bottom-0.5 rounded-md bg-[rgba(212,165,116,0.14)] border border-[rgba(212,165,116,0.22)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
+                style={{
+                  width: "calc(50% - 2px)",
+                  transform:
+                    itemType === "card"
+                      ? "translateX(0)"
+                      : "translateX(calc(100% + 2px))",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (itemType === "card") return;
+                  setItemType("card");
+                  catalogSearch.invalidateResults();
+                }}
+                className={`relative flex-1 font-sans text-[10px] font-bold rounded-md transition-colors z-10 ${
                   itemType === "card"
-                    ? "translateX(0)"
-                    : "translateX(calc(100% + 4px))",
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (itemType === "card") return;
-                setItemType("card");
-                catalogSearch.invalidateResults();
-              }}
-              className={`relative flex-1 h-9 font-sans text-[13px] font-bold rounded-lg transition-colors z-10 ${
-                itemType === "card"
-                  ? "text-brand"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              單卡交易 (CARD)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (itemType === "box_set") return;
-                setItemType("box_set");
-                catalogSearch.invalidateResults();
-              }}
-              className={`relative flex-1 h-9 font-sans text-[13px] font-bold rounded-lg transition-colors z-10 ${
-                itemType === "box_set"
-                  ? "text-brand"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              密封盒組 (BOX/SET)
-            </button>
+                    ? "text-brand"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                單卡
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (itemType === "box_set") return;
+                  setItemType("box_set");
+                  catalogSearch.invalidateResults();
+                }}
+                className={`relative flex-1 font-sans text-[10px] font-bold rounded-md transition-colors z-10 ${
+                  itemType === "box_set"
+                    ? "text-brand"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                盒組
+              </button>
+            </div>
+
+            <div className="relative flex-1 min-w-0 flex items-center gap-1.5">
+              {boxSetBadge}
+              <div className="relative flex-1 min-w-0">
+                <div className="flex items-center bg-[#17130f] border border-white/5 rounded-lg h-9 overflow-hidden">
+                  <input
+                    type="text"
+                    required
+                    placeholder={
+                      itemType === "box_set"
+                        ? "盒組名稱或條碼…"
+                        : "卡號或名稱…"
+                    }
+                    aria-label={
+                      itemType === "box_set" ? "盒組搜尋" : "卡號或名稱搜尋"
+                    }
+                    value={catalogSearch.query}
+                    onChange={(e) => catalogSearch.setQuery(e.target.value)}
+                    className="flex-1 h-full min-w-0 bg-transparent px-2.5 font-sans text-[12px] text-[#eae1da] placeholder-[#50453b] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={catalogSearch.searchNow}
+                    className="px-3 h-full shrink-0 font-mono text-[11px] text-brand hover:bg-[rgba(212,165,116,0.08)] transition-colors border-l border-white/5 cursor-pointer focus:outline-none"
+                  >
+                    {catalogSearch.isSearching ? "…" : "搜尋"}
+                  </button>
+                </div>
+
+                {(catalogSearch.isSearching ||
+                  catalogSearch.error ||
+                  catalogSearch.results.length > 0) && (
+                  <div className="absolute z-50 top-full mt-1 w-full max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-[#26211C] shadow-lg">
+                    {catalogSearch.isSearching && (
+                      <p className="px-3 py-2 font-mono text-[11px] text-[#8A8680]">
+                        搜尋中…
+                      </p>
+                    )}
+                    {catalogSearch.error && (
+                      <p className="px-3 py-2 font-mono text-[11px] text-warning">
+                        {catalogSearch.error}
+                      </p>
+                    )}
+                    {catalogSearch.results.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectCatalogSuggestion(item)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[rgba(212,165,116,0.08)] border-b border-white/5 last:border-b-0"
+                      >
+                        <div className="relative w-14 h-[4.5rem] shrink-0 rounded-md overflow-hidden bg-[#17130f] border border-white/10">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            width={56}
+                            height={72}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-sans text-[13px] text-[#eae1da] truncate">
+                            {item.name}
+                          </p>
+                          <p className="font-mono text-[10px] text-[#8A8680] truncate mt-0.5">
+                            {[
+                              item.displayId,
+                              item.rarity,
+                              item.pokemonStage,
+                              item.cardNumber,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                    {catalogSearch.hasMore && (
+                      <p className="px-3 py-2 font-mono text-[10px] text-[#8A8680] border-t border-white/5 leading-relaxed">
+                        顯示最相關的 {catalogSearch.results.length} 筆，共{" "}
+                        {catalogSearch.total.toLocaleString()} 筆符合
+                        {catalogSearch.total > 50
+                          ? " — 請輸入更精確的編號或名稱以縮小範圍"
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           ) : null}
 
@@ -798,101 +844,9 @@ export function AddAssetModal() {
             </p>
           ) : null}
 
-          {/* === 1. CARD QUERY CONVERGENCE (Both Modes Share This Unified Box) === */}
-          {!sellPrefill ? (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="font-mono text-[12px] text-[#d4c4b7] block">
-                {itemType === "box_set" ? "盒組／禮盒名稱搜尋" : "卡牌編號 / 名稱搜尋"} <span className="text-warning">*</span>
-              </label>
-              {boxSetBadge}
-            </div>
-            <div className="relative">
-              <div className="flex items-center bg-[#17130f] border border-white/5 rounded-xl h-10 overflow-hidden">
-                <input
-                  type="text"
-                  required
-                  placeholder={itemType === "box_set" ? "例：151 Booster Box、20th Anniversary Set 或 4549659123456" : "sv2a-182 或 Charizard ex SAR"}
-                  value={catalogSearch.query}
-                  onChange={(e) => catalogSearch.setQuery(e.target.value)}
-                  className="flex-1 h-full bg-transparent px-3 font-sans text-[13px] text-[#eae1da] placeholder-[#50453b] focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={catalogSearch.searchNow}
-                  className="px-4 h-full font-mono text-[12px] text-brand hover:bg-[rgba(212,165,116,0.08)] transition-colors border-l border-white/5 cursor-pointer focus:outline-none"
-                >
-                  {catalogSearch.isSearching ? "..." : "搜尋"}
-                </button>
-              </div>
-
-              {(catalogSearch.isSearching ||
-                catalogSearch.error ||
-                catalogSearch.results.length > 0) && (
-                <div className="absolute z-50 top-full mt-1 w-full max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-[#26211C] shadow-lg">
-                  {catalogSearch.isSearching && (
-                    <p className="px-3 py-2 font-mono text-[11px] text-[#8A8680]">
-                      搜尋中…
-                    </p>
-                  )}
-                  {catalogSearch.error && (
-                    <p className="px-3 py-2 font-mono text-[11px] text-warning">
-                      {catalogSearch.error}
-                    </p>
-                  )}
-                  {catalogSearch.results.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectCatalogSuggestion(item)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[rgba(212,165,116,0.08)] border-b border-white/5 last:border-b-0"
-                    >
-                      <div className="relative w-14 h-[4.5rem] shrink-0 rounded-md overflow-hidden bg-[#17130f] border border-white/10">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.imageUrl}
-                          alt={item.name}
-                          width={56}
-                          height={72}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-sans text-[13px] text-[#eae1da] truncate">
-                          {item.name}
-                        </p>
-                        <p className="font-mono text-[10px] text-[#8A8680] truncate mt-0.5">
-                          {[
-                            item.displayId,
-                            item.rarity,
-                            item.pokemonStage,
-                            item.cardNumber,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                  {catalogSearch.hasMore && (
-                    <p className="px-3 py-2 font-mono text-[10px] text-[#8A8680] border-t border-white/5 leading-relaxed">
-                      顯示最相關的 {catalogSearch.results.length} 筆，共{" "}
-                      {catalogSearch.total.toLocaleString()} 筆符合
-                      {catalogSearch.total > 50
-                        ? " — 請輸入更精確的編號或名稱以縮小範圍"
-                        : ""}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          ) : null}
-
           {catalogSearch.selected && (
-            <div className="flex items-center gap-3 rounded-xl border border-brand/20 bg-[rgba(212,165,116,0.06)] p-3">
-              <div className="relative w-14 h-[4.5rem] shrink-0 rounded-md overflow-hidden bg-[#17130f] border border-white/10">
+            <div className="flex items-center gap-2 rounded-lg border border-brand/15 bg-[rgba(212,165,116,0.04)] px-2 py-1.5">
+              <div className="relative w-9 h-11 shrink-0 rounded overflow-hidden bg-[#17130f] border border-white/10">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={catalogSearch.selected.imageUrl}
@@ -903,10 +857,10 @@ export function AddAssetModal() {
                 />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-sans text-[13px] text-[#eae1da] font-bold truncate">
+                <p className="font-sans text-[12px] text-[#eae1da] font-semibold truncate leading-tight">
                   {catalogSearch.selected.name}
                 </p>
-                <p className="font-mono text-[11px] text-brand mt-0.5 truncate">
+                <p className="font-mono text-[10px] text-brand truncate leading-tight">
                   {itemType === "box_set"
                     ? catalogSearch.selected.setCode || "—"
                     : catalogSearch.selected.displayId ??
@@ -922,62 +876,70 @@ export function AddAssetModal() {
             </div>
           )}
 
-          {/* === 2. OPTIONAL EXPANSION SET === */}
+          {/* === 2. OPTIONAL EXPANSION + GRADING (compact row) === */}
           {!sellPrefill ? (
-          <div className="space-y-1.5">
-            <label className="font-sans font-bold text-[#d4c4b7]">
-              擴充包系列{" "}
-              <span className="text-text-disabled font-normal text-[11px]">
-                (選填)
-              </span>
-            </label>
-            <input
-              type="text"
-              placeholder="擴充包系列 (選填)"
-              value={set}
-              onChange={(e) => setSet(e.target.value)}
-              className="w-full h-10 bg-[#17130f] border border-white/5 rounded-xl px-3 text-[#eae1da] placeholder-[#50453b] focus:outline-none"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="font-mono text-[10px] text-[#8A8680]">
+                擴充包系列
+                <span className="text-text-disabled font-normal"> (選填)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="選填"
+                value={set}
+                onChange={(e) => setSet(e.target.value)}
+                className="w-full h-9 bg-[#17130f] border border-white/5 rounded-lg px-3 text-[12px] text-[#eae1da] placeholder-[#50453b] focus:outline-none focus:border-brand/30"
+              />
+            </div>
+            {itemType === "card" ? (
+              <div className="space-y-1">
+                <label className="font-mono text-[10px] text-[#8A8680]">
+                  鑑定／品相
+                </label>
+                <ListingGradingSelect
+                  value={gradingOptionId}
+                  onValueChange={setGradingOptionId}
+                  variant="create"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="font-mono text-[10px] text-[#8A8680]">
+                  密封狀態
+                </label>
+                <div className="flex gap-1.5">
+                  {(
+                    [
+                      { value: "SEALED" as const, label: "密封" },
+                      { value: "UNSEALED" as const, label: "已開封" },
+                    ] as const
+                  ).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSealState(value)}
+                      className={`flex-1 h-9 rounded-lg border font-mono text-[11px] transition-colors ${
+                        sealState === value
+                          ? "border-brand bg-[rgba(212,165,116,0.12)] text-brand"
+                          : "border-white/10 bg-[#17130f] text-[#d4c4b7]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           ) : null}
 
-          {/* === 3. UNIFIED GRADING SELECT === */}
-          {itemType === "card" && !sellPrefill && (
-            <div className="space-y-1.5 bg-[#1e1a17] p-3.5 rounded-xl border border-white/[0.04]">
-              <label className="font-mono text-[11px] text-[#d4c4b7]">
-                鑑定／品相
-              </label>
-              <Select
-                value={selectedGradingId}
-                onValueChange={(val) =>
-                  handleGradingChange(val ?? DEFAULT_GRADING_OPTION_ID)
-                }
-              >
-                <SelectTrigger className="w-full h-10 bg-[#17130f] border border-white/5 rounded-lg px-2 text-[#eae1da] focus:ring-0 text-[12px]">
-                  <SelectValue placeholder="選擇鑑定或裸卡品相" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#26211C] border border-white/10 text-[#eae1da] max-h-72">
-                  {GRADING_OPTION_GROUPS.map((group) => (
-                    <SelectGroup key={group.key}>
-                      <SelectLabel>{group.label}</SelectLabel>
-                      {getGradingOptionsByGroup(group.key).map((option) => (
-                        <SelectItem key={option.id} value={option.id}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {itemType === "box_set" && (
-            <div className="space-y-1.5 bg-[#1e1a17] p-3.5 rounded-xl border border-white/[0.04]">
-              <label className="font-mono text-[11px] text-[#d4c4b7]">
+          {itemType === "box_set" && sellPrefill ? (
+            <div className="space-y-1">
+              <label className="font-mono text-[10px] text-[#8A8680]">
                 密封狀態
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 {(
                   [
                     { value: "SEALED" as const, label: "密封" },
@@ -988,7 +950,7 @@ export function AddAssetModal() {
                     key={value}
                     type="button"
                     onClick={() => setSealState(value)}
-                    className={`flex-1 h-9 rounded-lg border font-mono text-[12px] transition-colors ${
+                    className={`flex-1 h-9 rounded-lg border font-mono text-[11px] transition-colors ${
                       sealState === value
                         ? "border-brand bg-[rgba(212,165,116,0.12)] text-brand"
                         : "border-white/10 bg-[#17130f] text-[#d4c4b7]"
@@ -999,112 +961,38 @@ export function AddAssetModal() {
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
-          {listingAuthToggle}
-
-          {/* === 4. PHOTO UPLOAD SECTION === */}
           {mode === "merch" ? (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="font-sans font-bold text-[#d4c4b7]">
-                實體品相相片{" "}
-                {itemType === "box_set"
-                  ? `(必須至少 1 張)`
-                  : `(必須 ${LISTING_IMAGE_MAX} 張)`}{" "}
-                <span className="text-brand">*</span>
-              </label>
-              <span className="font-mono text-[9px] text-[#8A8680] uppercase tracking-wider">
-                {itemType === "card"
-                  ? `${filledPhotoCount}/${LISTING_IMAGE_MAX}`
-                  : `Max ${LISTING_IMAGE_MAX} Photos`}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-                {photoSlots.map((photo, i) => {
-                  const isRequired =
-                    itemType === "box_set" ? i < 1 : i < LISTING_IMAGE_MAX;
-                  const slotLabel =
-                    itemType === "card" ? LISTING_PHOTO_SLOT_LABELS[i] : null;
-                  return (
-                    <div key={i} className="flex flex-col">
-                      <div
-                        className={`relative aspect-[3/4] rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden ${
-                          photo.previewUrl
-                            ? "border-brand/30 bg-[#17130f]"
-                            : isRequired
-                              ? "border-brand/40 bg-[rgba(212,165,116,0.06)]"
-                              : "border-[rgba(237,232,224,0.12)] bg-[#17130f] hover:border-brand/30"
-                        }`}
-                        onClick={() => openPhotoPicker(i)}
-                      >
-                        {photo.previewUrl ? (
-                          <>
-                            <Image
-                              src={photo.previewUrl}
-                              alt={slotLabel ?? `實體照 ${i + 1}`}
-                              fill
-                              className="object-cover"
-                              unoptimized
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemovePhotoSlot(i);
-                              }}
-                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/80 text-white hover:bg-brand hover:text-[#1A1612] flex items-center justify-center font-sans text-[10px] font-black cursor-pointer transition-colors focus:outline-none"
-                            >
-                              ✕
-                            </button>
-                            <span className="absolute bottom-1 left-1 font-mono text-[8px] text-white/80 bg-black/50 px-1 rounded">
-                              更換
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke={isRequired ? "#d4a574" : "#50453b"}
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                            >
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
-                            <span className="font-mono text-[9px] text-text-disabled mt-1">
-                              {isRequired ? "必填" : "選填"}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="mt-1 w-full">
-                        <input
-                          type="text"
-                          value={photo.description}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setPhotoSlots((prev) =>
-                              prev.map((slot, idx) =>
-                                idx === i ? { ...slot, description: val } : slot
-                              )
-                            );
-                          }}
-                          placeholder={slotLabel || `實體照 ${i + 1}`}
-                          className="w-full bg-[#111009] border border-white/5 rounded-lg px-1.5 py-1 font-sans text-[11px] text-text-primary placeholder-[#8A8680] text-center focus:outline-none focus:border-brand/40 transition-all focus:ring-0"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
+            <CardListingMerchFields
+              idPrefix="add-asset"
+              price={sellingPrice}
+              onPriceChange={setSellingPrice}
+              gradingOptionId={gradingOptionId}
+              onGradingOptionChange={setGradingOptionId}
+              gradingVariant="create"
+              showGrading={false}
+              showAuthToggle={showMerchAuthToggle}
+              acceptsBuyerAuth={acceptsBuyerAuth}
+              onAcceptsBuyerAuthChange={setAcceptsBuyerAuth}
+              conditionDesc={conditionDesc}
+              onConditionDescChange={setConditionDesc}
+              showExtraShipping={addAssetSellerPersona === "merchant"}
+              extraShippingFee={extraShippingFee}
+              onExtraShippingFeeChange={setExtraShippingFee}
+              itemKind={itemType}
+              photoMode="create"
+              createPhotoSlots={photoSlots}
+              onCreatePhotoSlotClick={openPhotoPicker}
+              onCreatePhotoSlotRemove={handleRemovePhotoSlot}
+              onCreatePhotoDescriptionChange={(index, value) => {
+                setPhotoSlots((prev) =>
+                  prev.map((slot, idx) =>
+                    idx === index ? { ...slot, description: value } : slot,
+                  ),
+                );
+              }}
+            />
           ) : null}
 
           {/* === 5. MODE-SPECIFIC VALUE FIELDS === */}
@@ -1121,53 +1009,8 @@ export function AddAssetModal() {
                 className="w-full h-10 bg-[#17130f] border border-white/5 rounded-xl px-3 text-brand focus:outline-none font-mono"
               />
             </div>
-          ) : (
-            <div className="space-y-4 animate-fadeIn">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="font-sans font-bold text-[#d4c4b7]">
-                    詳細品相描述{" "}
-                    <span className="text-text-disabled font-normal text-[11px]">
-                      選填
-                    </span>
-                  </label>
-                  <span className="font-mono text-[10px] text-[#8A8680]">
-                    {conditionDesc.length}/{LISTING_DESCRIPTION_MAX}
-                  </span>
-                </div>
-                <textarea
-                  rows={3}
-                  maxLength={LISTING_DESCRIPTION_MAX}
-                  placeholder="詳細描述卡面狀況、印刷品質、角落細節等..."
-                  value={conditionDesc}
-                  onChange={(e) => setConditionDesc(e.target.value)}
-                  className="bg-[#17130f] border border-white/5 rounded-xl text-[#eae1da] px-3 py-2.5 font-sans text-[13px] w-full focus:outline-none placeholder-[#50453b] resize-none leading-relaxed"
-                />
-              </div>
+          ) : null}
 
-              <div className="space-y-1.5">
-                <label className="font-sans font-bold text-[#d4a574] flex items-center gap-1">
-                  💰 交易所掛牌放售售價 (Selling Price) *
-                </label>
-                <div className="flex items-center h-10 bg-[#17130f] border border-white/5 rounded-xl overflow-hidden focus-within:border-brand/40 transition-colors">
-                  <span className="px-3.5 font-mono text-[12px] font-black text-[#8a8680] bg-[#26211C] border-r border-white/5 h-full flex items-center shrink-0">
-                    HK$
-                  </span>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    placeholder="一口價放售金額..."
-                    value={sellingPrice}
-                    onChange={(e) => setSellingPrice(e.target.value)}
-                    className="flex-1 h-full bg-transparent px-3 font-mono text-[13px] text-brand focus:outline-none font-bold"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Hidden File Input */}
           <input
             type="file"
             ref={fileInputRef}
@@ -1176,28 +1019,32 @@ export function AddAssetModal() {
             onChange={handleImageChange}
             className="hidden"
           />
+          </div>
 
-          {/* Submission Buttons */}
-          <div className="flex gap-2 pt-3 shrink-0">
+          <div className="shrink-0 px-3 py-1.5 border-t border-white/[0.06] bg-[#2e2925]">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 h-11 bg-[#d4a574] hover:bg-[#e8b896] disabled:opacity-60 disabled:cursor-not-allowed text-[#1A1612] font-sans font-black rounded-xl active:scale-[0.98] transition-all cursor-pointer shadow-md focus:outline-none"
+              className="w-full h-9 bg-brand hover:bg-[#e8b896] disabled:opacity-60 disabled:cursor-not-allowed text-[#1A1612] font-sans font-bold text-[12px] rounded-lg active:scale-[0.98] transition-all cursor-pointer focus:outline-none flex items-center justify-center gap-1.5"
             >
-              {isSubmitting
-                ? "上載中…"
-                : sellPrefill
-                  ? "🚀 確認上架發售"
-                  : mode === "hobby"
-                    ? "★ 收錄至私藏愛好"
-                    : "🚀 立即發佈商品上架"}
-            </button>
-            <button
-              type="button"
-              onClick={handleCloseAndReset}
-              className="px-4 h-11 bg-transparent border border-white/10 text-[#d4c4b7] font-sans font-bold rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              取消
+              {isSubmitting ? (
+                "上載中…"
+              ) : sellPrefill ? (
+                <>
+                  <Rocket className="size-4 shrink-0" strokeWidth={2.25} />
+                  確認上架發售
+                </>
+              ) : mode === "hobby" ? (
+                <>
+                  <Star className="size-4 shrink-0" strokeWidth={2.25} />
+                  收錄至私藏愛好
+                </>
+              ) : (
+                <>
+                  <Rocket className="size-4 shrink-0" strokeWidth={2.25} />
+                  立即發佈商品上架
+                </>
+              )}
             </button>
           </div>
         </form>

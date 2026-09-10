@@ -15,6 +15,28 @@ function resolveDisplayName(entry: AdminCatalogEntry): string {
   return entry.nameZh?.trim() || entry.nameEn?.trim() || entry.nameJa || "未命名卡牌";
 }
 
+function shouldShowSubName(
+  entry: AdminCatalogEntry,
+  displayName: string,
+): boolean {
+  const ja = entry.nameJa?.trim();
+  if (!ja) {
+    return false;
+  }
+  if (ja === displayName) {
+    return false;
+  }
+  const zh = entry.nameZh?.trim();
+  const en = entry.nameEn?.trim();
+  if (zh && ja === zh) {
+    return false;
+  }
+  if (en && ja === en) {
+    return false;
+  }
+  return true;
+}
+
 function resolveIdentifier(entry: AdminCatalogEntry): string {
   const setCode = entry.setCode.toUpperCase();
   const card = entry.cardNumber?.trim() || entry.displayId?.trim() || "—";
@@ -35,8 +57,9 @@ export function CatalogCard({
   imagePriority = false,
 }: CatalogCardProps) {
   const displayName = resolveDisplayName(entry);
-  const showSubName = displayName !== entry.nameJa;
+  const showSubName = shouldShowSubName(entry, displayName);
   const identifier = resolveIdentifier(entry);
+  const showRarity = hasDisplayableRarity(entry.rarity);
 
   return (
     <motion.article
@@ -44,12 +67,12 @@ export function CatalogCard({
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -4, scale: 1.02 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
-      className="group bg-bg-card rounded-2xl overflow-hidden border border-[rgba(237,232,224,0.08)] shadow-[0_2px_8px_rgba(0,0,0,0.40)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.65)] flex flex-col justify-between"
+      className="group flex flex-col overflow-hidden rounded-lg border border-white/[0.08] bg-bg-card/40 transition-colors hover:border-brand/20 hover:bg-brand/5"
     >
       <button
         type="button"
         onClick={() => onImageClick(entry)}
-        className="relative w-full aspect-[3/4] overflow-hidden rounded-t-2xl bg-[#1A1612] block text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        className="relative block aspect-[3/4] w-full overflow-hidden bg-bg-page text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
         aria-label={`放大檢視 ${displayName}`}
       >
         <Image
@@ -61,7 +84,7 @@ export function CatalogCard({
           }
           fill
           className="object-contain group-hover:scale-[1.03] transition-transform duration-300 p-2 rounded-2xl"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          sizes="(max-width: 1024px) 33vw, 20vw"
           priority={imagePriority}
           loading={imagePriority ? undefined : "lazy"}
         />
@@ -76,9 +99,9 @@ export function CatalogCard({
         ) : null}
       </button>
 
-      <div className="p-4 space-y-2.5">
+      <div className="space-y-1 border-t border-white/[0.06] p-2.5">
         <div className="min-w-0">
-          <h3 className="font-sans font-semibold text-[14.5px] text-text-primary leading-snug truncate group-hover:text-brand transition-colors">
+          <h3 className="truncate font-sans text-[13px] font-semibold leading-snug text-text-primary group-hover:text-brand transition-colors">
             {displayName}
           </h3>
           {showSubName && (
@@ -91,22 +114,22 @@ export function CatalogCard({
           </p>
         </div>
 
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          {hasDisplayableRarity(entry.rarity) ? (
-            <span className="font-mono text-[11px] text-text-secondary truncate">
-              {entry.rarity}
-            </span>
-          ) : (
-            <span className="font-mono text-[11px] text-text-disabled truncate">
-              未標示罕有度
-            </span>
-          )}
-          {entry.janCode ? (
-            <span className="font-mono text-[10px] text-text-disabled truncate">
-              JAN {entry.janCode}
-            </span>
-          ) : null}
-        </div>
+        {showRarity || entry.janCode ? (
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            {showRarity ? (
+              <span className="truncate font-mono text-[11px] text-text-secondary">
+                {entry.rarity}
+              </span>
+            ) : (
+              <span />
+            )}
+            {entry.janCode ? (
+              <span className="truncate font-mono text-[10px] text-text-disabled">
+                JAN {entry.janCode}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </motion.article>
   );

@@ -1,602 +1,882 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   TrendingUp,
-  ShieldAlert,
-  Users,
-  Wallet,
-  Activity,
   RefreshCw,
   ArrowRight,
-  CheckCircle2,
-  DollarSign,
-  Briefcase,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { getAdminSystemHealthStatus } from "@/app/actions/admin-dashboard";
+import {
+  FORM_SECTION_CLASS,
+} from "@/app/admin/campaigns/campaigns-ui";
+import type {
+  AdminDashboardMetrics,
+  AdminDashboardSystemService,
+  AdminDashboardTrendPoint,
+} from "@/lib/admin-dashboard/types";
+import { formatHkd } from "@/lib/admin-dashboard/format";
+import {
+  buildMonthTrend,
+  ADMIN_DASHBOARD_TREND_DEFAULT_MONTHS,
+  ADMIN_DASHBOARD_TREND_MAX_MONTHS,
+} from "@/lib/admin-dashboard/trends";
 
-// Mock metrics data aligned with master taxonomy
-// TODO: [Supabase Wiring] Replace mock data with real Supabase query / Server Action
-// Target Table: profiles | View / RPC: get_user_ecology_stats
-const userEcology = {
-  totalUsers: 4829,
-  totalUsersFormatted: "4,829",
-  bannedUsers: 14,
-  activeRatio: "64.2%",
-  activeCount: "3,100",
-  distribution: [
-    {
-      key: "user",
-      role: "一般會員 (USER)",
-      count: 4215,
-      formattedCount: "4,215",
-      pct: 87.3,
-      pctStr: "87.3%",
-      color: "#D4A574", // Warm Gold
-      description: "個人買家與卡牌玩家",
-    },
-    {
-      key: "merchant",
-      role: "認證商戶 (MERCHANT)",
-      count: 487,
-      formattedCount: "487",
-      pct: 10.1,
-      pctStr: "10.1%",
-      color: "#10B981", // Bullish Jade Green
-      description: "已通過企業或實體店驗證",
-    },
-    {
-      key: "pending",
-      role: "待審核商戶",
-      count: 118,
-      formattedCount: "118",
-      pct: 2.4,
-      pctStr: "2.4%",
-      color: "#F59E0B", // Amber Warning
-      description: "等待管理員人工資質審查",
-    },
-  ],
+const EMPTY_TREND = buildMonthTrend([], ADMIN_DASHBOARD_TREND_MAX_MONTHS);
+
+type DashboardTrendRange = "6m" | "12m";
+
+const TREND_RANGE_MONTHS: Record<DashboardTrendRange, number> = {
+  "6m": ADMIN_DASHBOARD_TREND_DEFAULT_MONTHS,
+  "12m": ADMIN_DASHBOARD_TREND_MAX_MONTHS,
 };
 
-// TODO: [Supabase Wiring] Replace mock data with real Supabase query / Server Action
-// Target Table: orders, listings | View / RPC: get_market_volume_metrics
-const marketVolume = {
-  totalGmv: "HK$ 24,840,000",
-  settledCount: "2,842 筆",
-  listingCount: "18,402 件",
-  growthRate: "+28.4%",
-};
-
-// TODO: [Supabase Wiring] Replace mock data with real Supabase query / Server Action
-// Target Table: orders, platform_settings | View / RPC: get_platform_revenue_metrics
-const revenues = {
-  totalCommission: "HK$ 1,242,000",
-  monthlyCommission: "HK$ 192,100",
-  commissionRate: "5.0%",
-  commissionGrowth: "+5.2%",
-  appraisalTotal: "HK$ 482,000",
-  appraisalFeePerCard: "HK$ 150",
-  totalAppraisals: "3,213 筆",
-};
-
-// TODO: [Stripe Wiring] Replace mock data with real Stripe API call
-// Target API: stripe.balance.retrieve | Fallback: mock
-const stripePlatformBalance = {
-  available: 1284650,
-  pending: 236800,
-  currency: "HKD",
-  lastSyncedAt: "2026-07-26 09:42",
-};
-
-interface SystemService {
-  id: string;
-  name: string;
-  subName: string;
-  status: "online" | "degraded" | "offline";
-  latency: number;
+function sliceTrendPoints(
+  points: AdminDashboardTrendPoint[],
+  range: DashboardTrendRange,
+): AdminDashboardTrendPoint[] {
+  const monthCount = TREND_RANGE_MONTHS[range];
+  if (points.length <= monthCount) {
+    return points;
+  }
+  return points.slice(points.length - monthCount);
 }
 
-// TODO: [Supabase Wiring] Replace mock data with real Supabase query / Server Action
-// Target Table: platform_settings | View / RPC: get_system_services_status
-const initialServices: SystemService[] = [
-  {
-    id: "supabase",
-    name: "後台服務器",
-    subName: "Database & Auth Engine",
-    status: "online",
-    latency: 28,
-  },
-  {
-    id: "crawler",
-    name: "爬蟲引擎",
-    subName: "Market Real-time Aggregator",
-    status: "online",
-    latency: 142,
-  },
-  {
-    id: "stripe",
-    name: "Stripe API",
-    subName: "Escrow & Payout Gateway",
-    status: "online",
-    latency: 85,
-  },
-];
+function trendRangeLabel(range: DashboardTrendRange): string {
+  return range === "6m" ? "近六月趨勢" : "近十二月趨勢";
+}
 
-export default function AdminDashboardClient() {
+type AdminDashboardClientProps = {
+  metrics: AdminDashboardMetrics | null;
+  loadError: string | null;
+  initialServices: AdminDashboardSystemService[];
+  healthLoadError: string | null;
+};
+
+type DashboardTodoItem = {
+  id: string;
+  label: string;
+  count: number;
+  onClick: () => void;
+  countClassName?: string;
+};
+
+const EMPTY_METRICS: AdminDashboardMetrics = {
+  userEcology: {
+    totalUsers: 0,
+    totalUsersFormatted: "0",
+    bannedUsers: null,
+    activeRatio: null,
+    activeCount: null,
+    distribution: [],
+  },
+  marketVolume: {
+    totalGmv: "HK$ 0",
+    monthlyGmv: "HK$ 0",
+    settledCount: "0 筆",
+    monthlySettledCount: "0 筆",
+    listingCount: "0 件",
+    growthRate: null,
+  },
+  revenues: {
+    totalCommission: "HK$ 0",
+    monthlyCommission: "HK$ 0",
+    commissionRate: "8.0%",
+    commissionGrowth: null,
+    appraisalTotal: "HK$ 0",
+    monthlyAppraisal: "HK$ 0",
+    monthlyNetRevenue: "HK$ 0",
+    totalNetRevenue: "HK$ 0",
+    monthlyAppraisalCount: "0 筆交易",
+    appraisalFeePerCard: "HK$ 150",
+    totalAppraisals: "0 筆交易",
+  },
+  stripeBalance: {
+    availableFormatted: "—",
+    pendingFormatted: "—",
+    currency: "HKD",
+    lastSyncedAt: new Date(0).toISOString(),
+    unavailable: true,
+    unavailableReason: null,
+  },
+  alerts: {
+    unprocessedReports: 0,
+    pendingKyc: 0,
+    pendingGrading: 0,
+  },
+  syncedAt: new Date(0).toISOString(),
+  trends: {
+    netRevenue: EMPTY_TREND,
+    gmv: EMPTY_TREND,
+  },
+};
+
+function formatSyncedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return `${date.toLocaleDateString("zh-TW", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })} ${date.toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
+}
+
+function hasGrowthValue(value: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toUpperCase();
+  return normalized !== "N/A" && normalized !== "—";
+}
+
+function serviceStatusDotClass(
+  status: AdminDashboardSystemService["status"],
+): string {
+  if (status === "offline") return "bg-warning/80";
+  if (status === "degraded") return "bg-brand/70";
+  return "bg-text-disabled/35";
+}
+
+function serviceStatusLabel(
+  status: AdminDashboardSystemService["status"],
+): string | null {
+  if (status === "offline") return "離線";
+  if (status === "degraded") return "降級";
+  return null;
+}
+
+function formatHealthToastDescription(
+  services: AdminDashboardSystemService[],
+): string {
+  const offline = services.filter((service) => service.status === "offline");
+  const degraded = services.filter((service) => service.status === "degraded");
+
+  if (offline.length > 0) {
+    return `離線：${offline.map((service) => service.name).join("、")}`;
+  }
+
+  if (degraded.length > 0) {
+    return `降級：${degraded.map((service) => service.name).join("、")}`;
+  }
+
+  const maxLatency = Math.max(...services.map((service) => service.latency), 0);
+  return `後台服務器、支付託管及爬蟲引擎已檢測（最高延遲 ${maxLatency} 毫秒）`;
+}
+
+function DashboardTrendChart({
+  points,
+  rangeLabel,
+}: {
+  points: AdminDashboardTrendPoint[];
+  rangeLabel: string;
+}) {
+  const gradientId = useId().replace(/:/g, "");
+  const chartData = useMemo(
+    () =>
+      points.map((point) => ({
+        label: point.label,
+        value: point.value,
+      })),
+    [points],
+  );
+
+  const hasData = chartData.some((point) => point.value > 0);
+  const values = chartData.map((point) => point.value);
+  const trendUp =
+    values.length >= 2 && values[values.length - 1] >= values[0];
+  const strokeColor = trendUp ? "#d4a574" : "#f59e0b";
+  const xTickInterval = chartData.length > 6 ? 1 : 0;
+
+  if (chartData.length < 2) {
+    return null;
+  }
+
+  if (!hasData) {
+    return (
+      <div
+        className="flex h-14 w-full items-center justify-center rounded-md border border-dashed border-white/[0.06] font-mono text-[9px] text-text-disabled sm:h-16"
+        role="img"
+        aria-label={`${rangeLabel}暫無數據`}
+      >
+        暫無趨勢
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="w-full min-w-0 overflow-visible px-1"
+      role="img"
+      aria-label={rangeLabel}
+    >
+      <ResponsiveContainer width="100%" height={80}>
+        <AreaChart
+          data={chartData}
+          margin={{ top: 8, right: 16, left: 16, bottom: 4 }}
+        >
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={strokeColor} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={strokeColor} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <XAxis
+            dataKey="label"
+            axisLine={false}
+            tickLine={false}
+            interval={xTickInterval}
+            padding={{ left: 24, right: 24 }}
+            tickMargin={8}
+            tick={{
+              fill: "rgba(237, 232, 224, 0.45)",
+              fontSize: 9,
+              fontFamily: "var(--font-mono, ui-monospace, monospace)",
+            }}
+          />
+          <YAxis hide domain={[0, "auto"]} />
+          <Tooltip
+            cursor={{ stroke: "rgba(255,255,255,0.12)", strokeWidth: 1 }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) {
+                return null;
+              }
+
+              const row = payload[0]?.payload as
+                | { label: string; value: number }
+                | undefined;
+              if (!row) {
+                return null;
+              }
+
+              return (
+                <div className="rounded border border-white/10 bg-bg-card px-2 py-1 font-mono text-[10px] text-text-primary shadow-lg">
+                  {row.label} {formatHkd(row.value)}
+                </div>
+              );
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={strokeColor}
+            strokeWidth={1.5}
+            fill={`url(#${gradientId})`}
+            dot={{
+              r: 2.5,
+              fill: strokeColor,
+              strokeWidth: 0,
+            }}
+            activeDot={{
+              r: 3.5,
+              fill: strokeColor,
+              stroke: "#17130f",
+              strokeWidth: 1,
+            }}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function DashboardTrendRangeToggle({
+  value,
+  onChange,
+}: {
+  value: DashboardTrendRange;
+  onChange: (range: DashboardTrendRange) => void;
+}) {
+  return (
+    <div
+      className="flex flex-col items-end gap-1"
+      title="僅切換下方趨勢圖顯示範圍；本月與歷史統計數字不受影響"
+    >
+      <span className="font-mono text-[9px] text-text-disabled">
+        趨勢圖時間範圍
+      </span>
+      <div
+        className="inline-flex rounded-md border border-white/[0.08] p-0.5"
+        role="group"
+        aria-label="趨勢圖時間範圍（不影響統計數字）"
+      >
+        {(["6m", "12m"] as const).map((range) => {
+          const active = value === range;
+          return (
+            <button
+              key={range}
+              type="button"
+              onClick={() => onChange(range)}
+              aria-pressed={active}
+              className={`rounded px-2 py-0.5 font-mono text-[9px] transition-colors ${
+                active
+                  ? "bg-brand/15 text-brand"
+                  : "text-text-disabled hover:text-text-secondary"
+              }`}
+            >
+              {range === "6m" ? "6M" : "12M"}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function AdminDashboardClient({
+  metrics,
+  loadError,
+  initialServices,
+  healthLoadError,
+}: AdminDashboardClientProps) {
   const router = useRouter();
+  const [isRefreshingMetrics, startMetricsRefresh] = useTransition();
 
-  // State for system services latency check
-  const [services, setServices] = useState<SystemService[]>(initialServices);
-  const [isRefreshingServices, setIsRefreshingServices] = useState(false);
+  const [services, setServices] = useState<AdminDashboardSystemService[]>(
+    initialServices,
+  );
+  const [isRefreshingServices, startServicesRefresh] = useTransition();
 
-  // Urgent alerts count
-  const unprocessedDisputes = 5;
+  useEffect(() => {
+    setServices(initialServices);
+  }, [initialServices]);
 
-  const handleRefreshServices = () => {
-    setIsRefreshingServices(true);
-    setTimeout(() => {
-      setServices((prev) =>
-        prev.map((s) => ({
-          ...s,
-          latency:
-            Math.floor(Math.random() * 40) + (s.id === "crawler" ? 120 : 20),
-        })),
-      );
-      setIsRefreshingServices(false);
-      toast.success("系統服務狀態已更新", {
-        description:
-          "後台 Supabase, 爬蟲引擎及 Stripe 金流連線正常 (Latency < 200ms)",
+  const hasMetrics = metrics != null;
+  const dashboardMetrics = metrics ?? EMPTY_METRICS;
+  const userEcology = dashboardMetrics.userEcology;
+  const marketVolume = dashboardMetrics.marketVolume;
+  const revenues = dashboardMetrics.revenues;
+  const trends = dashboardMetrics.trends;
+  const stripeBalance = dashboardMetrics.stripeBalance;
+  const unprocessedReports = dashboardMetrics.alerts.unprocessedReports;
+  const pendingKyc = dashboardMetrics.alerts.pendingKyc;
+  const pendingGrading = dashboardMetrics.alerts.pendingGrading;
+  const bannedUsers = userEcology.bannedUsers;
+
+  const [trendRange, setTrendRange] = useState<DashboardTrendRange>("6m");
+
+  const trendRangeHeading = trendRangeLabel(trendRange);
+  const slicedNetRevenueTrend = useMemo(
+    () => sliceTrendPoints(trends.netRevenue, trendRange),
+    [trends.netRevenue, trendRange],
+  );
+  const slicedGmvTrend = useMemo(
+    () => sliceTrendPoints(trends.gmv, trendRange),
+    [trends.gmv, trendRange],
+  );
+
+  const syncedAtLabel = isRefreshingMetrics
+    ? "更新中…"
+    : metrics?.syncedAt
+      ? `最後同步：${formatSyncedAt(metrics.syncedAt)}`
+      : "最後同步：—";
+
+  const todoItems = useMemo(() => {
+    const items: DashboardTodoItem[] = [];
+
+    if (unprocessedReports > 0) {
+      items.push({
+        id: "disputes",
+        label: "未處理爭議",
+        count: unprocessedReports,
+        onClick: () => router.push("/admin/disputes?status=pending"),
+        countClassName: "text-warning",
       });
-    }, 600);
+    }
+
+    if (pendingKyc > 0) {
+      items.push({
+        id: "kyc",
+        label: "商戶入駐待審",
+        count: pendingKyc,
+        onClick: () => router.push("/admin/merchants"),
+        countClassName: "text-brand",
+      });
+    }
+
+    if (pendingGrading > 0) {
+      items.push({
+        id: "grading",
+        label: "鑑定待處理",
+        count: pendingGrading,
+        onClick: () => router.push("/admin/grading"),
+        countClassName:
+          pendingGrading >= 10 ? "text-brand font-bold" : "text-text-primary",
+      });
+    }
+
+    return items;
+  }, [
+    unprocessedReports,
+    pendingKyc,
+    pendingGrading,
+    router,
+  ]);
+
+  const handleRefreshMetrics = () => {
+    startMetricsRefresh(() => {
+      router.refresh();
+    });
   };
 
-  const handleAlertClick = () => {
-    router.push("/admin/disputes?status=pending");
+  const handleRefreshServices = () => {
+    startServicesRefresh(async () => {
+      const result = await getAdminSystemHealthStatus();
+      if (!result.success) {
+        toast.error("系統服務狀態檢測失敗", {
+          description: result.error,
+        });
+        return;
+      }
+
+      setServices(result.data.services);
+      const hasOffline = result.data.services.some(
+        (service) => service.status === "offline",
+      );
+      const hasDegraded = result.data.services.some(
+        (service) => service.status === "degraded",
+      );
+
+      if (hasOffline) {
+        toast.error("部分系統服務離線", {
+          description: formatHealthToastDescription(result.data.services),
+        });
+        return;
+      }
+
+      if (hasDegraded) {
+        toast.warning("部分系統服務降級", {
+          description: formatHealthToastDescription(result.data.services),
+        });
+        return;
+      }
+
+      toast.success("系統服務狀態已更新", {
+        description: formatHealthToastDescription(result.data.services),
+      });
+    });
   };
 
   return (
-    <div className="space-y-6 pb-20 lg:pb-8">
-      {/* ── Page Title Header ────────────────────────────────────────── */}
-      <div className="flex flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-sans font-bold text-[22px] sm:text-[26px] text-text-primary tracking-tight">
-              數據總覽
-            </h1>
-            <span className="rounded-full bg-brand/10 border border-brand/20 text-brand px-2.5 py-0.5 font-mono text-[11px] font-medium">
-              LIVE MONITOR
-            </span>
-          </div>
-          <p className="font-mono text-[12px] text-text-secondary mt-1">
-            最後同步：
-            {new Date().toLocaleDateString("zh-TW", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            })}{" "}
-            {new Date().toLocaleTimeString("zh-TW", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })}
+    <div className="space-y-5 pb-8">
+      <header>
+        <div className="mt-1 flex items-center gap-2">
+          <p className="font-mono text-[10px] text-text-disabled">
+            {syncedAtLabel}
           </p>
-        </div>
-
-        {/* Action button header */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefreshServices}
-            disabled={isRefreshingServices}
-            className="border-[rgba(237,232,224,0.12)] bg-bg-card hover:bg-bg-hover text-text-primary text-[12px] h-9 gap-1.5 active:scale-[0.98]"
+          <button
+            type="button"
+            onClick={handleRefreshMetrics}
+            disabled={isRefreshingMetrics}
+            aria-label="重新整理數據"
+            className="inline-flex shrink-0 items-center justify-center rounded-md p-0.5 text-text-disabled/70 transition-colors hover:text-brand disabled:opacity-60"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 text-brand ${
-                isRefreshingServices ? "animate-spin" : ""
-              }`}
+              className={`size-3 ${isRefreshingMetrics ? "animate-spin" : ""}`}
             />
-            重新整理數據
-          </Button>
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* ────────────────────────────────────────────────────────────── */}
-      {/* 1. 頂部黃金視覺區 (Top Hero Zone): 平台營收與交易量 KPI 大卡片 */}
-      {/* ────────────────────────────────────────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-sans font-semibold text-[13px] text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
-            <Wallet className="w-4 h-4 text-brand" />
-            核心營收與 GMV KPI
-          </span>
+      {loadError ? (
+        <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 font-sans text-[13px] text-warning">
+          {loadError}
+        </div>
+      ) : null}
+
+      {!hasMetrics && !loadError ? (
+        <div className="rounded-lg border border-white/[0.08] bg-bg-card px-3 py-2.5 font-sans text-[13px] text-text-secondary">
+          無法載入儀表板數據。
+        </div>
+      ) : null}
+
+      {healthLoadError ? (
+        <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 font-sans text-[13px] text-warning">
+          {healthLoadError}
+        </div>
+      ) : null}
+
+      {hasMetrics ? (
+        <>
+      <section className="space-y-6 border-b border-white/[0.08] pb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className={FORM_SECTION_CLASS}>核心營收與成交指標</h2>
+          <DashboardTrendRangeToggle
+            value={trendRange}
+            onChange={setTrendRange}
+          />
         </div>
 
-        <div className="flex flex-col gap-6">
-          {/* CARD A: 平台淨營收統計 (Net Revenues) */}
-          <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 relative overflow-hidden group hover:border-[rgba(212,165,116,0.3)] transition-all">
-            {/* Background subtle gold glow accent */}
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-brand/5 rounded-full blur-2xl pointer-events-none" />
-
-            {/* Card A Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
-                  <DollarSign className="w-4 h-4" />
-                </div>
-                <span className="font-sans font-semibold text-[14px] text-text-secondary">
-                  平台淨營收統計
-                </span>
-              </div>
-              <span className="font-mono text-[11px] text-brand bg-[rgba(212,165,116,0.12)] border border-brand/20 px-2.5 py-0.5 rounded-full font-medium">
-                佣金率 {revenues.commissionRate}
-              </span>
-            </div>
-
-            <div className="space-y-5">
-              {/* Upper block: 佣金 */}
-              <div>
-                <span className="font-sans font-semibold text-[13px] text-text-secondary block mb-2">
-                  佣金
-                </span>
-                <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono font-bold text-[30px] sm:text-[32px] text-text-primary tracking-tight leading-none">
-                    {revenues.totalCommission}
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 font-mono text-[12px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                    <TrendingUp className="w-3 h-3" />
-                    {revenues.commissionGrowth}
-                  </span>
-                </div>
-                <p className="font-mono text-[11px] text-text-secondary mt-1">
-                  本月佣金收益：{revenues.monthlyCommission}
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-white/[0.08]" />
-
-              {/* Lower block: 鑑定費用 */}
-              <div>
-                <span className="font-sans font-semibold text-[13px] text-text-secondary block mb-2">
-                  鑑定費用
-                </span>
-                <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono font-bold text-[30px] sm:text-[32px] text-text-primary tracking-tight leading-none">
-                    {revenues.appraisalTotal}
-                  </span>
-                </div>
-                <p className="font-mono text-[11px] text-text-secondary mt-1">
-                  已鑑定卡數：{revenues.totalAppraisals} · 單件鑑定費：{revenues.appraisalFeePerCard}
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-white/[0.08]" />
-
-              {/* Third block: Stripe 平台帳戶餘額 */}
-              <div>
-                <span className="font-sans font-semibold text-[13px] text-text-secondary block mb-2">
-                  Stripe 平台帳戶餘額
-                </span>
-                <div className="flex items-baseline gap-2.5">
-                  <span className="font-mono font-bold text-[30px] sm:text-[32px] text-brand tracking-tight leading-none">
-                    HK$ {stripePlatformBalance.available.toLocaleString("zh-TW")}
-                  </span>
-                </div>
-                <p className="font-mono text-[11px] text-text-secondary mt-1">
-                  Stripe Connect 官方即時可用清算資金
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* CARD B: 交易量分析 (GMV & Volume) */}
-          <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 relative overflow-hidden group hover:border-[rgba(212,165,116,0.3)] transition-all">
-            {/* Background subtle gold glow accent */}
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
-
-            {/* Card B Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <Briefcase className="w-4 h-4" />
-                </div>
-                <span className="font-sans font-semibold text-[14px] text-text-secondary">
-                  交易量分析
-                </span>
-              </div>
-              <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                {marketVolume.growthRate} vs 上月
-              </span>
-            </div>
-
-            {/* Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <span className="font-mono text-[11px] text-text-disabled uppercase block tracking-wider">
-                  總成交 (GMV)
-                </span>
-                <span className="font-mono font-bold text-[26px] sm:text-[28px] text-brand tracking-tight leading-none block mt-1">
-                  {marketVolume.totalGmv}
-                </span>
-              </div>
-              <div>
-                <span className="font-mono text-[11px] text-text-disabled uppercase block tracking-wider">
-                  成交量
-                </span>
-                <span className="font-mono font-bold text-[18px] sm:text-[20px] text-text-primary tracking-tight leading-none block mt-1">
-                  {marketVolume.settledCount}
-                </span>
-              </div>
-              <div>
-                <span className="font-mono text-[11px] text-text-disabled uppercase block tracking-wider">
-                  現貨總數
-                </span>
-                <span className="font-mono font-bold text-[18px] sm:text-[20px] text-text-primary tracking-tight leading-none block mt-1">
-                  {marketVolume.listingCount}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ────────────────────────────────────────────────────────────── */}
-      {/* 2. 中段視覺區 (Mid Zone): 用戶生態大盤 (簡潔視覺化圖表)        */}
-      {/* ────────────────────────────────────────────────────────────── */}
-      <section className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 sm:p-6 space-y-5">
-        {/* Section Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[rgba(237,232,224,0.08)] pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-brand" />
-              <h2 className="font-sans font-bold text-[16px] sm:text-[18px] text-text-primary">
-                用戶生態大盤
-              </h2>
-            </div>
-            <p className="font-mono text-[12px] text-text-secondary mt-0.5">
-              全平台會員角色分佈與審核動態
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="space-y-4 rounded-xl border border-[rgba(237,232,224,0.12)] bg-bg-card p-4 shadow-sm shadow-black/30">
+            <p className="font-sans text-[13px] font-semibold text-text-secondary">
+              平台淨營收
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full font-medium flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              活躍用戶比率 {userEcology.activeRatio} ({userEcology.activeCount})
-            </span>
-            <span className="font-mono text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-full">
-              已封鎖 {userEcology.bannedUsers} 戶
-            </span>
-          </div>
-        </div>
-
-        {/* Main Metric Hero inside Zone 2 */}
-        <div className="max-w-2xl mx-auto">
-          {/* Donut Chart Visualization */}
-          <div className="flex flex-col items-center justify-center p-3 bg-bg-page/50 rounded-xl border border-[rgba(237,232,224,0.06)] relative">
-            <div className="w-full h-[200px] sm:h-[220px] relative flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={userEcology.distribution}
-                    dataKey="count"
-                    nameKey="role"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={58}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    stroke="none"
-                  >
-                    {userEcology.distribution.map((entry) => (
-                      <Cell
-                        key={entry.key}
-                        fill={entry.color}
-                        className="transition-all duration-300 hover:opacity-80"
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    wrapperStyle={{ zIndex: 50 }}
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const data = payload[0].payload;
-                        return (
-                          <div className="bg-bg-elevated border border-[rgba(237,232,224,0.12)] p-2.5 rounded-lg shadow-xl font-mono text-[12px] space-y-1">
-                            <p
-                              className="font-sans font-bold text-text-primary"
-                              style={{ color: data.color }}
-                            >
-                              {data.role}
-                            </p>
-                            <p className="text-text-secondary">
-                              數量:{" "}
-                              <span className="text-text-primary font-bold">
-                                {data.formattedCount} 人
-                              </span>
-                            </p>
-                            <p className="text-text-secondary">
-                              佔比:{" "}
-                              <span className="text-text-primary font-bold">
-                                {data.pctStr}
-                              </span>
-                            </p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
+            <div className="flex flex-col divide-y divide-white/[0.06]">
+              <div className="pb-4">
+                <span className="font-mono text-[10px] tracking-wide text-text-disabled">
+                  本月總營收
+                </span>
+                <p className="mt-2 font-mono text-[20px] font-bold tracking-tight tabular-nums text-brand sm:text-[24px]">
+                  {revenues.monthlyNetRevenue}
+                </p>
+                <p className="mt-2 font-mono text-[11px] leading-relaxed text-text-secondary">
+                  歷史總營收 {revenues.totalNetRevenue}
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  <span className="font-mono text-[9px] text-text-disabled">
+                    {trendRangeHeading}
+                  </span>
+                  <DashboardTrendChart
+                    points={slicedNetRevenueTrend}
+                    rangeLabel={trendRangeHeading}
                   />
-                </PieChart>
-              </ResponsiveContainer>
-
-              {/* Donut Center Label */}
-              <div className="absolute inset-0 z-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="font-mono text-[10px] text-text-disabled uppercase">
-                  總註冊用戶量
-                </span>
-                <span className="font-mono font-bold text-[24px] text-text-primary tracking-tight leading-none mt-0.5">
-                  {userEcology.totalUsersFormatted}
-                </span>
-                <span className="font-mono text-[10px] text-brand mt-0.5">
-                  USER ECOLOGY
-                </span>
+                </div>
+              </div>
+              <div className="flex flex-col divide-y divide-white/[0.06] pb-4 pt-4 sm:flex-row sm:divide-x sm:divide-y-0">
+                <div className="pb-4 sm:flex-1 sm:pb-0 sm:pr-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[10px] tracking-wide text-text-disabled">
+                      本月佣金
+                    </span>
+                    <span className="rounded-lg border border-brand/20 bg-brand/10 px-2 py-0.5 font-mono text-[10px] text-brand">
+                      佣金率 {revenues.commissionRate}
+                    </span>
+                  </div>
+                  <p className="mt-2 font-mono text-[18px] font-bold tracking-tight tabular-nums text-brand sm:text-[22px]">
+                    {revenues.monthlyCommission}
+                  </p>
+                  <p className="mt-2 font-mono text-[11px] leading-relaxed text-text-secondary">
+                    歷史營收 {revenues.totalCommission}
+                  </p>
+                  {hasGrowthValue(revenues.commissionGrowth) ? (
+                    <span className="mt-2 inline-flex items-center gap-0.5 rounded border border-success/20 bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+                      <TrendingUp className="size-3" />
+                      {revenues.commissionGrowth}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="pt-4 sm:flex-1 sm:pt-0 sm:pl-5">
+                  <span className="block font-mono text-[10px] tracking-wide text-text-disabled">
+                    本月鑑定費
+                  </span>
+                  <p className="mt-2 font-mono text-[18px] font-bold tracking-tight tabular-nums text-brand sm:text-[22px]">
+                    {revenues.monthlyAppraisal}
+                  </p>
+                  <p className="mt-2 font-mono text-[11px] leading-relaxed text-text-secondary">
+                    歷史總值 {revenues.appraisalTotal}
+                  </p>
+                </div>
+              </div>
+              <div className="pt-4">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                    stripe可用餘額
+                  </span>
+                  <p className="min-w-0 truncate font-mono text-[13px] font-semibold tabular-nums text-brand">
+                    {stripeBalance.availableFormatted}
+                  </p>
+                </div>
+                {stripeBalance.unavailable ? (
+                  <p className="mt-2 font-mono text-[11px] text-warning">
+                    {stripeBalance.unavailableReason ?? "餘額暫不可用"}
+                  </p>
+                ) : null}
               </div>
             </div>
+          </div>
 
-            {/* Segmented Progress Bar underneath Donut */}
-            <div className="w-full mt-2 space-y-1">
-              <div className="h-2 w-full bg-bg-elevated rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-[rgba(237,232,224,0.06)]">
-                {userEcology.distribution.map((item) => (
-                  <div
-                    key={item.key}
-                    style={{
-                      width: `${item.pct}%`,
-                      backgroundColor: item.color,
-                    }}
-                    className="h-full rounded-full transition-all hover:brightness-110"
-                    title={`${item.role}: ${item.pctStr}`}
-                  />
-                ))}
-              </div>
-              <p className="text-center font-mono text-[10px] text-text-secondary">
-                一般會員 (87.3%) | 認證商戶 (10.1%) | 待審核 (2.4%)
+          <div className="space-y-4 rounded-xl border border-[rgba(237,232,224,0.12)] bg-bg-card p-4 shadow-sm shadow-black/30">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-sans text-[13px] font-semibold text-text-secondary">
+                交易量分析
               </p>
             </div>
-          </div>
-
-          {/* Merchant onboarding queue footer */}
-          <div className="flex items-center justify-between bg-bg-page/40 rounded-xl px-4 py-2.5 border border-[rgba(237,232,224,0.06)] font-mono text-[11px]">
-            <span className="text-text-secondary flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              商戶審核隊列：
-              <span className="text-text-primary font-medium">
-                118 件待審核
-              </span>
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push("/admin/user_control")}
-              className="text-brand hover:text-brand-hover p-0 h-auto font-mono text-[11px] hover:bg-transparent gap-1"
-            >
-              前往審核商戶 <ArrowRight className="w-3 h-3" />
-            </Button>
+            <div className="space-y-3">
+              <div>
+                <span className="font-mono text-[10px] tracking-wide text-text-disabled">
+                  本月總成交
+                </span>
+                <p className="mt-1.5 font-mono text-[20px] font-bold tabular-nums text-brand sm:text-[22px]">
+                  {marketVolume.monthlyGmv}
+                </p>
+                <p className="mt-2 font-mono text-[11px] leading-relaxed text-text-secondary">
+                  歷史總值 {marketVolume.totalGmv}
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-[9px] text-text-disabled">
+                      {trendRangeHeading}
+                    </span>
+                    {hasGrowthValue(marketVolume.growthRate) ? (
+                      <span className="inline-flex items-center gap-0.5 rounded border border-success/20 bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+                        <TrendingUp className="size-3" />
+                        {marketVolume.growthRate} 較上月
+                      </span>
+                    ) : null}
+                  </div>
+                  <DashboardTrendChart
+                    points={slicedGmvTrend}
+                    rangeLabel={trendRangeHeading}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 border-t border-white/[0.06] pt-3">
+                <div className="flex flex-col gap-y-3">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      本月成交量
+                    </span>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-text-primary">
+                      {marketVolume.monthlySettledCount}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      本月鑑定
+                    </span>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-text-primary">
+                      {revenues.monthlyAppraisalCount}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      活躍掛單
+                    </span>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-text-primary">
+                      {marketVolume.listingCount}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-y-3">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      歷史成交量
+                    </span>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-text-primary">
+                      {marketVolume.settledCount}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-text-disabled">
+                      歷史鑑定
+                    </span>
+                    <p className="font-mono text-[15px] font-bold tabular-nums text-text-primary">
+                      {revenues.totalAppraisals}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-2 min-h-[22px]" aria-hidden />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ────────────────────────────────────────────────────────────── */}
-      {/* 3. 底部互動區 (Bottom Zone): 系統運作狀態與未處理緊急警報       */}
-      {/* ────────────────────────────────────────────────────────────── */}
-      <section className="space-y-4">
-        {/* Status Indicators (紅綠燈指標) */}
-        <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5">
-          <div className="flex flex-row items-center justify-between gap-3 mb-4 border-b border-[rgba(237,232,224,0.08)] pb-3">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-emerald-400" />
-              <h2 className="font-sans font-semibold text-[14px] sm:text-[15px] text-text-primary">
-                系統運作狀態 (紅綠燈指標)
-              </h2>
-            </div>
+      <section className="space-y-4 border-b border-white/[0.08] pb-5">
+        <div>
+          <h2 className={FORM_SECTION_CLASS}>全平台會員角色分佈</h2>
+        </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshServices}
-              disabled={isRefreshingServices}
-              className="border-[rgba(237,232,224,0.1)] bg-bg-page hover:bg-bg-hover text-text-secondary text-[11px] h-7 px-2.5 gap-1.5"
-            >
-              <RefreshCw
-                className={`w-3 h-3 text-emerald-400 ${
-                  isRefreshingServices ? "animate-spin" : ""
-                }`}
-              />
-              實時檢測
-            </Button>
+        <div className="mx-auto max-w-sm">
+          <div className="relative flex h-[160px] w-full items-center justify-center sm:h-[180px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={userEcology.distribution}
+                  dataKey="count"
+                  nameKey="role"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={52}
+                  outerRadius={76}
+                  paddingAngle={3}
+                  stroke="none"
+                >
+                  {userEcology.distribution.map((entry) => (
+                    <Cell
+                      key={entry.key}
+                      fill={entry.color}
+                      className="transition-opacity hover:opacity-80"
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  wrapperStyle={{ zIndex: 50 }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="space-y-1 rounded-lg border border-white/10 bg-bg-card p-2.5 font-mono text-[12px] shadow-xl">
+                          <p
+                            className="font-sans font-bold text-text-primary"
+                            style={{ color: data.color }}
+                          >
+                            {data.role}
+                          </p>
+                          <p className="text-text-secondary">
+                            數量{" "}
+                            <span className="font-bold text-text-primary">
+                              {data.formattedCount}
+                            </span>
+                          </p>
+                          <p className="text-text-secondary">
+                            佔比{" "}
+                            <span className="font-bold text-text-primary">
+                              {data.pctStr}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="font-mono text-[10px] text-text-disabled">
+                總註冊用戶
+              </span>
+              <span className="mt-0.5 font-mono text-[24px] font-bold leading-none tracking-tight text-text-primary">
+                {userEcology.totalUsersFormatted}
+              </span>
+            </div>
           </div>
 
-          {/* 3 Core Background Infrastructure Status Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {services.map((service) => (
-              <div
-                key={service.id}
-                className="bg-bg-page rounded-xl border border-[rgba(237,232,224,0.06)] px-4 py-3 flex items-center justify-between hover:border-[rgba(237,232,224,0.12)] transition-colors"
+          <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+            {userEcology.distribution.map((item) => (
+              <span
+                key={item.key}
+                className="font-mono text-[10px] text-text-secondary"
               >
-                <div>
-                  <span className="font-sans text-[13px] font-medium text-text-primary block">
+                <span style={{ color: item.color }}>●</span>{" "}
+                {item.role} {item.pctStr}
+              </span>
+            ))}
+          </div>
+          {bannedUsers != null && bannedUsers > 0 ? (
+            <p className="mt-2 text-center font-mono text-[10px] text-text-disabled">
+              已封鎖帳戶 {bannedUsers.toLocaleString("zh-TW")}
+            </p>
+          ) : null}
+        </div>
+      </section>
+        </>
+      ) : null}
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-1">
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="font-sans text-[10px] text-text-disabled">
+              系統運作狀態
+            </span>
+            <button
+              type="button"
+              onClick={handleRefreshServices}
+              disabled={isRefreshingServices}
+              aria-label="檢測系統狀態"
+              className="inline-flex shrink-0 items-center justify-center rounded-md p-0.5 text-text-disabled/70 transition-colors hover:text-text-secondary disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`size-3 ${isRefreshingServices ? "animate-spin" : ""}`}
+              />
+            </button>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            {services.map((service) => {
+              const statusLabel = serviceStatusLabel(service.status);
+              return (
+                <div
+                  key={service.id}
+                  title={
+                    statusLabel
+                      ? `${service.name}：${statusLabel}`
+                      : service.name
+                  }
+                  className="flex min-w-0 max-w-[9.5rem] items-center gap-1"
+                >
+                  <span
+                    className={`size-1 shrink-0 rounded-full ${serviceStatusDotClass(service.status)}`}
+                  />
+                  <span className="truncate font-mono text-[10px] text-text-disabled">
                     {service.name}
                   </span>
-                  <span className="font-mono text-[10px] text-text-disabled block">
-                    {service.subName}
-                  </span>
+                  {statusLabel ? (
+                    <span
+                      className={`shrink-0 font-mono text-[9px] ${
+                        service.status === "offline"
+                          ? "text-warning/80"
+                          : "text-brand/80"
+                      }`}
+                    >
+                      {statusLabel}
+                    </span>
+                  ) : null}
                 </div>
-
-                <div className="text-right">
-                  <span className="font-mono text-[12px] text-emerald-400 font-medium flex items-center justify-end gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    正常
-                  </span>
-                  <span className="font-mono text-[10px] text-text-secondary block">
-                    {service.latency}ms
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* ── 未處理緊急警報數 (Red Alert Badge Action Button) ──────────────── */}
-        {/* Placed prominently in the mobile thumb zone & desktop banner */}
-        <div className="sticky bottom-4 sm:relative sm:bottom-0 z-30">
-          <div className="w-full bg-gradient-to-r from-rose-950/90 via-bg-card to-rose-950/80 rounded-2xl border-2 border-rose-500/40 hover:border-rose-500 p-4 sm:p-5 shadow-2xl backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 w-full sm:w-auto">
-              {/* Pulsating Alert Icon */}
-              <div className="relative shrink-0">
-                <div className="w-11 h-11 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 group-hover:scale-105 transition-transform">
-                  <ShieldAlert className="w-6 h-6" />
-                </div>
-                {unprocessedDisputes > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500" />
+        <div className="space-y-4 rounded-xl border border-[rgba(237,232,224,0.12)] bg-bg-card p-4 shadow-sm shadow-black/30">
+          <p className="font-sans text-[13px] font-semibold text-text-secondary">
+            待辦
+          </p>
+          {!hasMetrics ? (
+            <p className="py-4 text-center font-sans text-[13px] text-text-secondary">
+              暫無待處理項目
+            </p>
+          ) : todoItems.length === 0 ? (
+            <p className="py-4 text-center font-sans text-[13px] text-text-secondary">
+              暫無待處理項目
+            </p>
+          ) : (
+            <div className="divide-y divide-white/[0.06]">
+              {todoItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={item.onClick}
+                  className="flex w-full items-center justify-between gap-3 px-1 py-3 text-left transition-colors hover:bg-brand/5"
+                >
+                  <span className="font-sans text-[13px] text-text-primary">
+                    {item.label}
                   </span>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-sans font-bold text-[15px] sm:text-[16px] text-white flex items-center gap-1.5">
-                    🚨 未處理緊急警報：
-                    <span className="font-mono text-rose-400 underline underline-offset-2">
-                      {unprocessedDisputes} 件
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={`font-mono text-[13px] tabular-nums ${item.countClassName ?? "text-text-primary"}`}
+                    >
+                      {item.count.toLocaleString("zh-TW")}
+                    </span>
+                    <span className="font-sans text-[11px] text-brand">
+                      前往
+                      <ArrowRight className="ml-0.5 inline size-3" />
                     </span>
                   </span>
-                </div>
-                <p className="font-sans text-[12px] text-rose-200/80 mt-0.5">
-                  有 {unprocessedDisputes}{" "}
-                  件高風險買賣爭議、品相申訴與私下交易舉報待人工仲裁處理
-                </p>
-              </div>
+                </button>
+              ))}
             </div>
-
-            {/* CTA Action Trigger */}
-            <div className="w-full sm:w-auto shrink-0 flex items-center justify-end">
-              <Button
-                onClick={handleAlertClick}
-                type="button"
-                className="w-full sm:w-auto bg-rose-600 hover:bg-rose-500 text-white font-sans font-semibold text-[13px] px-5 py-2.5 h-10 rounded-xl shadow-lg gap-2 group-hover:translate-x-0.5 transition-transform"
-              >
-                立即處理爭議
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
       </section>
     </div>

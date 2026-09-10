@@ -1,6 +1,7 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs";
+import { hasAdminAuthFixtures, loginAsAdmin, gotoAdminPage } from "./helpers/admin-auth";
 
 const SCREENSHOT_DIR = path.join(process.cwd(), "test-results", "admin-settings-screenshots");
 
@@ -10,18 +11,12 @@ test.beforeAll(() => {
   }
 });
 
-async function loginAsAdmin(page: Page) {
-  await page.goto("/auth");
-  await page.locator('input[name="email"]').fill("admin@t.com");
-  await page.locator('input[name="password"]').fill("Password123!");
-  await page.locator('form button[type="submit"]').click();
-  await page.waitForURL((url) => url.pathname.startsWith("/admin"), { timeout: 15000 });
-}
-
 test.describe("Phase 3 Admin Settings Acceptance", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+  test.setTimeout(120_000);
 
   test("Route 2: /admin/settings Full Acceptance Test Flow", async ({ page }) => {
+    test.skip(!hasAdminAuthFixtures(), "Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
     const consoleErrors: string[] = [];
     const hydrationWarnings: string[] = [];
 
@@ -38,9 +33,8 @@ test.describe("Phase 3 Admin Settings Acceptance", () => {
     await loginAsAdmin(page);
 
     // Navigate to /admin/settings
-    await page.goto("/admin/settings");
-    await page.waitForLoadState("networkidle");
-
+    await gotoAdminPage(page, "/admin/settings");
+    
     // 1. 無 console error、無 hydration warning
     expect(consoleErrors, `Console errors found: ${consoleErrors.join("\n")}`).toHaveLength(0);
     expect(hydrationWarnings, `Hydration warnings found: ${hydrationWarnings.join("\n")}`).toHaveLength(0);
@@ -65,44 +59,27 @@ test.describe("Phase 3 Admin Settings Acceptance", () => {
     // --- I. 合併後 container 順序（由上而下）---
     const c1Heading = page.locator("#financials-heading");
     const c2Heading = page.locator("#terms-heading");
-    const c3Heading = page.locator("#security-heading");
-    const c4Heading = page.locator("#auth-settings-heading");
-    const c5Heading = page.locator("#session-ctrl-heading");
+    const c3Heading = page.locator("#auth-settings-heading");
+    const c4Heading = page.locator("#session-ctrl-heading");
 
     await expect(c1Heading).toBeVisible();
     await expect(c2Heading).toBeVisible();
     await expect(c3Heading).toBeVisible();
     await expect(c4Heading).toBeVisible();
-    await expect(c5Heading).toBeVisible();
 
     const top1 = (await c1Heading.evaluate((el) => el.getBoundingClientRect().top));
     const top2 = (await c2Heading.evaluate((el) => el.getBoundingClientRect().top));
     const top3 = (await c3Heading.evaluate((el) => el.getBoundingClientRect().top));
     const top4 = (await c4Heading.evaluate((el) => el.getBoundingClientRect().top));
-    const top5 = (await c5Heading.evaluate((el) => el.getBoundingClientRect().top));
 
-    console.log(`[Container Vertical Tops] C1: ${top1}, C2: ${top2}, C3: ${top3}, C4: ${top4}, C5: ${top5}`);
+    console.log(`[Container Vertical Tops] C1: ${top1}, C2: ${top2}, C3: ${top3}, C4: ${top4}`);
 
-    // 「安全設定」(C4) 必須喺「Session Control」(C5) 上面
+    // 「安全設定」(C3) 必須喺「Session Control」(C4) 上面
     expect(top1).toBeLessThan(top2);
     expect(top2).toBeLessThan(top3);
     expect(top3).toBeLessThan(top4);
-    expect(top4).toBeLessThan(top5);
 
-    // --- J. 安全風控閾值 ---
-    // 1. 搵唔到「觸發臨時封禁累計檢報數」input
-    const tempBanInput = page.locator("text=觸發臨時封禁累計檢報數");
-    await expect(tempBanInput).toHaveCount(0);
-
-    // 2. 仍有「單筆免核准最大提現限額」同「觸發強制 KYC 累計交易額」
-    await expect(page.locator("label", { hasText: "單筆免核准最大提現限額" })).toBeVisible();
-    await expect(page.locator("label", { hasText: "觸發強制 KYC 累計交易額" })).toBeVisible();
-
-    // 3. 存在說明條，內容包含「系統硬性設定」同「管理員無法修改」
-    const noticeBar = page.getByText("觸發臨時封禁嘅累計檢報數由系統硬性設定，管理員無法修改。").first();
-    await expect(noticeBar).toBeVisible();
-
-    // --- K. 安全設定驗證 ---
+    // --- J. 安全設定驗證 ---
     const emailInput = page.locator("#admin-email");
     const updateEmailBtn = page.locator("button", { hasText: "更新電郵" });
 
@@ -164,12 +141,12 @@ test.describe("Phase 3 Admin Settings Acceptance", () => {
   });
 
   test("Mobile (390x844 iPhone 14) Visual & Responsiveness Verification", async ({ page }) => {
+    test.skip(!hasAdminAuthFixtures(), "Missing E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD");
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAsAdmin(page);
 
-    await page.goto("/admin/settings");
-    await page.waitForLoadState("networkidle");
-
+    await gotoAdminPage(page, "/admin/settings");
+    
     // Mobile Screenshot
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "mobile-settings.png"), fullPage: true });
 

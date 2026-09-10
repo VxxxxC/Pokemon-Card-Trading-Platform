@@ -36,14 +36,81 @@ test.describe("Member trading filters shell", () => {
     await gotoTradingPage(page);
 
     for (const label of ["全部", "待處理", "已完成", "已取消"]) {
-      await expect(page.getByRole("tab", { name: label }).first()).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${label}`) }).first(),
+      ).toBeVisible();
     }
 
     for (const label of ["買單", "賣單"]) {
-      await expect(page.getByRole("tab", { name: label }).first()).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${label}`) }).first(),
+      ).toBeVisible();
     }
 
     await expect(page.locator("#user-order-search")).toBeVisible();
+  });
+
+  test("filters and search persist after leaving trading and reset clears all", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "buyer", "Buyer-only filter persistence");
+    if (!hasBuyerAuthFixtures()) {
+      test.skip(true, "Missing E2E_BUYER_EMAIL or E2E_BUYER_PASSWORD");
+    }
+
+    await gotoTradingPage(page);
+    await selectTradingStatusTab(page, "待處理");
+    await selectTradingPersonaTab(page, "買單");
+    await page.locator("#user-order-search").fill("persist-filter-query");
+    await waitForTradingListSettled(page);
+
+    await expect(
+      page.getByRole("button", { name: /^待處理/ }).first(),
+    ).toHaveClass(/font-bold/);
+    await expect(
+      page.getByRole("button", { name: /^買單/ }).first(),
+    ).toHaveClass(/border-brand/);
+    await expect(page.locator("#user-order-search")).toHaveValue(
+      "persist-filter-query",
+    );
+
+    const orderRow = page.locator("#orders-list div.cursor-pointer.rounded-lg").first();
+    if (await orderRow.isVisible().catch(() => false)) {
+      await orderRow.click();
+      await page.waitForURL(/\/profile\/user\/orderDetail\//, {
+        timeout: 20_000,
+      });
+      await page.goBack();
+      await expect(page.locator("#user-trading-heading")).toBeVisible({
+        timeout: 20_000,
+      });
+      await waitForTradingListSettled(page);
+    } else {
+      await page.goto("/profile/user", { waitUntil: "domcontentloaded" });
+      await gotoTradingPage(page);
+    }
+
+    await expect(
+      page.getByRole("button", { name: /^待處理/ }).first(),
+    ).toHaveClass(/font-bold/);
+    await expect(
+      page.getByRole("button", { name: /^買單/ }).first(),
+    ).toHaveClass(/border-brand/);
+    await expect(page.locator("#user-order-search")).toHaveValue(
+      "persist-filter-query",
+    );
+
+    await page.getByRole("button", { name: "重設所有篩選" }).click();
+    await waitForTradingListSettled(page);
+
+    await expect(
+      page.getByRole("button", { name: /^全部/ }).first(),
+    ).toHaveClass(/font-bold/);
+    await expect(
+      page.getByRole("button", { name: /^不限/ }).first(),
+    ).toHaveClass(/border-brand/);
+    await expect(page.locator("#user-order-search")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "重設所有篩選" })).toBeDisabled();
   });
 });
 
@@ -60,7 +127,9 @@ test.describe.serial("Member trading filters with live order", () => {
       test.skip(true, "Missing member trading E2E env");
     }
 
-    const fixtureResult = await resolveE2eMarketplaceFixture();
+    const fixtureResult = await resolveE2eMarketplaceFixture({
+      requiredSellerPersona: "member",
+    });
     if (!fixtureResult.ok) {
       test.skip(true, fixtureResult.skipReason);
       return;
@@ -76,7 +145,7 @@ test.describe.serial("Member trading filters with live order", () => {
       return;
     }
 
-    const roomId = await ensureDbChatRoom(buyerId, sellerId);
+    let roomId = await ensureDbChatRoom(buyerId, sellerId);
     const [sellerDisplayName, buyerDisplayName] = await Promise.all([
       getProfileDisplayName(sellerId),
       getProfileDisplayName(buyerId),
@@ -103,6 +172,7 @@ test.describe.serial("Member trading filters with live order", () => {
         sellerDisplayName,
         buyerDisplayName,
       });
+      roomId = offerState.roomId;
       await acceptOfferAsSeller(
         sellerPage,
         roomId,
@@ -111,9 +181,14 @@ test.describe.serial("Member trading filters with live order", () => {
         offerLabel,
         buyerPage,
         sellerDisplayName,
+        sellerId,
+        buyerId,
       );
 
-      const memberOrderId = await pollMemberOrderIdForOffer(offerState.offerId);
+      const memberOrderId = await pollMemberOrderIdForOffer(offerState.offerId, {
+        listingId,
+        buyerId,
+      });
       const order = await getLatestMemberOrderForListing({ listingId, buyerId });
       if (order) {
         const guard = guardP2pMemberOrder(order);

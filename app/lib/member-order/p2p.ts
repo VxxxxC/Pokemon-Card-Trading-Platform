@@ -52,7 +52,7 @@ export function getAuthEscrowStepIndex(
 
 export const MEMBER_AUTH_SHIPPING_FEE = 30;
 export const MEMBER_AUTH_PLATFORM_SUBSIDY = 30;
-export const MEMBER_AUTH_SERVICE_FEE = 150;
+export { DEFAULT_AUTH_FEE_HKD as MEMBER_AUTH_SERVICE_FEE } from "@/lib/platform/auth-escrow-config";
 
 export function isPendingMemberOrderStatus(
   status: MemberOrderDbStatus | null | undefined,

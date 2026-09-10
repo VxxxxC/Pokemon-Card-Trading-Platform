@@ -7,8 +7,10 @@ import {
   getMerchantOrderDetail,
   type MerchantOrderDetail,
 } from "@/app/actions/orders";
+import { getPlatformCommissionRateForDisplay } from "@/app/actions/admin-settings";
 import { MerchantOrderDetailView } from "@/app/components/merchant/MerchantOrderDetailView";
 import { ReviewModal } from "@/app/components/trading/ReviewModal";
+import { DEFAULT_COMMISSION_RATE } from "@/lib/platform/financial-config";
 
 type ActiveReviewState = {
   orderId: string;
@@ -30,6 +32,9 @@ export default function MerchantOrderDetailPage() {
   const [loadedOrderId, setLoadedOrderId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeReview, setActiveReview] = useState<ActiveReviewState>(null);
+  const [defaultCommissionRate, setDefaultCommissionRate] = useState(
+    DEFAULT_COMMISSION_RATE,
+  );
 
   const loadOrder = useCallback(async () => {
     if (!orderId) {
@@ -55,6 +60,18 @@ export default function MerchantOrderDetailPage() {
     setLoadedOrderId(orderId);
     setFetchError(null);
   }, [orderId]);
+
+  useEffect(() => {
+    if (!isMounted) {
+      return;
+    }
+
+    void getPlatformCommissionRateForDisplay().then((result) => {
+      if (result.success) {
+        setDefaultCommissionRate(result.data.commissionRate);
+      }
+    });
+  }, [isMounted]);
 
   useEffect(() => {
   if (!isMounted) {
@@ -88,7 +105,7 @@ export default function MerchantOrderDetailPage() {
 
   if (!isMounted || isLoading) {
     return (
-      <div className="min-h-screen bg-[#17130f] flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="w-9 h-9 rounded-full border-2 border-brand border-t-transparent animate-spin" />
       </div>
     );
@@ -97,7 +114,7 @@ export default function MerchantOrderDetailPage() {
   if (!isOrderReady) {
     if (fetchError) {
       return (
-        <div className="min-h-screen bg-[#17130f] text-text-primary p-6 flex flex-col items-center justify-center gap-4">
+        <div className="py-16 text-center space-y-4">
           <p className="font-sans text-[14px] text-text-disabled">{fetchError}</p>
           <Link
             href="/profile/merchant/trading"
@@ -110,7 +127,7 @@ export default function MerchantOrderDetailPage() {
     }
 
     return (
-      <div className="min-h-screen bg-[#17130f] flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="w-9 h-9 rounded-full border-2 border-brand border-t-transparent animate-spin" />
       </div>
     );
@@ -118,7 +135,7 @@ export default function MerchantOrderDetailPage() {
 
   if (fetchError || !order) {
     return (
-      <div className="min-h-screen bg-[#17130f] text-text-primary p-6 flex flex-col items-center justify-center gap-4">
+      <div className="py-16 text-center space-y-4">
         <p className="font-sans text-[14px] text-text-disabled">
           {fetchError ?? "找不到指定的交易訂單記錄。"}
         </p>
@@ -138,6 +155,7 @@ export default function MerchantOrderDetailPage() {
         order={order}
         onRefresh={handleRefresh}
         onOpenReview={handleOpenReview}
+        defaultCommissionRate={defaultCommissionRate}
       />
       {activeReview && (
         <ReviewModal

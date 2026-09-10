@@ -2,192 +2,87 @@
 
 ## Status
 
-- **Backend:** ✅ Ready (list RPC + `getMerchantOrderDetail` + stub `submitMerchantLogistics`)
-- **Frontend:** ✅ Wired — `/profile/merchant/trading` list + `/profile/merchant/orderDetail/[id]` detail
-- **Stripe / mutations:** ⏳ Stripe deferred — `rpc_complete_merchant_order` + buyer complete wired for P2P B2C mock path
+- **Backend:** ✅ Ready (list RPC + `getMerchantOrderDetail` + auth inbound + **non-auth courier fulfillment**)
+- **Frontend:** ✅ Wired — type-aware timelines (auth vs direct) + SF fulfillment UI; **meetup aligned with P2P buyer confirm**
+- **Stripe:** ✅ Payment + payout via [merchant-checkout](../merchant-checkout/backend.md); auth grading via [admin-grading](../admin-grading/backend.md)
 
-## Changelog
+## Seller actions
 
-### 2026-07-18 (merchant listing persona order split)
+| Action | Scope | RPC / action |
+|--------|-------|----------------|
+| Submit inbound tracking | Auth orders at `payment_held` | `submitMerchantLogistics` → `rpc_submit_merchant_auth_inbound_tracking` |
+| Submit direct fulfillment | Non-auth **courier** at `payment_held` | `submitMerchantDirectFulfillment` → `rpc_submit_merchant_direct_fulfillment` |
+| Wait for buyer confirm | Non-auth **meetup** at `payment_held`; courier at `shipped` | Read-only — buyer `completeMerchantOrder` |
+| Wait for admin grading | `authenticating` / `authenticated` | Read-only; outbound by admin |
+| Review buyer | `completed_and_transferred` | `ReviewModal` |
 
-| Change | Detail |
-|--------|--------|
-| **`20260718100000`** | `rpc_accept_offer` — `seller_persona = merchant` → `merchant_orders` + `chat_messages.merchant_order_id` |
-| **`20260718110000`** | `rpc_complete_merchant_order` — buyer confirms receipt; chat `SYSTEM_ORDER_COMPLETED` with `merchant_order_id` |
-| **`completeMerchantOrder` / `completeBuyerOrder`** | `orderKind: 'merchant'` routes to new RPC |
-| **Buyer visibility** | `loadBuyerMerchantTradingOrders` merged into `searchUserTradingOrders` (buy persona) |
+`getMerchantSellerActionFlags()`:
 
-### 2026-07-17 (merchant order detail)
+- `canSubmitLogistics` = `payment_held` **and** `requires_authentication` (auth inbound only)
+- `canSubmitDirectFulfillment` = `payment_held` **and** `!requires_authentication` **and** `shipping_method !== 'meetup'`
 
-| Change | Detail |
-|--------|--------|
-| **`getMerchantOrderDetail`** | Single-order read for seller (`merchant_id = auth.uid()`) |
-| **`resolveMerchantOrderIdForMerchant`** | UUID or `ORD-*` → `merchant_orders.id` |
-| **`submitMerchantLogistics`** | Stub — returns `商戶發貨功能即將推出` |
-| **`getMerchantSellerActionFlags`** | `canSubmitLogistics`, `canReviewBuyer` |
+`fn_merchant_order_needs_seller_action` (migration `20260803120100`):
 
-### 2026-07-17 (merchant trading list)
+- Auth: `payment_held` + no `inbound_tracking_no`
+- Non-auth: `payment_held` (awaiting merchant ship — **meetup excluded at UI level**; seller has no CTA)
 
-| Change | Detail |
-|--------|--------|
-| **Migration `20260717150000`** | `search_merchant_trading_orders` RPC; `fn_merchant_order_is_open`; `fn_merchant_order_needs_seller_action`; `fn_merchant_order_is_auth_in_progress`; `merchant_orders_participant_read` RLS |
-| **`searchMerchantTradingOrders`** | Server action in `app/actions/orders.ts` |
-| **Dual fulfillment** | `requires_authentication` on `merchant_orders` — buyer opt-in at checkout (Stripe milestone) |
+## `escrow_state` → seller UX
 
-## B2C fulfillment model
+| Status | Auth order | Non-auth courier | Non-auth meetup |
+|--------|------------|------------------|-----------------|
+| `pending_payment` | Wait for buyer checkout | Same | Same |
+| `payment_held` | Submit inbound tracking | **Submit SF tracking** | Read-only — wait for buyer confirm |
+| `shipped` | N/A | Read-only — show outbound tracking; wait for buyer | N/A (buyer confirms at `payment_held`) |
+| `authenticating` | Read-only — grading | N/A | N/A |
+| `authenticated` | Read-only — show `outbound_tracking_no` if set | N/A | N/A |
+| `completed_and_transferred` | Review buyer | Same | Same |
 
-| Signal | Column | Notes |
-|--------|--------|-------|
-| Buyer auth opt-in | `merchant_orders.requires_authentication` | Set at B2C checkout (future) |
-| Escrow state | `merchant_orders.escrow_status` | `escrow_state` enum |
-| Funds | Stripe Escrow | Full pay → hold until buyer confirms receipt → `completed_and_transferred` |
+## Direct fulfillment RPC
 
-### `escrow_state` → tab filters
+`rpc_submit_merchant_direct_fulfillment(p_order_id, p_merchant_id, p_tracking_no?, p_courier_name?)`
 
-| Tab | Filter |
-|-----|--------|
-| 待處理 (`pending`) | `payment_held`, `authenticating`, `authenticated` (+ sub-filters) |
-| 已完成 (`completed`) | `completed_and_transferred` |
-| 已取消 (`cancelled`) | `refunded` |
+- Guards: `auth.uid() = merchant_id`, `requires_authentication = false`, `escrow_status = payment_held`, `stripe_payment_intent_id IS NOT NULL`
+- `shipping_method = 'sf'`: tracking required → writes `outbound_tracking_no` → `shipped`
+- `shipping_method = 'meetup'`: RPC still exists for legacy/manual use; **UI no longer triggers** — buyer confirms at `payment_held`
 
-### Pending sub-filters
+`rpc_prepare_merchant_order_payout` non-auth branch (migration `20260803120800`):
 
-| UI checkbox | RPC param | SQL |
-|-------------|-----------|-----|
-| 待付款 | `p_include_payment_pending` | `escrow_status = 'payment_held'` |
-| 鑑定中 | `p_include_auth_in_progress` | `requires_authentication = true` AND `escrow_status IN ('authenticating','authenticated')` |
+- **Meetup:** allows `payment_held` (P2P-aligned buyer confirm)
+- **Courier:** requires `shipped` (unchanged)
+- Auth branch unchanged
 
-> **Copy note:** UI label「待付款」in B2C means **buyer already paid (Stripe held)** — merchant must ship. Not awaiting buyer payment.
+## Migrations
 
-### Needs-action banner
-
-`count_needs_action` = orders where `escrow_status = 'payment_held'` (merchant must ship to platform or buyer).
+| File | Content |
+|------|---------|
+| `20260803120000_escrow_state_shipped.sql` | `ALTER TYPE escrow_state ADD VALUE 'shipped'` |
+| `20260803120100_merchant_direct_shipped.sql` | `rpc_submit_merchant_direct_fulfillment`; patch payout prepare + `fn_merchant_order_is_open` / `fn_merchant_order_needs_seller_action`; rebuild `search_merchant_trading_orders` |
+| `20260803120300_merchant_finalize_shipped.sql` | `rpc_finalize_merchant_order_payout` accepts `shipped` (non-auth buyer confirm) |
+| `20260803120700_merchant_direct_fulfillment_single_overload.sql` | Single 4-arg `rpc_submit_merchant_direct_fulfillment` overload |
+| **`20260803120800_merchant_meetup_buyer_confirm.sql`** | Meetup: `rpc_prepare_merchant_order_payout` allows `payment_held` |
 
 ## Server action: `getMerchantOrderDetail`
 
-```ts
-import {
-  getMerchantOrderDetail,
-  type MerchantOrderDetail,
-  type GetMerchantOrderDetailResult,
-} from "@/app/actions/orders";
-```
+Returns `outboundTrackingNo`, `itemSubtotal`, `shippingFee`, `shippingMethod`, `totalAmount`, `canSubmitDirectFulfillment` for receipt + fulfillment UI.
 
-| Param | Notes |
-|-------|-------|
-| `orderId` | `merchant_orders.id` (UUID) or `order_number` (`ORD-2026-*`) |
+## Dev note — existing `payment_held` non-auth orders
 
-Auth: **seller only** — `merchant_id` must equal `auth.uid()`.
+- **Courier** orders at `payment_held`: merchant must call `submitMerchantDirectFulfillment` to reach `shipped` before buyer confirm.
+- **Meetup** orders at `payment_held`: buyer can confirm immediately after migration `20260803120800` is applied (no merchant confirm step).
 
-`MerchantOrderDetail` extends `MerchantTradingOrder` with:
+## Pending payment expiry
 
-| Field | Source |
-|-------|--------|
-| `listingId` | `merchant_orders.listing_id` |
-| `listingImageUrls` | Parsed from `listings.images` |
-| `logisticsProofPath` | `merchant_orders.logistics_proof_path` |
-| `canSubmitLogistics` | `escrow_status === 'payment_held'` |
-| `canReviewBuyer` | `completed_and_transferred` && `!hasReviewedByMe` |
-
-### Stub: `submitMerchantLogistics(orderId, trackingNo)`
-
-Returns `{ success: false, error: "商戶發貨功能即將推出" }` until Stripe milestone.
-
-## Server action: `searchMerchantTradingOrders`
-
-```ts
-import {
-  searchMerchantTradingOrders,
-  type GetMerchantTradingOrdersInput,
-  type MerchantTradingOrder,
-  type MerchantTradingFilterCounts,
-} from "@/app/actions/orders";
-```
-
-### Input
-
-```ts
-type GetMerchantTradingOrdersInput = {
-  tabStatus: "all" | "pending" | "completed" | "cancelled";
-  searchQuery?: string;
-  page?: number;      // default 1
-  pageSize?: number;  // default 8, max 50
-  includePaymentPending?: boolean;  // default true
-  includeAuthInProgress?: boolean;  // default true
-};
-```
-
-Auth: RPC filters `merchant_id = auth.uid()` (seller dashboard only).
-
-### Success response
-
-```ts
-{
-  success: true,
-  data: MerchantTradingOrder[];
-  meta: TradingOrdersPaginationMeta;
-  filters: {
-    status: { all, pending, completed, cancelled };
-    needsAction: number;
-    pendingSub: { payment, authInProgress };
-  };
-}
-```
-
-### RPC
-
-```sql
-SELECT * FROM search_merchant_trading_orders(
-  p_tab_status := 'pending',
-  p_search_query := '皮卡丘',
-  p_page := 1,
-  p_page_size := 8,
-  p_include_payment_pending := true,
-  p_include_auth_in_progress := true
-);
-```
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `supabase/migrations/20260717150000_search_merchant_trading_orders.sql` | RPC + helpers + RLS |
-| `app/actions/orders.ts` | `searchMerchantTradingOrders`, `getMerchantOrderDetail`, stubs |
-| `lib/merchant-order/resolve-order-id.ts` | Merchant order ID resolve |
-| `app/lib/merchant-order/merchant-seller-actions.ts` | Seller action flags |
-| `lib/merchant-order/constants.ts` | Tab URL mapping, page sizes |
-| `app/lib/merchant-order/map-sale-order.ts` | `escrow_state` → `SaleOrder` for row UI |
-
-## Stripe deferred (do not implement in this flow)
-
-- `app/checkout/[id]` real PaymentIntent
-- `stripe_payment_intent_id` webhook writes
-- `rpc_complete_merchant_order` / buyer confirm receipt
-- See [merchant_checkout_follow_up.md](../merchant_checkout_follow_up.md)
+48h unpaid merchant orders: `rpc_finalize_merchant_pending_payment_expiry` + cron `/api/cron/expire-merchant-pending-payment` (see merchant-checkout backend §10).
 
 ## How to verify
 
 ```bash
 bunx supabase db push
+bun run supabase:types
+bunx tsc --noEmit && bun run lint && bun run build:ci
 ```
 
-Seed (service role / SQL editor):
-
-```sql
-INSERT INTO merchant_orders (
-  buyer_id, merchant_id, listing_id, final_price,
-  escrow_status, requires_authentication, order_number
-) VALUES (
-  '<buyer_uuid>', '<merchant_uuid>', '<listing_uuid>', 1200,
-  'payment_held', true, 'ORD-2026-TEST01'
-);
-```
-
-1. Log in as merchant → `/profile/merchant/trading`
-2. Expect row with `#ORD-2026-TEST01`, needs-action banner if `payment_held`
-3. Tab / search / sub-filters / pagination
-
-```bash
-bunx tsc --noEmit
-bun run build:ci
-```
+1. Non-auth SF: buyer pays → seller submits tracking → `shipped` → buyer confirms → `completed_and_transferred`
+2. Non-auth meetup: buyer pays → **buyer confirms at `payment_held`** → `completed_and_transferred` (no merchant「確認已面交」)
+3. Auth: seller submits inbound → read-only until admin intake
+4. Regression: Member P2P meetup / auth orders unchanged

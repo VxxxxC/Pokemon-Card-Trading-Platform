@@ -5,17 +5,9 @@ import { MEMBER_PERSONA_FEATURES_BLOCKED_ERROR } from "@/lib/auth/member-persona
 import {
   clearPersistedListingPersona,
   persistActiveListingPersona,
-  readPersistedListingPersona,
   resolveAddAssetSellerPersona,
   type ListingSellerPersona,
 } from "@/lib/listings/active-listing-persona";
-
-function initialActiveListingPersona(): ListingSellerPersona {
-  if (typeof window === "undefined") {
-    return "member";
-  }
-  return readPersistedListingPersona() ?? "member";
-}
 
 export type { ListingSellerPersona } from "@/lib/listings/active-listing-persona";
 export { resolveAddAssetSellerPersona } from "@/lib/listings/active-listing-persona";
@@ -73,7 +65,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   addAssetMode: "hobby",
   addAssetSellPrefill: null,
   addAssetSellerPersona: "member",
-  activeListingPersona: initialActiveListingPersona(),
+  // Always "member" on first paint — matches SSR. ActiveListingPersonaSync restores persisted persona after hydration.
+  activeListingPersona: "member",
   userAuthRole: "GUEST",
   isIosPwaModalOpen: false,
   isExecutionSlideOverOpen: false,

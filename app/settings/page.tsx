@@ -105,7 +105,7 @@ export default function SettingsPage() {
       <TopNav />
       <MobileHeader />
 
-      <main className="flex-1 max-w-300 mx-auto w-full px-4 lg:px-8 py-6 pb-28 lg:pb-8">
+      <main className="flex-1 max-w-[1100px] mx-auto w-full px-4 lg:px-8 py-6 pb-28 lg:pb-8">
         <h1 className="font-sans font-bold text-[24px] text-text-primary mb-6">
           設定
         </h1>

@@ -16,11 +16,16 @@ export type InventorySummary = {
 
 export type InventorySellerPersona = "member" | "merchant";
 
+export type InventoryStatusFilter = InventoryDbListingStatus;
+
+export const DEFAULT_INVENTORY_STATUS_FILTER: InventoryStatusFilter = "active";
+
 export type GetUserInventoryGroupsInput = {
   query?: string;
   page?: number;
   pageSize?: number;
   sellerPersona?: InventorySellerPersona;
+  statusFilter?: InventoryStatusFilter;
 };
 
 export type InventoryGroupsPage = {

@@ -1,5 +1,5 @@
-export const TRADING_DEFAULT_PAGE_SIZE = 8;
-export const TRADING_MOBILE_PAGE_SIZE = 5;
+export const TRADING_DEFAULT_PAGE_SIZE = 20;
+export const TRADING_MOBILE_PAGE_SIZE = 20;
 export const TRADING_MOBILE_BREAKPOINT_PX = 768;
 export const TRADING_SEARCH_DEBOUNCE_MS = 300;
 
@@ -21,7 +21,7 @@ export const TAB_STATUS_TO_PARAM: Record<TabStatusFilter, string> = {
 };
 
 export const PERSONA_OPTIONS: { value: PersonaFilter; label: string }[] = [
-  { value: "all", label: "全部" },
+  { value: "all", label: "不限" },
   { value: "buy", label: "買單" },
   { value: "sell", label: "賣單" },
 ];

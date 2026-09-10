@@ -16,7 +16,7 @@ export type ListingSellerSnippet = {
 type SellerPersona = Database["public"]["Enums"]["seller_persona_type"];
 
 type ProfileSnippetRow = Pick<
-  Database["public"]["Tables"]["profiles"]["Row"],
+  Database["public"]["Views"]["public_profiles"]["Row"],
   "id" | "username" | "display_name" | "avatar_path"
 >;
 
@@ -42,7 +42,7 @@ export async function loadProfileSnippetsByIds(
   }
 
   const { data, error } = await supabase
-    .from("profiles")
+    .from("public_profiles")
     .select("id, username, avatar_path")
     .in("id", uniqueIds);
 
@@ -53,6 +53,9 @@ export async function loadProfileSnippetsByIds(
 
   const snippets = new Map<string, ProfileSnippet>();
   for (const row of (data ?? []) as ProfileSnippetRow[]) {
+    if (!row.id) {
+      continue;
+    }
     snippets.set(row.id, {
       username: row.username?.trim() || null,
       avatarUrl: resolveAvatarUrl(row.avatar_path),
@@ -63,7 +66,7 @@ export async function loadProfileSnippetsByIds(
 }
 
 export async function loadListingSellerSnippets(
-  supabase: SupabaseClient<Database>,
+  supabase: Pick<SupabaseClient<Database>, "from">,
   rows: ReadonlyArray<{ sellerId: string; sellerPersona: SellerPersona }>,
 ): Promise<Map<string, ListingSellerSnippet>> {
   const uniqueSellerIds = [
@@ -75,7 +78,7 @@ export async function loadListingSellerSnippets(
 
   const [profilesResult, shopsResult] = await Promise.all([
     supabase
-      .from("profiles")
+      .from("public_profiles")
       .select("id, username, display_name, avatar_path")
       .in("id", uniqueSellerIds),
     supabase
@@ -86,7 +89,7 @@ export async function loadListingSellerSnippets(
 
   if (profilesResult.error) {
     console.error(
-      "[loadListingSellerSnippets] profiles",
+      "[loadListingSellerSnippets] public_profiles",
       profilesResult.error.message,
     );
     return new Map();
@@ -101,6 +104,9 @@ export async function loadListingSellerSnippets(
 
   const profilesById = new Map<string, ProfileSnippetRow>();
   for (const row of (profilesResult.data ?? []) as ProfileSnippetRow[]) {
+    if (!row.id) {
+      continue;
+    }
     profilesById.set(row.id, row);
   }
 
@@ -125,7 +131,12 @@ export async function loadListingSellerSnippets(
 
     if (row.sellerPersona === "merchant") {
       snippets.set(key, {
-        displayName: shop?.shop_name?.trim() || memberDisplayName,
+        displayName:
+          shop?.shop_name?.trim() ||
+          profile?.display_name?.trim() ||
+          shop?.shop_handle?.trim() ||
+          profile?.username?.trim() ||
+          "平台用戶",
         username: shop?.shop_handle?.trim() || profile?.username?.trim() || null,
         avatarUrl: resolveAvatarUrl(shop?.shop_avatar_path),
       });

@@ -13,6 +13,15 @@ const allowedDevOrigins = Array.from(
 
 const nextConfig: NextConfig = {
   allowedDevOrigins,
+  async redirects() {
+    return [
+      {
+        source: "/default-icon",
+        destination: "/default-icon.png",
+        permanent: false,
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",

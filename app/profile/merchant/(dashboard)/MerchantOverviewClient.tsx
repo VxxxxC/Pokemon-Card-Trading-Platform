@@ -8,6 +8,7 @@ import { Camera } from "lucide-react";
 import { toast } from "sonner";
 import { CiSettings } from "react-icons/ci";
 import { updateMerchantShopAvatar } from "@/app/actions/merchant-settings";
+import { DASHBOARD_SECTION_TITLE_CLASS } from "@/app/profile/dashboard-ui";
 import { MerchantOrderRow } from "@/app/components/merchant/MerchantOrderRow";
 import { ProfilePersonaSwitch } from "@/app/components/profile/ProfilePersonaSwitch";
 import { PublicReviewPreviewCard } from "@/app/components/profile/PublicReviewPreviewCard";
@@ -128,41 +129,52 @@ export function MerchantOverviewClient({
         </div>
       ) : null}
 
-      {/* ── 🟢 1. MERCHANT HERO HEADER (升級版商戶自豪看板) ───────────────── */}
+      {shop && !shop.kycVerified ? (
+        <div className="mb-4 px-4 py-3 bg-[rgba(212,165,116,0.08)] border border-brand/25 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="font-sans text-[13px] text-brand">
+            完成商戶驗證後方可收款與上架商品
+          </p>
+          <Link
+            href="/profile/user/merchant-apply"
+            className="inline-flex items-center justify-center font-mono text-[11px] font-bold text-[#1A1612] bg-brand px-3 py-1.5 rounded-md hover:bg-[#e8b896] transition-colors shrink-0"
+          >
+            前往入駐申請 →
+          </Link>
+        </div>
+      ) : null}
+
+      {/* ── Merchant hero ─────────────────────────────────────────────── */}
       <section
-        className="relative mb-5 rounded-2xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)] animate-fadeIn"
+        className="mb-4 rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)] animate-fadeIn"
         aria-labelledby="merchant-hero-name"
       >
-        <Link
-          href="/profile/merchant/settings"
-          className="absolute top-4 right-4 z-12 w-12 h-12 rounded-full bg-[#17130f]/60 backdrop-blur-xs border border-[rgba(237,232,224,0.15)] text-text-secondary hover:text-brand hover:border-brand/40 flex items-center justify-center transition-all cursor-pointer shadow-md"
-          title="店舖設定"
-        >
-          <div className="p-2 flex flex-row items-center gap-2">
-            <CiSettings size={24} aria-hidden="true" />
-          </div>
-        </Link>
-
         {topBannerUrl ? (
-          <div className="relative h-36 sm:h-40 w-full">
+          <div className="relative h-20 sm:h-24 w-full">
             <Image
               src={topBannerUrl}
               alt={`${shopName} 店舖橫幅`}
               fill
               className="object-cover"
-              sizes="(max-width: 1280px) 100vw, 1200px"
+              sizes="(max-width: 1280px) 100vw, 1100px"
               priority
               unoptimized
             />
             <div className="absolute inset-0 bg-linear-to-t from-bg-card via-[rgba(38,33,28,0.35)] to-transparent" />
           </div>
-        ) : (
-          <div className="h-24 bg-linear-to-r from-[#2a2318] via-[rgba(212,165,116,0.12)] to-[#2a2318]" />
-        )}
-        <div className="px-5 pb-5">
-          <div className="flex items-end justify-between -mt-10 mb-3 gap-3">
-            <div className="relative w-20 h-20 shrink-0">
-              <div className="relative w-full h-full rounded-full border-2 border-bg-card shadow-[0_4px_12px_rgba(0,0,0,0.50)] overflow-hidden bg-[#17130f]">
+        ) : null}
+
+        <div className="relative px-4 pt-3 pb-4 sm:px-5 sm:pt-4">
+          <Link
+            href="/profile/merchant/settings"
+            className="absolute top-3 right-3 z-12 p-1 text-text-secondary hover:text-brand transition-colors"
+            title="店舖設定"
+          >
+            <CiSettings size={16} aria-hidden="true" />
+          </Link>
+
+          <div className="flex items-start gap-3 pr-8">
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0">
+              <div className="relative w-full h-full rounded-full border-2 border-bg-card overflow-hidden bg-[#17130f]">
                 <Image
                   src={displayAvatarUrl}
                   alt={`${shopName} 的商舖頭像`}
@@ -187,50 +199,72 @@ export function MerchantOverviewClient({
                 type="button"
                 onClick={handleAvatarEditClick}
                 disabled={isAvatarUploading}
-                className="absolute -bottom-0.5 -right-0.5 z-10 w-6 h-6 rounded-full bg-[#17130f]/90 border border-[rgba(237,232,224,0.2)] text-text-secondary hover:text-brand hover:border-brand/40 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="absolute -bottom-0.5 -right-0.5 z-10 w-5 h-5 rounded-full bg-[#17130f]/90 border border-[rgba(237,232,224,0.2)] text-text-secondary hover:text-brand hover:border-brand/40 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="更換店舖頭像"
                 aria-label="更換店舖頭像"
               >
-                <Camera size={12} aria-hidden="true" />
+                <Camera size={10} aria-hidden="true" />
               </button>
             </div>
-            {dualPersona.hasDualPersona ? (
-              <ProfilePersonaSwitch
-                activeContext="merchant"
-                context={dualPersona}
-                className="mb-1 shrink-0"
-              />
-            ) : null}
-          </div>
 
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            <h1
-              id="merchant-hero-name"
-              className="font-sans font-bold text-[22px] text-text-primary tracking-tight"
-            >
-              {shopName}
-            </h1>
-            {shop?.kycVerified ? (
-              <span className="inline-flex items-center gap-1 font-mono text-[10px] text-success bg-[rgba(16,185,129,0.12)] px-2 py-0.5 rounded-md border border-success/20 font-bold">
-                ✓ KYC 已驗證
-              </span>
-            ) : null}
-            {shop?.stripeConnected ? (
-              <span className="inline-flex items-center gap-1 font-mono text-[10px] text-brand bg-brand/10 px-2 py-0.5 rounded-md border border-brand/20 font-bold">
-                ● Stripe 已連結
-              </span>
-            ) : null}
+            <div className="min-w-0 flex-1">
+              <h1
+                id="merchant-hero-name"
+                className="font-sans font-bold text-[17px] sm:text-[20px] text-text-primary tracking-tight truncate"
+              >
+                {shopName}
+              </h1>
+              <p className="font-mono text-[11px] text-brand mt-0.5 truncate">
+                {shopMeta}
+              </p>
+              {dualPersona.hasDualPersona ? (
+                <ProfilePersonaSwitch
+                  activeContext="merchant"
+                  context={dualPersona}
+                  className="mt-1.5 block"
+                />
+              ) : null}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {shop?.kycVerified ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] text-success bg-[rgba(16,185,129,0.12)] px-2 py-0.5 rounded-md border border-success/20 font-bold">
+                    ✓ KYC 已驗證
+                  </span>
+                ) : shop ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] text-brand bg-brand/10 px-2 py-0.5 rounded-md border border-brand/20 font-bold">
+                    審核中
+                  </span>
+                ) : null}
+                {shop?.stripeConnected ? (
+                  <a
+                    href="/api/stripe/connect/dashboard"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-[#635bff] bg-[rgba(99,91,255,0.10)] px-2 py-0.5 rounded-md border border-[rgba(99,91,255,0.25)] font-bold hover:bg-[rgba(99,91,255,0.16)] transition-colors"
+                  >
+                    管理 Stripe 收款 →
+                  </a>
+                ) : null}
+                {shop?.kycVerified && !shop.stripeConnected ? (
+                  <a
+                    href="/api/stripe/connect/onboard"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-brand bg-brand/10 px-2 py-0.5 rounded-md border border-brand/20 font-bold hover:bg-brand/15 transition-colors"
+                  >
+                    完成 Stripe 收款設定 →
+                  </a>
+                ) : null}
+              </div>
+            </div>
           </div>
-          <p className="font-mono text-[12px] text-text-secondary mt-0.5">
-            {shopMeta}
-          </p>
+        </div>
 
-          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-[rgba(237,232,224,0.06)] flex-wrap">
-            <div className="flex flex-col">
-              <span className="font-mono text-[9px] text-text-disabled uppercase tracking-wider">
-                商戶級別
-              </span>
-              <span className="inline-flex items-center gap-1.5 font-mono text-[12px] font-bold text-brand mt-1 bg-[rgba(212,165,116,0.08)] border border-brand/20 px-2 py-0.5 rounded-md">
+        <div
+          className="flex border-t border-[rgba(237,232,224,0.06)] divide-x divide-[rgba(237,232,224,0.06)]"
+          aria-label="商戶概覽統計"
+        >
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              商戶級別
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-brand leading-tight mt-1 truncate">
+              <span className="inline-flex items-center gap-1">
                 {mainTitle?.badgeUrl ? (
                   <TitleBadgeIcon
                     src={mainTitle.badgeUrl}
@@ -240,86 +274,93 @@ export function MerchantOverviewClient({
                 ) : (
                   <span>🏪</span>
                 )}
-                {mainTitleLabel}
+                <span className="truncate">{mainTitleLabel}</span>
               </span>
-            </div>
-            <div className="w-px h-7 bg-white/5 self-end hidden sm:block" />
-            <div className="flex flex-col">
-              <span className="font-mono text-[9px] text-text-disabled uppercase tracking-wider">
-                信用評分
-              </span>
-              <span className="font-mono text-[13px] text-text-primary font-bold mt-1">
-                ⭐ {ratingScore}{" "}
-                <span className="text-text-disabled font-normal text-[11px]">
-                  ({reviewCount} 評)
-                </span>
-              </span>
-            </div>
-            <div className="w-px h-7 bg-white/5 self-end hidden sm:block" />
-            <div className="flex flex-col">
-              <span className="font-mono text-[9px] text-text-disabled uppercase tracking-wider">
-                在庫資產
-              </span>
-              <span className="font-mono text-[13px] text-text-primary font-bold mt-1">
-                {totalListings}{" "}
-                <span className="text-[11px] text-text-secondary font-normal">
-                  件在售
-                </span>
-              </span>
-            </div>
+            </p>
           </div>
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              信用評分
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-text-primary leading-tight mt-1 truncate tabular-nums">
+              ⭐ {ratingScore}
+              <span className="text-text-disabled font-normal text-[10px] sm:text-[11px]">
+                {" "}
+                ({reviewCount} 評)
+              </span>
+            </p>
+          </div>
+          <div className="flex-1 min-w-0 px-3 py-3 sm:px-4 sm:py-3.5">
+            <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
+              在庫資產
+            </p>
+            <p className="font-mono font-bold text-[13px] sm:text-[15px] text-text-primary leading-tight mt-1 truncate tabular-nums">
+              {totalListings}
+              <span className="text-text-secondary font-normal text-[10px] sm:text-[11px]">
+                {" "}
+                件在售
+              </span>
+            </p>
+          </div>
+        </div>
 
-          <div className="pt-4 max-w-xl">
-            <div className="relative flex justify-between items-center">
-              <div className="absolute top-3.25 left-2 right-2 h-px bg-white/5 z-0" />
-              {stepper.map((step) => (
+        <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-t border-[rgba(237,232,224,0.06)]">
+          <div className="hidden sm:flex items-start">
+            {stepper.map((step, i) => (
+              <React.Fragment key={step.tier}>
                 <div
-                  key={step.tier}
-                  className="relative flex flex-col items-center z-10 flex-1"
+                  className={`flex flex-col items-center gap-1 min-w-0 flex-1 ${step.isActive ? "opacity-100" : step.isDone ? "opacity-80" : "opacity-45"}`}
                 >
                   <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center font-mono text-[11px] font-bold transition-colors ${
+                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-mono text-[10px] font-bold border transition-colors ${
                       step.isActive
-                        ? "bg-brand text-[#17130f] shadow-[0_0_10px_rgba(212,165,116,0.35)]"
+                        ? "bg-brand border-brand text-[#17130f]"
                         : step.isDone
-                          ? "bg-[#322a24] text-brand border border-brand/20"
-                          : "bg-bg-card text-text-disabled border border-white/5"
+                          ? "bg-[rgba(212,165,116,0.15)] border-brand/40 text-brand"
+                          : "bg-bg-elevated border-[rgba(237,232,224,0.12)] text-text-disabled"
                     }`}
                   >
                     {step.tier}
                   </div>
                   <span
-                    className={`font-sans text-[10px] mt-1.5 whitespace-nowrap tracking-tight ${
+                    className={`font-mono text-[8px] sm:text-[9px] text-center leading-tight w-full truncate px-0.5 ${
                       step.isActive
                         ? "text-brand font-bold"
-                        : "text-text-disabled"
+                        : step.isDone
+                          ? "text-text-secondary"
+                          : "text-text-disabled"
                     }`}
                   >
                     {step.label}
                   </span>
                 </div>
-              ))}
-            </div>
+                {i < stepper.length - 1 ? (
+                  <div
+                    className={`h-px w-2 shrink-0 self-center mt-[-12px] ${step.isDone ? "bg-brand/50" : "bg-[rgba(237,232,224,0.1)]"}`}
+                  />
+                ) : null}
+              </React.Fragment>
+            ))}
           </div>
 
-          <div className="max-w-xl pt-4 space-y-1.5">
-            <div className="flex justify-between items-center font-mono text-[11px]">
-              <span className="text-text-disabled">
+          <div className="mt-0 sm:mt-2">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="font-mono text-[10px] sm:text-[11px] text-text-secondary truncate">
                 {titleProgress.nextTitleName ? (
                   <>
                     升至{" "}
-                    <span className="text-text-primary font-bold">
-                      {titleProgress.nextTitleName}
-                    </span>
+                    <span className="text-brand">{titleProgress.nextTitleName}</span>
                   </>
                 ) : (
-                  <span className="text-text-primary font-bold">已達最高稱號</span>
+                  <span className="text-brand">已達最高稱號</span>
                 )}
               </span>
-              <span className="text-brand font-bold">{titleProgress.progressLabel}</span>
+              <span className="font-mono text-[10px] sm:text-[11px] text-text-secondary shrink-0">
+                {titleProgress.progressLabel}
+              </span>
             </div>
             <div
-              className="w-full h-1.5 bg-[#17130f] rounded-full overflow-hidden border border-white/5"
+              className="w-full h-1.5 bg-bg-elevated rounded-full overflow-hidden"
               role="progressbar"
               aria-valuenow={titleProgress.completedTrades}
               aria-valuemax={
@@ -328,15 +369,15 @@ export function MerchantOverviewClient({
               aria-valuemin={0}
             >
               <div
-                className="h-full bg-linear-to-r from-[#d4a574] to-[#e8b896] rounded-full transition-all duration-500"
+                className="h-full bg-brand rounded-full transition-all duration-500"
                 style={{ width: `${titleProgress.progressPercent}%` }}
               />
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pt-4 pb-0.5 scrollbar-none max-w-xl">
+          <div className="flex gap-2 overflow-x-auto pt-3 scrollbar-none">
             {activityBadges.length === 0 ? (
-              <p className="font-sans text-[12px] text-text-disabled px-1 py-1">
+              <p className="font-sans text-[11px] text-text-disabled px-0.5">
                 暫無活動徽章
               </p>
             ) : (
@@ -344,10 +385,10 @@ export function MerchantOverviewClient({
                 <div
                   key={badge.id}
                   title={badge.description}
-                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 bg-[#17130f] border border-[rgba(237,232,224,0.06)] rounded-lg"
+                  className="shrink-0 flex items-center gap-1.5 px-2 py-1 bg-bg-elevated border border-[rgba(237,232,224,0.06)] rounded-lg"
                 >
                   <TitleBadgeIcon src={badge.badgeUrl} alt={badge.nameZh} size="sm" />
-                  <span className="font-mono text-[10.5px] text-[#d4c4b7]">
+                  <span className="font-mono text-[10px] text-text-secondary">
                     {badge.nameZh}
                   </span>
                 </div>
@@ -357,107 +398,123 @@ export function MerchantOverviewClient({
         </div>
       </section>
 
-      <section aria-labelledby="revenue-heading" className="mb-5">
+      <section aria-labelledby="revenue-heading" className="mb-4">
         <h2 id="revenue-heading" className="sr-only">
           經營業績與快報分析
         </h2>
 
-        <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 space-y-5 shadow-sm">
-          <div className="grid grid-cols-2 gap-4 w-full">
-            <div className="space-y-1">
-              <p className="font-mono text-[11px] text-text-secondary uppercase tracking-wider select-none">
+        <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card p-3.5 sm:p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <div className="min-w-0">
+              <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
                 本月營收
               </p>
-              <p className="font-mono font-black text-[20px] md:text-[23px] text-text-primary leading-none tracking-tight">
+              <p className="font-mono font-bold text-[15px] sm:text-[17px] text-text-primary leading-tight mt-1 truncate tabular-nums">
                 {formatDashboardCurrency(monthlyRevenue)}
               </p>
             </div>
 
-            <div className="space-y-1 pl-4 border-l border-white/5">
-              <p className="font-mono text-[11px] text-text-secondary uppercase tracking-wider select-none">
+            <div className="min-w-0 pl-3 border-l border-[rgba(237,232,224,0.06)]">
+              <p className="font-mono text-[9px] sm:text-[10px] text-text-secondary truncate leading-tight">
                 本月訂單
               </p>
-              <p className="font-mono font-black text-[20px] md:text-[23px] text-text-primary leading-none tracking-tight">
-                {monthlyOrderCount}{" "}
-                <span className="font-sans text-[12px] text-text-secondary font-normal">
+              <p className="font-mono font-bold text-[15px] sm:text-[17px] text-text-primary leading-tight mt-1 truncate tabular-nums">
+                {monthlyOrderCount}
+                <span className="font-sans text-[11px] text-text-secondary font-normal">
+                  {" "}
                   單
                 </span>
               </p>
-              <p className="font-mono text-[11px] text-warning font-medium">
+              <p className="font-mono text-[10px] text-warning font-medium mt-0.5">
                 {pendingOrderCount} 件待處理
               </p>
             </div>
           </div>
 
-          <div className="pt-0.5">
-            <Link
-              href="/profile/merchant/performance"
-              className="flex items-center justify-center gap-1.5 w-full h-11 bg-linear-to-r from-[#d4a574] to-[#e8b896] hover:from-[#e8b896] hover:to-[#d4a574] text-[#17130f] font-sans text-[13.5px] font-black rounded-xl transition-all duration-300 shadow-[0_4px_15px_rgba(212,165,116,0.18)] active:scale-[0.98] cursor-pointer"
-              title="進入商戶數據與業績分析控制艙"
-            >
-              <span>經營分析 📈</span>
-            </Link>
-          </div>
+          <Link
+            href="/profile/merchant/performance"
+            className="flex items-center justify-center w-full h-10 rounded-lg bg-brand hover:bg-brand-hover text-[#17130f] font-sans text-[13px] font-semibold transition-colors active:scale-[0.98]"
+            title="進入商戶數據與業績分析控制艙"
+          >
+            經營分析 →
+          </Link>
         </div>
       </section>
 
-      <section aria-labelledby="pending-heading" className="mb-5">
-        <div className="flex items-center justify-between mb-3">
+      <section
+        className="rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)]"
+        aria-labelledby="pending-heading"
+      >
+        <div className="px-4 py-3 border-b border-[rgba(237,232,224,0.06)]">
           <h2
             id="pending-heading"
-            className="font-sans font-semibold text-[16px] text-text-primary"
+            className={DASHBOARD_SECTION_TITLE_CLASS}
           >
             待處理訂單
           </h2>
-          <Link
-            href="/profile/merchant/trading?filter=待處理"
-            className="font-mono text-[12px] text-brand hover:text-brand-hover transition-colors font-bold"
-          >
-            查看全部 →
-          </Link>
         </div>
 
         {pendingOrders.length === 0 ? (
-          <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-12 text-center">
-            <p className="font-sans text-[13px] text-text-disabled">
-              目前無待處理訂單
-            </p>
-          </div>
+          <p className="py-8 text-center font-sans text-[13px] text-text-disabled">
+            目前無待處理訂單
+          </p>
         ) : (
-          <div className="flex flex-col gap-3">
-            {pendingOrders.map((order) => (
-              <MerchantOrderRow key={order.id} order={order} />
+          <div>
+            {pendingOrders.slice(0, 3).map((order) => (
+              <MerchantOrderRow
+                key={order.id}
+                order={order}
+                variant="embedded"
+              />
             ))}
+            {pendingOrders.length > 3 ? (
+              <Link
+                href="/profile/merchant/trading?filter=待處理"
+                className="block py-2.5 text-center font-mono text-[10px] text-brand hover:text-brand-hover border-t border-[rgba(237,232,224,0.06)]"
+              >
+                還有 {pendingOrders.length - 3} 筆待處理 →
+              </Link>
+            ) : null}
           </div>
         )}
-      </section>
 
-      <section aria-labelledby="rating-heading">
-        <div className="flex items-center justify-between mb-3">
-          <h2
-            id="rating-heading"
-            className="font-sans font-semibold text-[15px] text-text-primary"
-          >
-            最近收到的信用評價
-          </h2>
-          <Link
-            href={`/profile/${currentUserId}/rating?persona=merchant`}
-            className="font-mono text-[12px] text-brand hover:text-brand-hover transition-colors font-bold"
-          >
-            查看更多評價 →
-          </Link>
-        </div>
-        <div className="space-y-3">
+        <div className="border-t border-[rgba(237,232,224,0.06)]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(237,232,224,0.06)]">
+            <h2
+              id="rating-heading"
+              className={DASHBOARD_SECTION_TITLE_CLASS}
+            >
+              最近收到的信用評價
+            </h2>
+            <Link
+              href={`/profile/${currentUserId}/rating?persona=merchant`}
+              className="font-mono text-[11px] text-brand hover:text-brand-hover font-bold transition-colors"
+            >
+              查看更多 →
+            </Link>
+          </div>
           {reviews.length === 0 ? (
-            <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-12 text-center">
-              <p className="font-sans text-[13px] text-text-disabled">
-                暫無信用評價
-              </p>
-            </div>
+            <p className="py-8 text-center font-sans text-[13px] text-text-disabled">
+              暫無信用評價
+            </p>
           ) : (
-            reviews.map((review) => (
-              <PublicReviewPreviewCard key={review.id} review={review} />
-            ))
+            <div>
+              {reviews.slice(0, 2).map((review) => (
+                <PublicReviewPreviewCard
+                  key={review.id}
+                  review={review}
+                  variant="embedded"
+                />
+              ))}
+              {reviews.length > 2 ? (
+                <Link
+                  href={`/profile/${currentUserId}/rating?persona=merchant`}
+                  className="block py-2.5 text-center font-mono text-[10px] text-brand hover:text-brand-hover border-t border-[rgba(237,232,224,0.06)]"
+                >
+                  還有 {reviews.length - 2} 則評價 →
+                </Link>
+              ) : null}
+            </div>
           )}
         </div>
       </section>

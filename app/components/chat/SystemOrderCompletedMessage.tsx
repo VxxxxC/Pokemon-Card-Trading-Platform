@@ -3,6 +3,11 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import {
+  CircleCheck,
+  PartyPopper,
+  PenLine,
+} from "lucide-react";
 import { resolveChatCompletionOrderId } from "@/app/actions/reviews";
 import { resolveMemberOrderIdFromChatRoom } from "@/app/lib/chat/resolveMemberOrderId";
 import {
@@ -18,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChatInlineIconText } from "./ChatInlineIconText";
 
 export type SystemOrderCompletedMessageProps = {
   messageId: string;
@@ -154,16 +160,16 @@ function SystemOrderCompletedMessageComponent({
     revieweeId,
   ]);
 
-  const reviewButtonLabel = isOpeningReview
-    ? "載入中…"
-    : "✍️ 給予對手評價";
+  const reviewButtonLabel = isOpeningReview ? "載入中…" : "給予對手評價";
 
   return (
     <Card className="my-2 w-full overflow-hidden border border-[#d4a574]/25 bg-[#1A1612] font-sans text-[12.5px]">
       <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-white/5 pb-3">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#d4a574]">
-            🎉 交易完結通知
+            <ChatInlineIconText icon={PartyPopper}>
+              交易完結通知
+            </ChatInlineIconText>
           </p>
           <CardTitle className="text-[13px] font-black text-[#eae1da]">
             雙方已確認交易完成
@@ -176,8 +182,9 @@ function SystemOrderCompletedMessageComponent({
 
       <CardContent className="space-y-3 pt-3">
         <Alert className="border-[#d4a574]/30 bg-[#d4a574]/10 text-[#d4a574]">
+          <CircleCheck className="size-4" />
           <AlertDescription className="text-[12px] font-medium leading-relaxed">
-            ✅ 此筆訂單已順利結案。商品交付與款項結算流程已結束。
+            此筆訂單已順利結案。商品交付與款項結算流程已結束。
           </AlertDescription>
         </Alert>
         {partnerName ? (
@@ -197,8 +204,11 @@ function SystemOrderCompletedMessageComponent({
               type="button"
               onClick={() => void handleOpenReview()}
               disabled={isOpeningReview}
-              className="mt-2 inline-flex h-8 items-center rounded-lg bg-brand px-3 text-[11px] font-bold text-[#17130f] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-bold text-[#17130f] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
+              {!isOpeningReview ? (
+                <PenLine className="size-3.5 shrink-0" aria-hidden />
+              ) : null}
               {reviewButtonLabel}
             </button>
           </div>

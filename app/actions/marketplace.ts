@@ -86,6 +86,16 @@ import {
   marketplacePerfLog,
   marketplacePerfNow,
 } from "@/lib/marketplace/perf-log";
+import { loadMerchantShippingQuotes } from "@/lib/marketplace/enrich-merchant-shipping";
+import type { ShippingQuoteSupabase } from "@/lib/marketplace/enrich-merchant-shipping";
+import { resolveListingCoverImageUrl } from "@/lib/listings/images";
+import {
+  buildMerchantShippingQuote,
+  resolveMerchantDeliverySummary,
+  type MerchantShippingQuote,
+} from "@/lib/merchant/format-delivery-summary";
+import { PLATFORM_DEFAULT_COURIER_SHIPPING_FEE } from "@/lib/merchant/shipping-fee";
+import type { MarketplaceMerchantShippingFields } from "@/app/lib/marketplace/types";
 
 export type {
   GradeFilter,
@@ -159,7 +169,168 @@ type ListingDetailQueryRow = Pick<
   | "seller_description"
   | "images"
   | "use_authentication"
+  | "extra_shipping_fee"
+  | "seller_persona"
 >;
+
+function applyShippingQuote<T extends MarketplaceMerchantShippingFields>(
+  row: T,
+  quote: MerchantShippingQuote | undefined,
+): T {
+  if (!quote) {
+    return row;
+  }
+
+  return {
+    ...row,
+    baseCourierShippingFee: quote.baseCourierShippingFee,
+    listingExtraShippingFee: quote.listingExtraShippingFee,
+    courierShippingTotal: quote.courierTotal,
+    deliverySummary: resolveMerchantDeliverySummary(quote),
+  };
+}
+
+async function enrichProductRowsWithSellerSnippets(
+  supabase: ShippingQuoteSupabase,
+  rows: MarketplaceProductRow[],
+): Promise<MarketplaceProductRow[]> {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const sellerSnippets = await loadListingSellerSnippets(
+    supabase,
+    rows.map((row) => ({
+      sellerId: row.sellerId,
+      sellerPersona: row.sellerPersona,
+    })),
+  );
+
+  return rows.map((row) => {
+    const sellerSnippet = sellerSnippets.get(
+      listingSellerSnippetKey(row.sellerId, row.sellerPersona),
+    );
+    if (!sellerSnippet) {
+      return row;
+    }
+    return {
+      ...row,
+      sellerName: sellerSnippet.displayName,
+    };
+  });
+}
+
+async function enrichProductRowsWithShipping(
+  supabase: ShippingQuoteSupabase,
+  rows: MarketplaceProductRow[],
+): Promise<MarketplaceProductRow[]> {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const quotes = await loadMerchantShippingQuotes(
+    supabase,
+    rows.map((row) => ({
+      listingId: row.lowestListingId,
+      sellerId: row.sellerId,
+      sellerPersona: row.sellerPersona,
+    })),
+  );
+
+  return rows.map((row) =>
+    applyShippingQuote(row, quotes.get(row.lowestListingId)),
+  );
+}
+
+async function enrichProductListingRowsWithShipping(
+  supabase: ShippingQuoteSupabase,
+  rows: MarketplaceProductListingRow[],
+): Promise<MarketplaceProductListingRow[]> {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const quotes = await loadMerchantShippingQuotes(
+    supabase,
+    rows.map((row) => ({
+      listingId: row.listingId,
+      sellerId: row.sellerId,
+      sellerPersona: row.sellerPersona,
+    })),
+  );
+
+  return rows.map((row) =>
+    applyShippingQuote(row, quotes.get(row.listingId)),
+  );
+}
+
+async function enrichSellerListingRowsWithCoverImages(
+  supabase: ShippingQuoteSupabase,
+  rows: ReturnType<typeof mapSellerListingRpcRow>[],
+): Promise<ReturnType<typeof mapSellerListingRpcRow>[]> {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const listingIds = rows.map((row) => row.listingId);
+  const { data, error } = await supabase
+    .from("listings")
+    .select("id, images")
+    .in("id", listingIds);
+
+  if (error || !data) {
+    return rows;
+  }
+
+  const imagesByListingId = new Map(
+    data.map((row) => [row.id, row.images]),
+  );
+
+  return rows.map((row) => {
+    const catalogUrl =
+      row.catalogImageUrl?.trim() ||
+      (row.imageUrl.trim() && row.imageUrl !== "/placeholder-card.png"
+        ? row.imageUrl
+        : null);
+    const coverUrl =
+      resolveListingCoverImageUrl(
+        imagesByListingId.get(row.listingId),
+        catalogUrl,
+      ) ?? row.imageUrl;
+
+    return {
+      ...row,
+      imageUrl: coverUrl,
+    };
+  });
+}
+
+async function enrichSellerListingRowsWithShipping(
+  supabase: ShippingQuoteSupabase,
+  rows: ReturnType<typeof mapSellerListingRpcRow>[],
+): Promise<ReturnType<typeof mapSellerListingRpcRow>[]> {
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const rowsWithCoverImages = await enrichSellerListingRowsWithCoverImages(
+    supabase,
+    rows,
+  );
+
+  const quotes = await loadMerchantShippingQuotes(
+    supabase,
+    rowsWithCoverImages.map((row) => ({
+      listingId: row.listingId,
+      sellerId: row.sellerId,
+      sellerPersona: row.sellerPersona,
+    })),
+  );
+
+  return rowsWithCoverImages.map((row) =>
+    applyShippingQuote(row, quotes.get(row.listingId)),
+  );
+}
 
 function mapSortKey(sortKey: SortKey | undefined): string {
   switch (sortKey) {
@@ -222,6 +393,7 @@ function toProductListingRow(
     sellerAvatarUrl: sellerSnippet?.avatarUrl ?? DEFAULT_AVATAR_URL,
     sellerRating: Number(row.seller_rating ?? 0),
     sellerTotalTrades: Number(row.seller_total_trades ?? 0),
+    sellerPublicReviewCount: Number(row.seller_public_review_count ?? 0),
     sellerPersona: row.seller_persona,
     useAuthentication: row.use_authentication,
     createdAt: row.created_at,
@@ -322,13 +494,15 @@ function toPaginationMetaFromCount(
 function toTradeHistoryRow(
   row: TradeHistoryQueryRow,
 ): MarketplaceProductTradeHistoryRow {
+  const gradingCompany = row.listings.grading_company;
+  const gradingScore = row.listings.grading_score?.trim() || null;
+
   return {
     orderId: row.id,
     createdAt: row.created_at ?? "",
-    grade: formatTradeGradeLabel(
-      row.listings.grading_company,
-      row.listings.grading_score,
-    ),
+    gradingCompany,
+    gradingScore,
+    grade: formatTradeGradeLabel(gradingCompany, gradingScore),
     price: Number(row.final_price),
   };
 }
@@ -375,10 +549,18 @@ async function runBrowseMarketplaceSearch(
   }
 
   const rows = (data ?? []) as BrowseRpcRow[];
+  const productsWithSellers = await enrichProductRowsWithSellerSnippets(
+    supabase,
+    rows.map(toProductRow),
+  );
+  const products = await enrichProductRowsWithShipping(
+    supabase,
+    productsWithSellers,
+  );
 
   return {
     success: true,
-    data: rows.map(toProductRow),
+    data: products,
     meta: toPaginationMeta(rows[0], page, pageSize),
   };
 }
@@ -491,10 +673,18 @@ export async function searchMarketplaceProducts(
     }
 
     const rows = (data ?? []) as SearchRpcRow[];
+    const productsWithSellers = await enrichProductRowsWithSellerSnippets(
+      supabase,
+      rows.map(toProductRow),
+    );
+    const products = await enrichProductRowsWithShipping(
+      supabase,
+      productsWithSellers,
+    );
 
     return {
       success: true,
-      data: rows.map(toProductRow),
+      data: products,
       meta: toPaginationMeta(rows[0], page, pageSize),
     };
   } catch (error) {
@@ -716,11 +906,16 @@ async function runLoadProductListings(
       sellerPersona: row.seller_persona,
     })),
   );
+  const listingRows = rows.map((row) => toProductListingRow(row, sellerSnippets));
+  const enrichedListingRows = await enrichProductListingRowsWithShipping(
+    supabase,
+    listingRows,
+  );
   const lowestRaw = rows[0]?.filtered_lowest_price;
 
   return {
     success: true,
-    data: rows.map((row) => toProductListingRow(row, sellerSnippets)),
+    data: enrichedListingRows,
     meta: toPaginationMeta(rows[0], page, pageSize),
     lowestPrice:
       lowestRaw != null && Number.isFinite(Number(lowestRaw))
@@ -797,7 +992,7 @@ export async function getMarketplaceListingDetail(
     const { data, error } = await supabase
       .from("listings")
       .select(
-        "id, product_id, price, grading_company, grading_score, seller_id, seller_description, images, use_authentication",
+        "id, product_id, price, grading_company, grading_score, seller_id, seller_description, images, use_authentication, extra_shipping_fee, seller_persona",
       )
       .eq("id", id)
       .eq("status", "active")
@@ -812,21 +1007,49 @@ export async function getMarketplaceListingDetail(
       return { success: false, error: "找不到此掛單" };
     }
 
-    const { data: sellerProfile, error: sellerProfileError } = await supabase
-      .from("profiles")
-      .select("display_name, username")
-      .eq("id", data.seller_id)
-      .maybeSingle<Pick<Tables<"profiles">, "display_name" | "username">>();
+    const sellerSnippets = await loadListingSellerSnippets(supabase, [
+      {
+        sellerId: data.seller_id,
+        sellerPersona: data.seller_persona,
+      },
+    ]);
+    const sellerSnippet = sellerSnippets.get(
+      listingSellerSnippetKey(data.seller_id, data.seller_persona),
+    );
 
-    if (sellerProfileError) {
-      console.error(
-        "[getMarketplaceListingDetail] seller profile",
-        sellerProfileError.message,
-      );
+    let shippingFields: MarketplaceMerchantShippingFields = {};
+    if (data.seller_persona === "merchant") {
+      const quotes = await loadMerchantShippingQuotes(supabase, [
+        {
+          listingId: data.id,
+          sellerId: data.seller_id,
+          sellerPersona: data.seller_persona,
+        },
+      ]);
+      const quote = quotes.get(data.id);
+      if (quote) {
+        shippingFields = {
+          baseCourierShippingFee: quote.baseCourierShippingFee,
+          listingExtraShippingFee: quote.listingExtraShippingFee,
+          courierShippingTotal: quote.courierTotal,
+          deliverySummary: resolveMerchantDeliverySummary(quote),
+        };
+      } else {
+        const quoteFromListing = buildMerchantShippingQuote({
+          baseCourierShippingFee: PLATFORM_DEFAULT_COURIER_SHIPPING_FEE,
+          listingExtraShippingFee: Number(data.extra_shipping_fee ?? 0),
+        });
+        shippingFields = {
+          baseCourierShippingFee: quoteFromListing.baseCourierShippingFee,
+          listingExtraShippingFee: quoteFromListing.listingExtraShippingFee,
+          courierShippingTotal: quoteFromListing.courierTotal,
+          deliverySummary: resolveMerchantDeliverySummary(quoteFromListing),
+        };
+      }
     }
 
-    const sellerDisplayName = sellerProfile?.display_name?.trim() ?? "";
-    const sellerUsername = sellerProfile?.username?.trim() || null;
+    const sellerDisplayName = sellerSnippet?.displayName?.trim() ?? "";
+    const sellerUsername = sellerSnippet?.username ?? null;
 
     return {
       success: true,
@@ -843,6 +1066,7 @@ export async function getMarketplaceListingDetail(
         images: parseListingImageUrls(data.images),
         imagesDetail: parseListingImageObjects(data.images),
         useAuthentication: data.use_authentication,
+        ...shippingFields,
       },
     };
   } catch (error) {
@@ -1214,13 +1438,17 @@ export async function getMarketplaceFilterMetadata(): Promise<MarketplaceFilterM
 
 export async function getMarketplaceSellerProfile(
   sellerKey: string,
+  options?: { persona?: import("@/app/lib/reviews/types").ReviewPersona },
 ): Promise<MarketplaceSellerProfileResult> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "無法連線至大盤市場" };
   }
 
   try {
-    const profile = await loadMarketplaceSellerProfile(sellerKey);
+    const profile = await loadMarketplaceSellerProfile(
+      sellerKey,
+      options?.persona,
+    );
     if (!profile) {
       return { success: false, error: "未找到該商戶" };
     }
@@ -1300,15 +1528,23 @@ export async function searchMarketplaceSellerListings(
       return { success: false, error: "搜尋商戶櫥窗時發生錯誤" };
     }
 
-    const rows = (data ?? []) as SellerListingRpcRow[];
-    const listings = rows.map(mapSellerListingRpcRow);
+    const allRows = (data ?? []) as SellerListingRpcRow[];
+    const rows = input.sellerPersona
+      ? allRows.filter((row) => row.seller_persona === input.sellerPersona)
+      : allRows;
+    const listings = await enrichSellerListingRowsWithShipping(
+      supabase,
+      rows.map(mapSellerListingRpcRow),
+    );
+
+    const metaRow = rows[0] ?? allRows[0];
 
     return {
       success: true,
       data: {
         listings,
-        meta: toPaginationMeta(rows[0], page, pageSize),
-        priceBounds: readSellerPriceBounds(rows[0]),
+        meta: toPaginationMeta(metaRow, page, pageSize),
+        priceBounds: readSellerPriceBounds(metaRow),
       },
     };
   } catch (error) {

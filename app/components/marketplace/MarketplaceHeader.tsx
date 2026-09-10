@@ -32,7 +32,6 @@ export function MarketplaceHeader() {
         <h1 className="font-sans font-bold text-[20px] text-[#eae1da] tracking-tight">
           市場
         </h1>
-        <span className="font-mono text-[11px] text-[#8c7355]">Marketplace</span>
       </div>
 
       <div className="relative">

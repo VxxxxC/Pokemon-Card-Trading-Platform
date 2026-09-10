@@ -10,8 +10,10 @@ import type {
   InventoryPageBootstrap,
   InventoryProductGroup,
   InventorySellerPersona,
+  InventoryStatusFilter,
   InventorySummary,
 } from "@/app/lib/inventory/types";
+import { DEFAULT_INVENTORY_STATUS_FILTER } from "@/app/lib/inventory/types";
 import {
   logInventoryClientReady,
   markInventoryClientMount,
@@ -28,6 +30,7 @@ type UseInventoryOptions = {
   pageSize?: number;
   initialData?: InventoryInitialData;
   sellerPersona?: InventorySellerPersona;
+  statusFilter?: InventoryStatusFilter;
 };
 
 type UseInventoryResult = {
@@ -55,6 +58,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
   const query = options.query ?? "";
   const pageSize = options.pageSize ?? INVENTORY_DEFAULT_PAGE_SIZE;
   const sellerPersona = options.sellerPersona;
+  const statusFilter = options.statusFilter ?? DEFAULT_INVENTORY_STATUS_FILTER;
   const hasInitialBootstrap = hasInventoryInitialBootstrap(options.initialData);
 
   const [page, setPage] = useState(options.initialData?.page?.page ?? options.page ?? 1);
@@ -76,14 +80,15 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
   const [error, setError] = useState<string | null>(null);
   const mountLoggedRef = useRef(false);
   const didInitialBootstrapRef = useRef(hasInitialBootstrap);
+  const consumedInitialGroupsRef = useRef(false);
   const [initialListKey] = useState(
-    () => `:${pageSize}:${sellerPersona ?? ""}`,
+    () => `:${pageSize}:${sellerPersona ?? ""}:${statusFilter}`,
   );
   const initialPageRef = useRef(options.initialData?.page?.page ?? 1);
 
   const debouncedQueryRef = useRef(query);
   const [debouncedQuery, setDebouncedQuery] = useState(query);
-  const listKey = `${debouncedQuery}:${pageSize}:${sellerPersona ?? ""}`;
+  const listKey = `${debouncedQuery}:${pageSize}:${sellerPersona ?? ""}:${statusFilter}`;
   const isInitialListKey = listKey === initialListKey;
 
   useEffect(() => {
@@ -96,7 +101,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
 
   useEffect(() => {
     queueMicrotask(() => setPage(1));
-  }, [debouncedQuery, pageSize]);
+  }, [debouncedQuery, pageSize, statusFilter]);
 
   useEffect(() => {
     if (mountLoggedRef.current) return;
@@ -113,6 +118,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
       pageSize,
       query: debouncedQuery,
       sellerPersona,
+      statusFilter,
     });
 
     if (!result.success) {
@@ -128,7 +134,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
     setPage(result.data.page.page);
     setError(null);
     return true;
-  }, [page, pageSize, debouncedQuery, sellerPersona]);
+  }, [page, pageSize, debouncedQuery, sellerPersona, statusFilter]);
 
   const refetch = useCallback(() => {
     void (async () => {
@@ -155,6 +161,8 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
         page,
         pageSize,
         query: debouncedQuery,
+        sellerPersona,
+        statusFilter,
       });
 
       if (cancelled) return;
@@ -184,7 +192,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
     return () => {
       cancelled = true;
     };
-  }, [hasInitialBootstrap, page, pageSize, debouncedQuery, sellerPersona]);
+  }, [hasInitialBootstrap, page, pageSize, debouncedQuery, sellerPersona, statusFilter]);
 
   useEffect(() => {
     if (!didInitialBootstrapRef.current && !hasInitialBootstrap) {
@@ -193,9 +201,11 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
 
     if (
       hasInitialBootstrap &&
+      !consumedInitialGroupsRef.current &&
       isInitialListKey &&
       page === initialPageRef.current
     ) {
+      consumedInitialGroupsRef.current = true;
       return;
     }
 
@@ -210,6 +220,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
         pageSize,
         query: debouncedQuery,
         sellerPersona,
+        statusFilter,
       });
 
       if (cancelled) return;
@@ -242,6 +253,7 @@ export function useInventory(options: UseInventoryOptions = {}): UseInventoryRes
     hasInitialBootstrap,
     isInitialListKey,
     sellerPersona,
+    statusFilter,
   ]);
 
   return {

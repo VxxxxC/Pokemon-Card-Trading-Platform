@@ -2,25 +2,55 @@
 
 import { markChatRoomRead } from "@/app/actions/chat";
 import { isDbChatRoomId } from "@/app/lib/chat/constants";
-import { normalizePartnerId } from "@/app/lib/chat/mergeChatRooms";
+import { resolveRoomViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
+import {
+  buildPartnerRoomKey,
+  inferPartnerPersona,
+} from "@/app/lib/chat/partnerRoomKey";
+import type { ChatRoom } from "@/app/store/useHkCardVaultStore";
 import { useHkCardVaultStore } from "@/app/store/useHkCardVaultStore";
 
 const inFlightByRoom = new Map<string, Promise<boolean>>();
 
-function markPartnerRoomsReadInStore(roomId: string): void {
-  const { chats, markRoomRead } = useHkCardVaultStore.getState();
+export function getRoomIdsToMarkRead(
+  chats: ChatRoom[],
+  roomId: string,
+): string[] {
   const room = chats.find((candidate) => candidate.id === roomId);
-  const partnerKey = room ? normalizePartnerId(room.partnerId) : "";
-
-  if (!partnerKey) {
-    markRoomRead(roomId);
-    return;
+  if (!room) {
+    return roomId.trim() ? [roomId] : [];
   }
 
+  const targetViewerPersona = resolveRoomViewerPersona(room);
+  const targetPartnerKey = buildPartnerRoomKey(
+    room.partnerId,
+    inferPartnerPersona(room),
+  );
+
+  const roomIds = new Set<string>();
   for (const candidate of chats) {
-    if (normalizePartnerId(candidate.partnerId) === partnerKey) {
-      markRoomRead(candidate.id);
+    const matchesRoomId = candidate.id === roomId;
+    const matchesPersonaThread =
+      resolveRoomViewerPersona(candidate) === targetViewerPersona &&
+      buildPartnerRoomKey(
+        candidate.partnerId,
+        inferPartnerPersona(candidate),
+      ) === targetPartnerKey;
+
+    if (matchesRoomId || matchesPersonaThread) {
+      roomIds.add(candidate.id);
     }
+  }
+
+  return [...roomIds];
+}
+
+function markScopedRoomsReadInStore(roomId: string): void {
+  const { chats, markRoomRead } = useHkCardVaultStore.getState();
+  const roomIds = getRoomIdsToMarkRead(chats, roomId);
+
+  for (const id of roomIds) {
+    markRoomRead(id);
   }
 }
 
@@ -28,7 +58,7 @@ async function executePersist(
   roomId: string,
   readAt?: string,
 ): Promise<boolean> {
-  markPartnerRoomsReadInStore(roomId);
+  markScopedRoomsReadInStore(roomId);
 
   if (!isDbChatRoomId(roomId)) {
     return true;

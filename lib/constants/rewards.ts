@@ -1,9 +1,9 @@
 /**
  * HKCardVault - 獎勵與積分系統常量（cold-start seed 與 UI 共用）
- * DB 簽到階梯須與 CHECK_IN_POINT_LADDER 同步（migration / execute_daily_check_in）
+ * 每日簽到積分 SSOT：check_in_program.daily_rewards（DB）；以下為 fallback / CI
  */
 
-/** 7 日循環簽到積分階梯（第 N 天 → PTS） */
+/** 7 日循環簽到積分階梯 fallback（第 N 天 → PTS） */
 export const CHECK_IN_POINT_LADDER: Readonly<Record<number, number>> = {
   1: 10,
   2: 15,
@@ -43,8 +43,12 @@ export interface PointsRewardValue {
 
 /** Hard-coded seed template IDs（migration seed 使用固定 UUID） */
 export const SEED_REWARD_TEMPLATE_IDS = {
+  /** @deprecated archived — use check_in_program completion flow */
   CHECK_IN_DAY7_BONUS: 'a1000001-0001-4001-8001-000000000001',
+  CHECK_IN_PROGRAM_COMPLETION: 'b1000001-0001-4001-8001-000000000020',
+  CHECK_IN_PROGRAM_ID: 'b1000001-0001-4001-8001-000000000001',
   ONBOARD_FIRST_TRADE: 'a1000001-0001-4001-8001-000000000002',
+  /** @deprecated archived — check-in milestones via 簽到計劃 (future phase) */
   STREAK_30_LUCKY_DRAW: 'a1000001-0001-4001-8001-000000000003',
   LIMITED_HK10_COUPON: 'a1000001-0001-4001-8001-000000000010',
   /** @deprecated v2 前封存 — 香港抽獎牌照 */
@@ -160,16 +164,46 @@ export function parseRewardGrantRows(raw: unknown): UnacknowledgedRewardGrant[] 
   });
 }
 
+function resolveGrantPoints(grant: UnacknowledgedRewardGrant): number {
+  return (
+    grant.pointsGranted ??
+    (typeof grant.rewardValue === 'object' &&
+    grant.rewardValue !== null &&
+    'points' in grant.rewardValue
+      ? Number((grant.rewardValue as PointsRewardValue).points)
+      : 0)
+  );
+}
+
+/** Stub value for CouponTicketShell left panel (aligned with wallet coupon tickets). */
+export function formatRewardGrantValueLabel(
+  grant: UnacknowledgedRewardGrant,
+): string {
+  if (grant.type === 'points') {
+    return `+${resolveGrantPoints(grant).toLocaleString()}`;
+  }
+  if (grant.type === 'discount_coupon') {
+    const v = grant.rewardValue as DiscountCouponRewardValue | null;
+    if (v?.amount_hkd != null) {
+      return `HK$ ${v.amount_hkd.toLocaleString('en-HK')}`;
+    }
+    if (v?.percent_off != null) {
+      return `${v.percent_off}% OFF`;
+    }
+    return '折扣券';
+  }
+  if (grant.type === 'free_shipping') {
+    return '免運費';
+  }
+  if (grant.type === 'lucky_draw_ticket') {
+    return '抽獎券';
+  }
+  return '獎勵';
+}
+
 export function formatRewardGrantSummary(grant: UnacknowledgedRewardGrant): string {
   if (grant.type === 'points') {
-    const pts =
-      grant.pointsGranted ??
-      (typeof grant.rewardValue === 'object' &&
-      grant.rewardValue !== null &&
-      'points' in grant.rewardValue
-        ? Number((grant.rewardValue as PointsRewardValue).points)
-        : 0);
-    return `+${pts.toLocaleString()} PTS`;
+    return `+${resolveGrantPoints(grant).toLocaleString()} PTS`;
   }
   if (grant.type === 'discount_coupon') {
     const v = grant.rewardValue as DiscountCouponRewardValue | null;

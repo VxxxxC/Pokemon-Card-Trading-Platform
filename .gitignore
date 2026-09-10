@@ -17,7 +17,11 @@ package-lock.json
 # testing
 /coverage
 /test-results/
+.stryker-tmp/
+.stryker-tmp-moderation/
+reports/mutation/
 e2e/.auth/
+e2e/.cache/
 
 # next.js
 /.next/
@@ -29,6 +33,7 @@ e2e/.auth/
 # misc
 .DS_Store
 *.pem
+.cursorrules(old)
 
 # debug
 npm-debug.log*
@@ -38,6 +43,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+
+# local DB dumps (scripts/dev/backup-db.sh)
+/backups/
 
 # vercel
 .vercel

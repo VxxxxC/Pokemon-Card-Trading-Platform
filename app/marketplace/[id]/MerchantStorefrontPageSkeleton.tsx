@@ -24,8 +24,8 @@ export function MerchantStorefrontPageSkeleton() {
           <div className="rounded-xl border border-white/8 bg-[#26211C] p-4 h-64 animate-pulse" />
         </aside>
 
-        <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
-          {Array.from({ length: 6 }).map((_, index) => (
+        <div className="grid grid-cols-3 gap-2 md:gap-3 lg:grid-cols-4 lg:gap-4">
+          {Array.from({ length: 8 }).map((_, index) => (
             <div
               key={index}
               className="bg-[#26211C] rounded-2xl border border-white/5 overflow-hidden animate-pulse"

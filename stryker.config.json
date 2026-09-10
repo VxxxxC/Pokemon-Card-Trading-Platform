@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "plugins": ["@stryker-mutator/*"],
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "mutate": [
+    "lib/rewards/checkout-subsidy-math.ts",
+    "lib/rewards/coupon-expiry.ts"
+  ],
+  "vitest": {
+    "configFile": "vitest.mutation.config.mts",
+    "related": false
+  },
+  "thresholds": {
+    "high": 85,
+    "low": 70,
+    "break": 85
+  },
+  "tempDirName": ".stryker-tmp",
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  }
+}

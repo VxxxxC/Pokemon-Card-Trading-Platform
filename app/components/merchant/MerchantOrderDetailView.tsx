@@ -1,27 +1,53 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { MEMBER_AUTH_SHIPPING_FEE } from "@/app/lib/member-order/p2p";
+import { formatPaymentDeadline } from "@/lib/merchant-checkout/pending-payment-expiry";
+import { DEFAULT_COMMISSION_RATE } from "@/lib/platform/financial-config";
+
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
+import { Info, MessageSquareText } from "lucide-react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import { cn } from "@/lib/utils";
-import { IoChevronBack } from "react-icons/io5";
 import {
+  cancelMerchantAuthOrder,
+  submitMerchantDirectFulfillment,
   submitMerchantLogistics,
   type MerchantOrderDetail,
 } from "@/app/actions/orders";
-import { OrderStatus, STATUS_STEP_INDEX } from "@/app/lib/types/trading";
-import { ESCROW_STEPS } from "@/app/lib/types/rbac";
+import { ProfileAvatar } from "@/app/components/profile/ProfileAvatar";
+import { MemberMerchantB2cOrderInvoice } from "@/app/components/user/MemberMerchantB2cOrderInvoice";
+import { MemberAuthOrderInvoice } from "@/app/components/user/MemberAuthOrderInvoice";
 import { mapMerchantOrderDetailToSaleOrder } from "@/app/lib/merchant-order/map-sale-order";
-import { toast } from "sonner";
-import { ImageViewer } from "@/app/components/shared/ImageViewer";
 import {
-  type CarouselApi,
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselPrevious,
-  CarouselNext,
-} from "@/components/ui/carousel";
+  formatMerchantPayoutHoldUntilLabel,
+  formatMerchantPayoutStatusLabel,
+  MERCHANT_CONNECT_T7_PAYOUT_POLICY_TEXT,
+  resolveMerchantTransferDisplayLabel,
+} from "@/lib/merchant-order/merchant-payout-hold";
+import { MerchantAuthSellerTimeline } from "@/app/components/merchant/MerchantAuthSellerTimeline";
+import { MerchantB2cDirectTimeline } from "@/app/components/merchant/MerchantB2cDirectTimeline";
+import { SellerReputationMeta } from "@/lib/marketplace/seller-reputation-meta";
+import { toast } from "sonner";
+import { SECTION_TITLE_CLASS } from "@/lib/ui/section-title-ui";
+import { ImageViewer } from "@/app/components/shared/ImageViewer";
+import { OrderCatalogThumb } from "@/app/components/shared/OrderCatalogThumb";
+import { OrderListingPhotoGrid } from "@/app/components/shared/OrderListingPhotoGrid";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const REMARKS_PRESETS = [
   "正面全貌：印刷居中度完美，閃膜無微劃傷",
@@ -32,53 +58,92 @@ const REMARKS_PRESETS = [
   "條碼微距特寫：認證編號完美可讀，防偽一致",
 ];
 
+const ORDER_DETAIL_CARD_CLASS =
+  "rounded-lg border border-white/[0.08] bg-bg-card/20 p-4";
+
+const ORDER_ALERT_CLASS =
+  "rounded-lg border border-warning/30 bg-warning/10 p-3 space-y-2";
+
 type MerchantOrderDetailViewProps = {
   order: MerchantOrderDetail;
   onRefresh: () => void;
   onOpenReview?: (orderId: string, revieweeId: string) => void;
+  defaultCommissionRate?: number;
 };
 
-async function runMerchantLogisticsStub(
+async function runSubmitInboundTracking(
   orderId: string,
   trackingNo: string,
+  courierName: string,
+  onSuccess?: () => void,
 ): Promise<void> {
-  const result = await submitMerchantLogistics(orderId, trackingNo);
+  const result = await submitMerchantLogistics(orderId, trackingNo, courierName);
   if (!result.success) {
     toast.error(result.error);
+    return;
   }
+  toast.success("物流單號已提交");
+  onSuccess?.();
+}
+
+async function runSubmitDirectFulfillment(
+  orderId: string,
+  trackingNo: string | undefined,
+  courierName: string | undefined,
+  onSuccess?: () => void,
+): Promise<void> {
+  const result = await submitMerchantDirectFulfillment(
+    orderId,
+    trackingNo,
+    courierName,
+  );
+  if (!result.success) {
+    toast.error(result.error);
+    return;
+  }
+  toast.success(trackingNo ? "物流單號已提交" : "已確認面交完成");
+  onSuccess?.();
+}
+
+async function runCancelMerchantAuthOrder(
+  orderId: string,
+  onSuccess?: () => void,
+): Promise<void> {
+  const result = await cancelMerchantAuthOrder(orderId);
+  if (!result.success) {
+    toast.error(result.error);
+    return;
+  }
+  toast.success("訂單已取消");
+  onSuccess?.();
 }
 
 export function MerchantOrderDetailView({
   order: merchantOrder,
   onOpenReview,
+  onRefresh,
+  defaultCommissionRate = DEFAULT_COMMISSION_RATE,
 }: MerchantOrderDetailViewProps) {
   const router = useRouter();
   const order = mapMerchantOrderDetailToSaleOrder(merchantOrder);
+  const buyerProfileHref = `/profile/${merchantOrder.buyer.id}?persona=member`;
 
-  const [api, setApi] = useState<CarouselApi>();
-  const [current, setCurrent] = useState(0);
-  const [count, setCount] = useState(0);
+  const refreshAfterLogistics = () => {
+    if (onRefresh) {
+      onRefresh();
+      return;
+    }
+    router.refresh();
+  };
+
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
-
-  useEffect(() => {
-    if (!api) return;
-
-    const updateCarouselState = () => {
-      setCount(api.scrollSnapList().length);
-      setCurrent(api.selectedScrollSnap());
-    };
-
-    queueMicrotask(updateCarouselState);
-
-    api.on("select", updateCarouselState);
-    api.on("reInit", updateCarouselState);
-
-    return () => {
-      api.off("select", updateCarouselState);
-      api.off("reInit", updateCarouselState);
-    };
-  }, [api]);
+  const [inboundTrackingInput, setInboundTrackingInput] = useState("");
+  const [inboundCourierInput, setInboundCourierInput] = useState("");
+  const [outboundTrackingInput, setOutboundTrackingInput] = useState("");
+  const [outboundCourierInput, setOutboundCourierInput] = useState("");
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const isAuthOrder = Boolean(merchantOrder.requiresAuthentication);
 
   const merchantImages = useMemo(() => {
     if (merchantOrder.listingImageUrls.length > 0) {
@@ -90,461 +155,706 @@ export function MerchantOrderDetailView({
     return [`https://picsum.photos/seed/${merchantOrder.id}/400/500`];
   }, [merchantOrder]);
 
-  const currentStepIdx =
-    order.status === "cancelled"
-      ? -1
-      : STATUS_STEP_INDEX[order.status as Exclude<OrderStatus, "cancelled">];
+  const stripeDisplay = useMemo(() => {
+    const commissionRate =
+      merchantOrder.commissionRateApplied ?? defaultCommissionRate;
+    const estimatedCommission = Math.round(
+      merchantOrder.itemSubtotal * commissionRate * 100,
+    ) / 100;
+    const platformFee =
+      merchantOrder.commissionAmount ?? estimatedCommission;
+    const platformFeeIsEstimate = merchantOrder.commissionAmount == null;
+    const directShippingFee = merchantOrder.requiresAuthentication
+      ? 0
+      : merchantOrder.shippingFee;
+    const authInboundShippingFee = merchantOrder.requiresAuthentication
+      ? merchantOrder.inboundShippingFee > 0
+        ? merchantOrder.inboundShippingFee
+        : MEMBER_AUTH_SHIPPING_FEE
+      : 0;
+    const sellerShippingReimbursement = merchantOrder.requiresAuthentication
+      ? authInboundShippingFee
+      : directShippingFee;
+    const payoutAmount =
+      merchantOrder.merchantPayoutAmount ??
+      Math.max(
+        0,
+        merchantOrder.itemSubtotal +
+          sellerShippingReimbursement -
+          platformFee,
+      );
+    const payoutGross =
+      merchantOrder.merchantPayoutGross ?? payoutAmount;
+    const recoveryDeductionTotal =
+      merchantOrder.recoveryDeductionTotal ?? 0;
+
+    return {
+      paymentIntentId: merchantOrder.stripePaymentIntentId,
+      transferId: merchantOrder.stripeTransferId,
+      platformFee,
+      platformFeeIsEstimate,
+      payoutGross,
+      recoveryDeductionTotal,
+      payoutAmount,
+      payoutStatus: merchantOrder.payoutStatus,
+      authFee: merchantOrder.authFee,
+      authInboundShippingFee,
+      directShippingFee,
+    };
+  }, [merchantOrder, defaultCommissionRate]);
+
+  const transferDisplay = useMemo(
+    () =>
+      resolveMerchantTransferDisplayLabel({
+        stripeTransferId: merchantOrder.stripeTransferId,
+        payoutStatus: merchantOrder.payoutStatus,
+        escrowStatus: merchantOrder.escrowStatus,
+      }),
+    [merchantOrder],
+  );
+
+  const displayOrderNumber = order.orderNumber ?? order.id;
 
   return (
-    <div className="min-h-screen bg-[#17130f] text-[#eae1da] font-sans p-6 space-y-5 animate-fadeIn lg:mx-[20%]">
-      <div className="flex items-center justify-between ">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="h-10 w-10 px-2.5 rounded-lg bg-bg-elevated font-sans text-md font-medium text-brand focus:outline-none"
-        >
-          <IoChevronBack />
-        </button>
-      </div>
-
-      <div className="justify-items-start space-y-2">
-        <div className="font-sans font-black text-[22px] text-text-primary leading-tight">
-          {order.cardName}
+    <div className="mx-auto w-full max-w-2xl space-y-4 pb-6 animate-fadeIn">
+      <section
+        className={`${ORDER_DETAIL_CARD_CLASS} space-y-4`}
+        aria-label="訂單摘要"
+      >
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center rounded-md border border-warning/30 bg-warning/10 px-2 py-0.5 font-sans text-[11px] font-medium text-warning">
+            賣出交易
+          </span>
+          {isAuthOrder ? (
+            <span className="inline-flex items-center rounded-md border border-brand/30 bg-brand/10 px-2 py-0.5 font-sans text-[11px] font-medium text-brand">
+              鑑定訂單
+            </span>
+          ) : null}
         </div>
-        <div className="w-full flex flex-col p-6 border border-brand/20 rounded-lg items-start space-y-3">
-          <div className="font-mono text-[11px] text-text-secondary">
-            序號: {order.cardNo} · 等級: {order.grade}
-          </div>
-          <div className="font-mono text-[12.5px] text-brand mt-1 space-y-1">
-            <p>商品上架序號: {order.productListingId || "—"}</p>
-            <p>訂單號碼: {order.orderNumber ?? order.id}</p>
-            <p className="font-mono text-[11px] text-text-disabled mt-1">
-              出價日期: {order.createdAt || "—"}
-            </p>
-          </div>
-          <div className="relative w-10 h-10 rounded-full border border-white/10 overflow-hidden bg-[#17130f] shrink-0 shadow-xs mb-1">
-            <Image
-              src={merchantOrder.buyer.avatarUrl}
-              alt={`${order.buyerName} 的頭像`}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          </div>
-          <p className="font-mono font-black text-md text-brand mt-1 text-nowrap">
-            {order.buyerName}
-          </p>
-        </div>
-      </div>
 
-      <div>
-        <div className="p-4 bg-[#17130f] border border-white/5 rounded-xl space-y-4">
-          <h4 className="font-sans font-bold text-[12.5px] text-text-primary flex items-center gap-1.5">
-            交易狀態
-          </h4>
-          <div className="p-4 bg-[#17130f] border border-white/5 rounded-xl space-y-4">
-            <div className="relative pl-6 space-y-5 before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-[1px] before:bg-white/10">
-              {ESCROW_STEPS.map((step, idx) => {
-                const isCompleted = currentStepIdx >= 0 && idx < currentStepIdx;
-                const isActive = idx === currentStepIdx;
+        <div className="space-y-3">
+          <div className="min-w-0">
+            <p className="font-sans text-[10px] text-text-disabled">訂單號碼</p>
+            <h1
+              className="truncate font-mono text-[18px] font-bold leading-tight text-text-primary sm:text-[20px]"
+              title={displayOrderNumber}
+            >
+              {displayOrderNumber}
+            </h1>
+          </div>
 
-                return (
-                  <div
-                    key={step.id}
-                    className="relative text-[12.5px] leading-relaxed"
-                  >
-                    <div
-                      className={cn(
-                        "absolute left-[-23px] top-1 w-3.5 h-3.5 rounded-full border-2 transition-all flex items-center justify-center",
-                        isCompleted
-                          ? "bg-success border-success text-white"
-                          : isActive
-                            ? "bg-brand border-brand animate-pulse"
-                            : "bg-[#1A1612] border-white/20",
-                      )}
-                    >
-                      {isCompleted && (
-                        <svg
-                          width="6"
-                          height="6"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col">
-                      <span
-                        className={cn(
-                          "font-sans font-bold",
-                          isActive
-                            ? "text-brand"
-                            : isCompleted
-                              ? "text-success"
-                              : "text-text-secondary",
-                        )}
-                      >
-                        {step.label}
-                      </span>
-                      <span className="text-[11px] text-text-disabled">
-                        {step.description}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+          <div className="overflow-hidden rounded-lg bg-bg-page/25">
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <OrderCatalogThumb
+                catalogImageUrl={merchantOrder.product.catalogImageUrl}
+                alt={order.cardName}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-sans text-[15px] font-semibold text-text-primary">
+                  {order.cardName}
+                </p>
+                <p className="mt-0.5 font-mono text-[11px] text-text-secondary">
+                  {order.cardNo} · 等級: {order.grade}
+                </p>
+              </div>
             </div>
+
+            <Link
+              href={buyerProfileHref}
+              data-testid="merchant-order-buyer-profile-link"
+              className="flex items-center gap-2 border-t border-white/[0.06] px-3 py-2 transition-colors hover:bg-bg-page/40"
+              title={`買家：${order.buyerName}`}
+            >
+              <ProfileAvatar
+                avatarUrl={merchantOrder.buyer.avatarUrl}
+                displayName={order.buyerName}
+                className="h-7 w-7 shrink-0 border border-white/10"
+                fallbackClassName="bg-bg-page text-brand text-[10px] font-bold"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="font-sans text-[10px] text-text-disabled shrink-0">
+                    買家
+                  </span>
+                  <span className={`truncate ${SECTION_TITLE_CLASS}`}>
+                    {order.buyerName}
+                  </span>
+                  <SellerReputationMeta
+                    rating={merchantOrder.buyer.ratingScore ?? 0}
+                    reviewCount={merchantOrder.buyer.publicReviewCount}
+                    totalTrades={merchantOrder.buyer.completedTradesCount}
+                  />
+                </div>
+              </div>
+              <span
+                className="shrink-0 font-sans text-[10px] text-brand"
+                aria-hidden="true"
+              >
+                →
+              </span>
+            </Link>
           </div>
+        </div>
+
+        <dl
+          className="grid gap-2 rounded-lg bg-bg-page/25 px-3 py-2.5 font-mono text-[11px] sm:grid-cols-2"
+        >
+          <div className="min-w-0">
+            <dt className="text-text-disabled">上架序號</dt>
+            <dd
+              className="mt-0.5 break-all text-text-secondary"
+              title={merchantOrder.listingId}
+            >
+              {merchantOrder.listingId}
+            </dd>
+            {order.createdAt ? (
+              <p className="mt-1 font-mono text-[10px] text-text-disabled">
+                建立 {order.createdAt}
+              </p>
+            ) : null}
+          </div>
+        </dl>
+      </section>
+
+      <section
+        className={`${ORDER_DETAIL_CARD_CLASS} space-y-4`}
+        aria-label="交易進度"
+      >
+        <h2 className={SECTION_TITLE_CLASS}>
+          交易進度
+        </h2>
+
+        <div className="space-y-4">
+          {isAuthOrder ? (
+            <MerchantAuthSellerTimeline
+              embedded
+              escrowStatus={merchantOrder.escrowStatus}
+              payoutStatus={merchantOrder.payoutStatus}
+            />
+          ) : (
+            <MerchantB2cDirectTimeline
+              embedded
+              escrowStatus={merchantOrder.escrowStatus}
+              perspective="seller"
+              shippingMethod={merchantOrder.shippingMethod}
+              payoutStatus={merchantOrder.payoutStatus}
+            />
+          )}
+
+          {(merchantOrder.sfLockerCode ||
+            merchantOrder.buyerPhone ||
+            merchantOrder.meetupDetail ||
+            merchantOrder.buyerRemark ||
+            merchantOrder.sfAddress) ? (
+            <div className="space-y-2 border-t border-white/[0.06] pt-4">
+              <h3 className={SECTION_TITLE_CLASS}>
+                買家交收資料
+              </h3>
+              <div className="space-y-1.5 font-mono text-[12px] text-text-secondary">
+                {merchantOrder.shippingMethod === "meetup" ? (
+                  <>
+                    {merchantOrder.buyerPhone ? (
+                      <p>
+                        <span className="text-text-disabled">聯絡電話：</span>
+                        {merchantOrder.buyerPhone}
+                      </p>
+                    ) : null}
+                    {merchantOrder.meetupDetail ? (
+                      <p>
+                        <span className="text-text-disabled">面交備註：</span>
+                        {merchantOrder.meetupDetail}
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {merchantOrder.buyerPhone ? (
+                      <p>
+                        <span className="text-text-disabled">聯絡電話：</span>
+                        {merchantOrder.buyerPhone}
+                      </p>
+                    ) : null}
+                    {merchantOrder.sfLockerCode ? (
+                      <p>
+                        <span className="text-text-disabled">自提點代碼：</span>
+                        {merchantOrder.sfLockerCode}
+                      </p>
+                    ) : null}
+                    {merchantOrder.sfAddress ? (
+                      <p>
+                        <span className="text-text-disabled">收件地址／自提點：</span>
+                        {merchantOrder.sfAddress}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+                {merchantOrder.buyerRemark ? (
+                  <p>
+                    <span className="text-text-disabled">買家備註：</span>
+                    {merchantOrder.buyerRemark}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {order.status === "cancelled" && (
-            <div className="p-3.5 bg-[rgba(239,68,68,0.06)] border border-warning/20 rounded-xl flex items-start gap-3 animate-fadeIn">
-              <p className="font-sans font-bold text-[13.5px] text-warning">
+            <div className={ORDER_ALERT_CLASS}>
+              <p className="text-[12px] font-semibold text-warning">
                 訂單已退款 / 已取消
               </p>
             </div>
           )}
 
-          {order.status === "payment" && (
-            <div className="space-y-3">
-              <p className="text-[12.5px] text-text-secondary leading-relaxed">
-                買家已完成此交易的全額付款{" "}
-                <span className="text-[#10b981] font-mono font-bold">
+          {merchantOrder.escrowStatus === "pending_payment" && (
+            <div className="space-y-3 rounded-lg border border-brand/20 bg-brand/5 p-3">
+              <p className="text-[12px] text-text-secondary leading-relaxed">
+                訂單已成立，正在等待買家完成託管付款{" "}
+                <span className="text-brand font-mono font-bold">
                   HK$ {order.amount.toLocaleString("zh-TW")}
                 </span>
-                ， 此資金已安全存入 HKCardVault
-                官方擔保帳戶託管。請您確認此交易並準備安排發貨。
+                。 收款確認後方可安排出貨。
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  void runMerchantLogisticsStub(order.id, "");
-                }}
-                className="w-full h-10 bg-brand text-[#17130f] font-sans font-semibold text-[13px] rounded-xl hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer"
+              {merchantOrder.paymentExpiresAt ? (
+                <p className="font-mono text-[11px] leading-relaxed text-text-disabled">
+                  買家須於 {formatPaymentDeadline(merchantOrder.paymentExpiresAt)}{" "}
+                  前完成付款；若時限前未完成付款，訂單將自動取消，掛單會重新上架至大盤市場。
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {merchantOrder.canCancelAuthOrder ? (
+            <AlertDialog>
+              <AlertDialogTrigger
+                disabled={isActionLoading}
+                className="w-full h-10 font-sans font-semibold text-[13px] rounded-xl bg-[rgba(239,68,68,0.10)] text-warning border border-warning/20 hover:bg-[rgba(239,68,68,0.18)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                確認訂單並移交保管 ➔
-              </button>
-            </div>
-          )}
+                {isActionLoading ? "處理中…" : "取消訂單"}
+              </AlertDialogTrigger>
+              <AlertDialogContent className="max-w-sm rounded-2xl border border-[#ef4444]/30 bg-[#26211C] p-6 text-[#eae1da]">
+                <AlertDialogHeader className="text-left">
+                  <AlertDialogTitle className="text-[15px] font-black">
+                    確認取消訂單
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="text-[11px] font-mono uppercase tracking-wider text-[#8A8680]">
+                    Cancel Order
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <p className="py-3 text-[12.5px] leading-relaxed text-[#d4c4b7]">
+                  您即將取消與{" "}
+                  <span className="font-bold text-brand">{order.buyerName}</span>{" "}
+                  的鑑定訂單（
+                  <span className="font-mono text-warning">
+                    HK$ {order.amount.toLocaleString("zh-TW")}
+                  </span>
+                  ）。確認後訂單將取消並退款給買家。
+                </p>
+                <div className="flex flex-col gap-2">
+                  <AlertDialogAction
+                    disabled={isActionLoading}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setIsActionLoading(true);
+                      void runCancelMerchantAuthOrder(
+                        order.id,
+                        refreshAfterLogistics,
+                      ).finally(() => setIsActionLoading(false));
+                    }}
+                    className="h-11 rounded-xl bg-[#ef4444] font-black text-white hover:bg-[#dc2626] disabled:opacity-50"
+                  >
+                    {isActionLoading ? "處理中…" : "確認取消"}
+                  </AlertDialogAction>
+                  <AlertDialogCancel className="h-10 rounded-xl border border-white/10 bg-[#120F0C]">
+                    返回
+                  </AlertDialogCancel>
+                </div>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
 
-          {order.status === "custody" && (
+          {merchantOrder.canSubmitLogistics &&
+            !merchantOrder.inboundTrackingNo && (
             <div className="space-y-3">
               <p className="text-[12.5px] text-text-secondary leading-relaxed">
-                資金正處於平台安全託管中。請將卡牌實物寄出，並在下方登錄物流號碼完成出貨手續。
+                買家已完成付款，資金已託管。請將卡牌寄往平台倉庫，並填寫快遞公司與物流單號以供入庫鑑定。
               </p>
-              <div className="flex items-center h-10 bg-[#1A1612] border border-white/10 rounded-xl overflow-hidden focus-within:border-brand/30">
-                <input
-                  id={"page-tracking-" + order.id}
-                  type="text"
-                  placeholder="填寫順豐、郵便或宅急便物流追蹤號"
-                  defaultValue={order.trackingNo || ""}
-                  className="flex-1 h-full bg-transparent px-3 font-mono text-[12px] text-text-primary placeholder-text-disabled focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const input = document.getElementById(
-                      "page-tracking-" + order.id,
-                    ) as HTMLInputElement;
-                    const val = input?.value ?? "";
-                    if (!val.trim()) {
-                      toast.error("請先填寫物流追蹤號碼");
-                      return;
-                    }
-                    void runMerchantLogisticsStub(order.id, val);
-                  }}
-                  className="px-4 h-full bg-brand/10 font-sans text-[11px] text-brand border-l border-white/5 hover:bg-brand/15 transition-colors cursor-pointer"
-                >
-                  確認發貨
-                </button>
-              </div>
-            </div>
-          )}
-
-          {order.status === "shipped" && (
-            <div className="space-y-3">
-              <p className="text-[12.5px] text-text-secondary leading-relaxed">
-                包裹已由快遞承運發送。物流單號：
-                <span className="font-mono text-brand font-bold">
-                  {order.trackingNo || "—"}
-                </span>
-                。 您可以修改物流追蹤號，或確認包裹已送達鑑定所。
-              </p>
-
-              <div className="flex items-center h-10 bg-[#1A1612] border border-white/10 rounded-xl overflow-hidden focus-within:border-brand/30">
-                <input
-                  id={"page-tracking-update-" + order.id}
-                  type="text"
-                  placeholder="修改物流號碼"
-                  defaultValue={order.trackingNo || ""}
-                  className="flex-1 h-full bg-transparent px-3 font-mono text-[12px] text-text-primary placeholder-text-disabled focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const input = document.getElementById(
-                      "page-tracking-update-" + order.id,
-                    ) as HTMLInputElement;
-                    const val = input?.value ?? "";
-                    if (!val.trim()) {
-                      toast.error("物流號碼不能為空");
-                      return;
-                    }
-                    void runMerchantLogisticsStub(order.id, val);
-                  }}
-                  className="px-4 h-full bg-white/5 font-sans text-[11px] text-text-primary border-l border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
-                >
-                  修改單號
-                </button>
-              </div>
-
+              <input
+                type="text"
+                value={inboundCourierInput}
+                onChange={(event) => setInboundCourierInput(event.target.value)}
+                placeholder="快遞公司（例如：順豐、DHL）"
+                className="w-full h-10 rounded-lg border border-white/10 bg-[#120f0c] px-3 text-[12px] text-brand"
+              />
+              <input
+                type="text"
+                value={inboundTrackingInput}
+                onChange={(event) => setInboundTrackingInput(event.target.value)}
+                placeholder="物流單號"
+                className="w-full h-10 rounded-lg border border-white/10 bg-[#120f0c] px-3 text-[12px] text-brand"
+              />
               <button
                 type="button"
+                disabled={
+                  !inboundTrackingInput.trim() || !inboundCourierInput.trim()
+                }
                 onClick={() => {
-                  void runMerchantLogisticsStub(
+                  void runSubmitInboundTracking(
                     order.id,
-                    order.trackingNo ?? "",
+                    inboundTrackingInput.trim(),
+                    inboundCourierInput.trim(),
+                    refreshAfterLogistics,
                   );
                 }}
-                className="w-full h-10 bg-brand text-[#17130f] font-sans font-semibold text-[13px] rounded-xl hover:bg-brand-hover active:scale-[0.98] transition-all cursor-pointer"
+                className="w-full h-10 rounded-xl bg-brand text-[#17130f] font-sans font-semibold text-[13px] disabled:opacity-50"
               >
-                確認抵達專家鑑定所 🔍
+                提交入庫物流單號
               </button>
             </div>
           )}
 
-          {order.status === "grading" && (
+          {merchantOrder.requiresAuthentication &&
+            merchantOrder.escrowStatus === "payment_held" &&
+            merchantOrder.inboundTrackingNo && (
             <div className="space-y-3">
               <p className="text-[12.5px] text-text-secondary leading-relaxed">
-                卡牌實物正在由 HKCardVault
-                專業鑑定機構進行表面、四角、邊緣與對中度檢驗（PSA/BGS
-                標準驗證）。
+                已提交入庫物流單號，等待平台確認入庫後開始鑑定。
               </p>
+              <p className="font-mono text-[12px] text-brand">
+                已提交：
+                {merchantOrder.inboundCourierName
+                  ? `${merchantOrder.inboundCourierName} · `
+                  : ""}
+                {merchantOrder.inboundTrackingNo}
+              </p>
+            </div>
+          )}
+
+          {merchantOrder.canSubmitDirectFulfillment && (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                買家已完成託管付款，請安排快遞發貨並填寫快遞公司與物流單號。
+              </p>
+              <input
+                type="text"
+                value={outboundCourierInput}
+                onChange={(event) =>
+                  setOutboundCourierInput(event.target.value)
+                }
+                placeholder="快遞公司（例如：順豐、DHL）"
+                className="w-full h-10 rounded-lg border border-white/10 bg-[#120f0c] px-3 text-[12px] text-brand"
+              />
+              <input
+                type="text"
+                value={outboundTrackingInput}
+                onChange={(event) =>
+                  setOutboundTrackingInput(event.target.value)
+                }
+                placeholder="物流單號"
+                className="w-full h-10 rounded-lg border border-white/10 bg-[#120f0c] px-3 text-[12px] text-brand"
+              />
               <button
                 type="button"
+                disabled={
+                  !outboundTrackingInput.trim() ||
+                  !outboundCourierInput.trim()
+                }
                 onClick={() => {
-                  void runMerchantLogisticsStub(order.id, "");
+                  void runSubmitDirectFulfillment(
+                    order.id,
+                    outboundTrackingInput.trim(),
+                    outboundCourierInput.trim(),
+                    refreshAfterLogistics,
+                  );
                 }}
-                className="w-full h-10 bg-success text-white font-sans font-semibold text-[13px] rounded-xl hover:bg-success-hover active:scale-[0.98] transition-all cursor-pointer shadow-[0_4px_15px_rgba(16,185,129,0.2)]"
+                className="w-full h-10 rounded-xl bg-brand text-[#17130f] font-sans font-semibold text-[13px] disabled:opacity-50"
               >
-                模擬鑑定通過並放款給賣家 🪙
+                提交物流單號
               </button>
             </div>
           )}
 
-          {order.status === "released" && (
+          {merchantOrder.escrowStatus === "payment_held" &&
+            !merchantOrder.requiresAuthentication &&
+            merchantOrder.shippingMethod === "meetup" && (
+            <p className="text-[12.5px] text-text-secondary leading-relaxed">
+              款項已託管，待買家面交／自取後確認收貨。
+            </p>
+          )}
+
+          {merchantOrder.escrowStatus === "shipped" &&
+            !merchantOrder.requiresAuthentication && (
             <div className="space-y-3">
-              <div className="p-3.5 bg-[rgba(16,185,129,0.06)] border border-success/20 rounded-xl flex items-start gap-3 animate-fadeIn">
-                <svg
-                  className="mt-0.5 shrink-0"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                  <path d="m9 12 2 2 4-4" />
-                </svg>
-                <div className="space-y-1">
-                  <p className="font-sans font-bold text-[13.5px] text-success">
-                    款項釋放成功，交易全流程關閉
-                  </p>
-                  <p className="text-[11.5px] text-text-secondary">
-                    此合約已完成全量閉環。款項{" "}
-                    <span className="font-mono text-brand font-bold">
-                      HK$ {order.amount.toLocaleString("zh-TW")}
-                    </span>{" "}
-                    已存入您的 Stripe / Supabase 託管錢包中。
-                  </p>
-                </div>
-              </div>
-              {merchantOrder.canReviewBuyer && onOpenReview && (
-                <button
-                  type="button"
-                  onClick={() => onOpenReview(order.id, merchantOrder.buyerId)}
-                  className="w-full h-10 bg-brand/10 text-brand font-sans font-semibold text-[13px] rounded-xl border border-brand/20 hover:bg-brand/15 transition-all cursor-pointer"
-                >
-                  評價買家
-                </button>
+              <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                {merchantOrder.outboundTrackingNo
+                  ? "已提交物流單號，等待買家確認收貨後將自動撥款。"
+                  : "已確認面交完成，等待買家確認收貨後將自動撥款。"}
+              </p>
+              {merchantOrder.outboundTrackingNo ? (
+                <p className="font-mono text-[12px] text-brand">
+                  物流：
+                  {merchantOrder.outboundCourierName
+                    ? `${merchantOrder.outboundCourierName} · `
+                    : ""}
+                  {merchantOrder.outboundTrackingNo}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {merchantOrder.escrowStatus === "authenticating" &&
+            merchantOrder.requiresAuthentication && (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                平台已確認入庫，卡牌正在鑑定中。此階段無需商戶操作。
+              </p>
+              {merchantOrder.inboundTrackingNo ? (
+                <p className="font-mono text-[12px] text-brand">
+                  入庫：
+                  {merchantOrder.inboundCourierName
+                    ? `${merchantOrder.inboundCourierName} · `
+                    : ""}
+                  {merchantOrder.inboundTrackingNo}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {merchantOrder.escrowStatus === "authenticated" &&
+            merchantOrder.requiresAuthentication && (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                {merchantOrder.buyerConfirmedAt
+                  ? merchantOrder.payoutHoldUntil
+                    ? `買家已確認收貨；款項 T+7 保留中（至 ${formatMerchantPayoutHoldUntilLabel(
+                        merchantOrder.payoutHoldUntil,
+                      )}）`
+                    : "買家已確認收貨；款項 T+7 保留中"
+                  : "鑑定已通過，平台將安排寄出給買家。待買家確認收貨後撥款。"}
+              </p>
+              {merchantOrder.outboundTrackingNo ? (
+                <p className="font-mono text-[12px] text-brand">
+                  平台代發物流：{merchantOrder.outboundTrackingNo}
+                </p>
+              ) : (
+                <p className="text-[12px] text-text-disabled">
+                  待平台上載寄出物流單號。
+                </p>
               )}
             </div>
           )}
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-6 items-start">
-        {order.hasAuthenticationToggle && (
-          <div className="p-4 bg-[#17130f] rounded-xl border border-white/5 space-y-3 animate-fadeIn">
-            <h4 className="font-sans font-bold text-[12.5px] text-[#eae1da] border-b border-white/5 pb-2">
-              📋 鑑定服務報告與商品描述
-            </h4>
-            <div className="text-[12px] space-y-2 text-text-secondary font-mono">
-              <div className="flex justify-between">
-                <span>鑑定方</span>
-                <span className="text-brand font-bold">
-                  B2C 平台中介鑑定託管
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>買方帳號</span>
-                <span className="text-text-primary">{order.buyerName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>鑑定標準</span>
-                <span className="text-text-primary">{order.grade}</span>
-              </div>
-              <div className="flex justify-between border-t border-white/5 pt-2">
-                <span>鑑定服務費用</span>
-                <span className="text-brand font-bold">HK$ 150</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="p-5 bg-[#26211C] border border-[rgba(237,232,224,0.08)] rounded-2xl space-y-4 shadow-md animate-fadeIn">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h3 className="font-sans font-extrabold text-[14.5px] text-[#eae1da]">
-              🧾 交易資產最終交收電子收據
-            </h3>
-            <span className="font-sans text-[10px] font-black tracking-wide uppercase px-2 py-0.5 rounded border text-[#10b981] bg-[#10b981]/10 border-[#10b981]/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
-              賣出交易
-            </span>
-          </div>
-
-          <div className="border-t border-[rgba(237,232,224,0.06)] font-mono text-[12px] space-y-2 text-text-secondary">
-            <div className="flex justify-between">
-              <span>商品最終成交價</span>
-              <span className="text-text-primary">
-                HK$ {order.amount.toLocaleString("zh-TW")}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>速遞本港運費</span>
-              <span className="text-text-primary">HK$ 30</span>
-            </div>
-            <div className="flex justify-between text-[#ef4444]">
-              {/* TODO: depends on coupon redeem */}
-              <span>免郵補貼</span>
-              <span>-HK$ 30</span>
-            </div>
-
-            {order.hasAuthenticationToggle && (
-              <div className="flex justify-between text-brand">
-                {/* TODO: depends on admin settings for authentication charge */}
-                <span>鑑定服務費</span>
-                <span className="font-bold">HK$ 150</span>
-              </div>
-            )}
-
-            <div className="border-t border-[rgba(237,232,224,0.08)] pt-3 flex justify-between items-center text-[#eae1da] font-black text-[14px] md:text-[16px]">
-              <span>最終實收總額</span>
-              <span className="text-brand font-mono text-[18px] md:text-[24px]">
-                HK$ {order.amount.toLocaleString("zh-TW")}
-              </span>
-            </div>
-
-            {/* Stripe Escrow Section */}
-            <div className="mt-4 pt-3 border-t border-[rgba(237,232,224,0.08)] bg-[#17130f]/60 rounded-xl p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                <span className="font-sans font-bold text-[12px] text-text-primary">
-                  💳 Stripe交易明細
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-[11.5px]">
-                <span className="text-text-secondary">Stripe 流水號</span>
-                <span className="font-mono text-brand font-medium">
-                  {`tr_3M8x${merchantOrder.id.replaceAll("-", "").slice(0, 16)}`}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-[11.5px]">
-                <span className="text-text-secondary">平台費用</span>
-                <span className="font-mono text-warning font-semibold">
-                  {/* TODO: depends on admin settings for authentication charge */}
-                  HK${" "}
-                  {(order.hasAuthenticationToggle ? 150 : 0).toLocaleString(
-                    "zh-TW",
-                  )}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center select-none group w-full overflow-hidden">
-          <div className="relative w-full aspect-[3/4] max-h-[65dvh] rounded-2xl overflow-hidden bg-[#120f0c] border border-white/5 shrink-0 shadow-inner">
-            <Carousel
-              setApi={setApi}
-              className="w-full h-full [&>div]:h-full"
-              opts={{ loop: true }}
-            >
-              <CarouselContent className="-ml-0 h-full">
-                {merchantImages.map((imageUrl, photoIdx) => {
-                  const currentRemark =
-                    current === photoIdx
-                      ? (REMARKS_PRESETS[photoIdx] ?? "")
-                      : "";
-                  return (
-                    <CarouselItem
-                      key={photoIdx}
-                      onClick={() => {
-                        setViewerIndex(photoIdx);
-                        setIsViewerOpen(true);
-                      }}
-                      className="pl-0 relative w-full h-full overflow-hidden rounded-2xl cursor-zoom-in"
-                    >
-                      <Image
-                        src={imageUrl}
-                        alt={`${order.cardName} 實物照 ${photoIdx + 1}`}
-                        fill
-                        sizes="(max-width: 768px) 100vw, 400px"
-                        className="scale-100 object-cover transition-transform duration-500 ease-in-out hover:scale-105"
-                        unoptimized
-                      />
-                      {currentRemark && (
-                        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-2.5 py-1 rounded-md bg-[#17130f]/80 backdrop-blur-xs border border-white/10 text-center pointer-events-none select-none max-w-[85%] animate-fadeIn">
-                          <p className="font-sans text-[11px] font-medium text-brand tracking-wide truncate">
-                            {currentRemark}
-                          </p>
-                        </div>
-                      )}
-                    </CarouselItem>
-                  );
-                })}
-              </CarouselContent>
-              <CarouselPrevious className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 h-8 w-8 left-2 bg-black/60 hover:bg-black/80 border-0 hidden md:flex" />
-              <CarouselNext className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 h-8 w-8 right-2 bg-black/60 hover:bg-black/80 border-0 hidden md:flex" />
-            </Carousel>
-          </div>
-
-          {count > 1 && (
-            <div className="flex justify-center gap-1.5 py-2.5">
-              {Array.from({ length: count }, (_, index) => (
+          {(merchantOrder.escrowStatus === "completed_and_transferred" ||
+            merchantOrder.payoutStatus === "paid") && (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-text-secondary leading-relaxed">
+                交易已完成，款項{" "}
+                <span className="font-mono font-bold text-brand">
+                  HK$ {stripeDisplay.payoutAmount.toLocaleString("zh-TW")}
+                </span>{" "}
+                已撥至你的 Stripe Connect 帳戶。
+              </p>
+              {merchantOrder.canReviewBuyer && onOpenReview ? (
                 <button
-                  key={index}
                   type="button"
-                  aria-label={`前往第 ${index + 1} 張照片`}
-                  onClick={() => api?.scrollTo(index)}
-                  className={
-                    index === current
-                      ? "bg-brand w-3.5 h-1.5 opacity-100 rounded-full transition-all duration-300"
-                      : "bg-text-disabled w-1.5 h-1.5 opacity-30 hover:opacity-50 rounded-full transition-all duration-300"
-                  }
-                />
-              ))}
+                  data-testid="order-review-cta"
+                  onClick={() => onOpenReview(order.id, merchantOrder.buyerId)}
+                  className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-brand font-sans text-[13px] font-semibold text-[#17130f] transition-colors hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <MessageSquareText
+                    className="size-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  給予對手評價
+                </button>
+              ) : null}
             </div>
           )}
         </div>
-      </div>
+      </section>
+
+      <section className="space-y-3" aria-label="帳單明細">
+        {isAuthOrder ? (
+          <MemberAuthOrderInvoice
+            finalPrice={merchantOrder.finalPrice}
+            isSeller
+            buyerTotalAmount={merchantOrder.buyerTotalAmount}
+            authFee={merchantOrder.authFee}
+            itemSubtotal={merchantOrder.itemSubtotal}
+            inboundShippingFee={merchantOrder.inboundShippingFee}
+            outboundShippingFee={merchantOrder.outboundShippingFee}
+          />
+        ) : (
+          <MemberMerchantB2cOrderInvoice
+            itemSubtotal={merchantOrder.itemSubtotal}
+            shippingFee={merchantOrder.shippingFee}
+            shippingMethod={merchantOrder.shippingMethod}
+            totalAmount={merchantOrder.totalAmount}
+            authFee={0}
+            isSeller
+          />
+        )}
+
+        <div className={`${ORDER_DETAIL_CARD_CLASS} space-y-3`}>
+          <h3 className={SECTION_TITLE_CLASS}>
+            撥款明細
+          </h3>
+          <div className="space-y-2 border-t border-white/[0.06] pt-3 font-mono text-[12px] text-text-secondary">
+            <div className="flex justify-between gap-3">
+              <span>商品成交價</span>
+              <span className="text-text-primary">
+                HK$ {merchantOrder.itemSubtotal.toLocaleString("zh-TW")}
+              </span>
+            </div>
+            {isAuthOrder && stripeDisplay.authInboundShippingFee > 0 ? (
+              <div className="flex justify-between gap-3">
+                <span>運費（賣家寄送平台）</span>
+                <span className="text-text-primary">
+                  HK${" "}
+                  {stripeDisplay.authInboundShippingFee.toLocaleString("zh-TW")}
+                </span>
+              </div>
+            ) : null}
+            {!isAuthOrder && stripeDisplay.directShippingFee > 0 ? (
+              <div className="flex justify-between gap-3">
+                <span>
+                  運費（
+                  {merchantOrder.shippingMethod === "sf"
+                    ? "快遞寄貨"
+                    : merchantOrder.shippingMethod === "meetup"
+                      ? "面交自取"
+                      : "—"}
+                  ）
+                </span>
+                <span className="text-text-primary">
+                  HK${" "}
+                  {stripeDisplay.directShippingFee.toLocaleString("zh-TW")}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex justify-between gap-3">
+              <span>
+                平台費用
+                {stripeDisplay.platformFeeIsEstimate ? "（預估）" : ""}
+              </span>
+              <span className="font-semibold text-warning">
+                -HK${" "}
+                {stripeDisplay.platformFee.toLocaleString("zh-TW")}
+              </span>
+            </div>
+            {stripeDisplay.recoveryDeductionTotal > 0 ? (
+              <div className="flex justify-between gap-3">
+                <span>應撥總額</span>
+                <span className="text-text-primary">
+                  HK$ {stripeDisplay.payoutGross.toLocaleString("zh-TW")}
+                </span>
+              </div>
+            ) : null}
+            {stripeDisplay.recoveryDeductionTotal > 0 ? (
+              <div className="flex justify-between gap-3">
+                <span>追償抵扣</span>
+                <span className="font-semibold text-warning">
+                  -HK${" "}
+                  {stripeDisplay.recoveryDeductionTotal.toLocaleString("zh-TW")}
+                </span>
+              </div>
+            ) : null}
+            {merchantOrder.sellerSettlementStatus === "pending" &&
+            merchantOrder.gradingFailRecoveryAmount != null ? (
+              <div className="flex justify-between gap-3">
+                <span>鑑定失敗追償（待繳）</span>
+                <span className="font-semibold text-warning">
+                  HK${" "}
+                  {merchantOrder.gradingFailRecoveryAmount.toLocaleString("zh-TW")}
+                </span>
+              </div>
+            ) : null}
+            {merchantOrder.gradingFailRecoveryAmount != null &&
+            merchantOrder.sellerSettlementStatus === "cleared" ? (
+              <div className="flex justify-between gap-3">
+                <span>鑑定失敗追償</span>
+                <span className="font-semibold text-text-primary">
+                  HK${" "}
+                  {merchantOrder.gradingFailRecoveryAmount.toLocaleString("zh-TW")}
+                  （已確認）
+                </span>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-3 font-sans text-[14px]">
+              <span className="font-semibold text-text-primary">
+                預計撥款淨額
+              </span>
+              <span className="flex items-center justify-end gap-1">
+                {transferDisplay.showT7PolicyTooltip ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        className="shrink-0 text-brand/70 hover:text-brand focus:outline-none"
+                        aria-label="撥款說明"
+                      >
+                        <Info className="size-3.5" />
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="max-w-xs border border-white/10 bg-bg-elevated text-left text-[11px] leading-relaxed text-text-primary"
+                      >
+                        {MERCHANT_CONNECT_T7_PAYOUT_POLICY_TEXT}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : null}
+                <span className="font-mono text-[18px] font-bold text-brand sm:text-[20px]">
+                  HK$ {stripeDisplay.payoutAmount.toLocaleString("zh-TW")}
+                </span>
+              </span>
+            </div>
+            <div className="space-y-2 border-t border-white/[0.06] pt-3">
+              <div className="flex justify-between gap-3">
+                <span>撥款狀態</span>
+                <span className="text-text-primary">
+                  {formatMerchantPayoutStatusLabel(stripeDisplay.payoutStatus)}
+                </span>
+              </div>
+              {merchantOrder.payoutStatus === "held" &&
+              merchantOrder.payoutHoldUntil ? (
+                <div className="flex justify-between gap-3">
+                  <span>預計撥款時間</span>
+                  <span className="text-text-primary">
+                    {formatMerchantPayoutHoldUntilLabel(
+                      merchantOrder.payoutHoldUntil,
+                    )}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-3 text-[11px]">
+                <span>支付編號</span>
+                <span className="break-all text-right text-brand">
+                  {stripeDisplay.paymentIntentId ?? "—"}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 text-[11px]">
+                <span>撥款轉帳編號</span>
+                <span className="break-all text-right text-brand">
+                  {transferDisplay.label}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="實物照">
+        <OrderListingPhotoGrid
+          images={merchantImages}
+          altPrefix={`${order.cardName} 實物照`}
+          remarks={merchantImages.map((_, idx) => REMARKS_PRESETS[idx] ?? "")}
+          onImageClick={(photoIdx) => {
+            setViewerIndex(photoIdx);
+            setIsViewerOpen(true);
+          }}
+        />
+      </section>
 
       <ImageViewer
         isOpen={isViewerOpen}

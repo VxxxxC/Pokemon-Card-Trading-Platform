@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import {
+  CouponTicketShell,
+  REDEEMABLE_COUPON_TICKET_TONE,
+} from "@/app/components/rewards/CouponTicketShell";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -10,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  formatRewardGrantSummary,
+  formatRewardGrantValueLabel,
   REWARD_TYPE_LABELS,
   type UnacknowledgedRewardGrant,
 } from "@/lib/constants/rewards";
@@ -40,30 +44,35 @@ export function RewardUnlockedModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ul className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+        <ul className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
           {grants.map((grant) => (
-            <li
-              key={grant.userRewardId}
-              className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-[#17130f]/60 p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-sans font-bold text-[14px] text-[#eae1da]">
+            <li key={grant.userRewardId}>
+              <CouponTicketShell
+                accentClass={REDEEMABLE_COUPON_TICKET_TONE.accentClass}
+                borderClass={REDEEMABLE_COUPON_TICKET_TONE.borderClass}
+                bgClass={REDEEMABLE_COUPON_TICKET_TONE.bgClass}
+                stubClass={REDEEMABLE_COUPON_TICKET_TONE.stubClass}
+                valueLabel={formatRewardGrantValueLabel(grant)}
+              >
+                <div className="space-y-1.5">
+                  <h4 className="font-sans text-[12.5px] font-bold leading-snug text-text-primary line-clamp-2">
                     {grant.title}
+                  </h4>
+                  <p className="font-sans text-[11px] leading-snug text-text-secondary">
+                    {grant.description?.trim() ||
+                      REWARD_TYPE_LABELS[grant.type] ||
+                      grant.type}
                   </p>
-                  {grant.description ? (
-                    <p className="mt-1 font-sans text-[12px] text-[#a89b8f] leading-relaxed">
-                      {grant.description}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-[#7a6f65]">
-                    {REWARD_TYPE_LABELS[grant.type] ?? grant.type}
-                  </p>
+                  <div className="flex items-center justify-between gap-3 border-t border-dashed border-white/[0.08] pt-2">
+                    <span className="truncate rounded-md border border-white/[0.06] bg-black/25 px-2 py-0.5 font-mono text-[10px] font-medium text-text-secondary">
+                      {REWARD_TYPE_LABELS[grant.type] ?? grant.type}
+                    </span>
+                    <span className="shrink-0 text-[10px] font-medium text-success">
+                      已自動發放
+                    </span>
+                  </div>
                 </div>
-                <span className="shrink-0 font-mono font-black text-[15px] text-brand">
-                  {formatRewardGrantSummary(grant)}
-                </span>
-              </div>
+              </CouponTicketShell>
             </li>
           ))}
         </ul>

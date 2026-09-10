@@ -190,7 +190,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="w-(--sidebar-width) border-r border-white/[0.08] bg-sidebar p-0 text-sidebar-foreground shadow-none [&>button]:top-3 [&>button]:right-3 [&>button]:size-8 [&>button]:rounded-lg [&>button]:border [&>button]:border-white/10 [&>button]:bg-transparent [&>button]:text-text-secondary hover:[&>button]:border-brand/30 hover:[&>button]:bg-brand/10 hover:[&>button]:text-brand"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,

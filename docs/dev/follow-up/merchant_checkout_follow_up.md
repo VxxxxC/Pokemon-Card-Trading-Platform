@@ -1,5 +1,12 @@
 # HKCardVault - Merchant B2C Checkout Architecture Conservation
 
+> ⚠️ **Superseded (Payment Milestone 1).** The mock checkout described below has been wired to real Stripe
+> escrow payments. `[id]` is now the **merchant order id / `ORD-*` number**, not a product id, and
+> `MOCK_INVENTORY_DATABASE` is gone. See the current handoff packet:
+> [merchant-checkout/backend.md](./merchant-checkout/backend.md) ·
+> [merchant-checkout/frontend.md](./merchant-checkout/frontend.md).
+> This file is kept only as the historical record of the pre-integration mock design.
+
 This follow-up blueprint records the location and configuration of the full-page pre-checkout asset routing system (`app/checkout/[id]/page.tsx`), which is intentionally preserved exclusively for **Merchant (B2C)** Stripe Escrow settlements.
 
 ---

@@ -16,6 +16,44 @@ export function isValidOfferCardImageUrl(
   return typeof url === "string" && url.trim().length > 0;
 }
 
+export function resolveOfferCardHeroImageUrl(
+  context: {
+    listingImageUrls?: string[];
+    imageUrl?: string | null;
+  },
+): string | undefined {
+  const listingFirst = context.listingImageUrls?.[0]?.trim();
+  if (listingFirst) {
+    return listingFirst;
+  }
+
+  const persisted = context.imageUrl?.trim() ?? "";
+  if (persisted && !isCatalogImageUrl(persisted)) {
+    return persisted;
+  }
+
+  return undefined;
+}
+
+export function needsOfferCardListingImageFetch(
+  context: {
+    listingImageUrls?: string[];
+    imageUrl?: string | null;
+    offer?: { id?: string };
+  } | null
+  | undefined,
+): boolean {
+  if (!context?.offer?.id) {
+    return false;
+  }
+
+  if (resolveOfferCardHeroImageUrl(context)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function isCatalogImageUrl(url: string): boolean {
   try {
     return new URL(url).hostname === "www.pokemon-card.com";

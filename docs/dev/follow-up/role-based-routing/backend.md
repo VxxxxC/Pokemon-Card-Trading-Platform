@@ -83,9 +83,10 @@ No FormData. Called from client via `startTransition(() => logout())`.
 
 | Path prefix | Allowed roles |
 |-------------|---------------|
-| `/profile/user/*`, `/profile` | `USER`, `MERCHANT`, `ADMIN` |
-| `/profile/merchant/*` | `MERCHANT`, `ADMIN` |
+| `/profile/user/*`, `/profile` | `USER`, `MERCHANT` |
+| `/profile/merchant/*` | `MERCHANT` |
 | `/admin/*` | `ADMIN` only |
+| `ADMIN` on any other app route | → redirect `/admin` (whitelist: `/admin/*`, `/auth/*`, `/api/*`) |
 | Guest on any row above | → redirect `/auth?redirect=<pathname>` |
 | Wrong role | → redirect role home (`getRoleHomePath`) |
 

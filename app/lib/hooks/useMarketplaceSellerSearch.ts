@@ -7,6 +7,7 @@ import type {
   MarketplacePaginationMeta,
   MarketplaceSellerListingRow,
 } from "@/app/lib/marketplace/types";
+import type { ReviewPersona } from "@/app/lib/reviews/types";
 import type { SortKey } from "@/app/store/useMarketStore";
 import { MARKETPLACE_STOREFRONT_PAGE_SIZE } from "@/lib/marketplace/constants";
 
@@ -23,6 +24,7 @@ const EMPTY_META: MarketplacePaginationMeta = {
 
 export type MarketplaceSellerSearchFilters = {
   sellerId: string;
+  sellerPersona?: ReviewPersona;
   query: string;
   rarities: string[];
   grades: string[];
@@ -57,6 +59,7 @@ type UseMarketplaceSellerSearchResult = {
 function filtersKey(filters: MarketplaceSellerSearchFilters): string {
   return [
     filters.sellerId,
+    filters.sellerPersona ?? "",
     filters.query,
     filters.sortKey,
     filters.rarities.join(","),
@@ -137,6 +140,7 @@ export function useMarketplaceSellerSearch(
       try {
         const result = await searchMarketplaceSellerListings({
           sellerId: activeFilters.sellerId,
+          sellerPersona: activeFilters.sellerPersona,
           query: activeFilters.query,
           rarities: activeFilters.rarities,
           gradeFilters: parseGradeFilters(activeFilters.grades),

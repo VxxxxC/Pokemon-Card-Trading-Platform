@@ -8,6 +8,50 @@
     {
       "path": "/api/cron/aggregate-prices",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/expire-merchant-pending-payment",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/release-stale-coupon-reserves",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/member-fps-payout-ready",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/merchant-connect-payout-ready",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/process-email-outbox",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/order-fulfillment-reminders",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/merchant-connect-onboarding-reminder",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/reward-coupon-expiring-reminder",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sanction-expiry-notifications",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/wishlist-price-alerts",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/chat-unread-digest",
+      "schedule": "0 1 * * *"
     }
   ]
 }

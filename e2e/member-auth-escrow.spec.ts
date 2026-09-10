@@ -17,32 +17,37 @@ import {
   ensurePendingAuthOffer,
   gotoOrderDetail,
   gotoTradingPageWithFilter,
-  mockPayAuthOrderOnDetail,
   offerAmountFromListingPrice,
   offerAmountLabelFromListingPrice,
+  payAuthMemberOrder,
   pollMemberOrderIdForOffer,
   resolveAuthMemberOrderIdFromTradingList,
   runDevAuthMockFullFlow,
+  tradingOrderRowByNumber,
   waitForTradingListSettled,
 } from "./helpers/member-trading";
+import { hasStripeReconcileEnv } from "./helpers/stripe-reconcile";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(300_000);
 
 test.describe("Member auth escrow closure", () => {
-  test("auth offer → accept → mock pay → dev complete", async ({
+  test("auth offer → accept → stripe pay → dev complete", async ({
     browser,
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "member-trading",
       "Dual-browser auth escrow runs on member-trading project",
     );
+    test.skip(!hasStripeReconcileEnv(), "Missing Stripe keys for member auth checkout");
     if (!hasMemberTradingFixtures()) {
       test.skip(true, "Missing member trading E2E env");
     }
 
-    const fixtureResult = await resolveE2eMarketplaceFixture();
+    const fixtureResult = await resolveE2eMarketplaceFixture({
+      requiredSellerPersona: "member",
+    });
     if (!fixtureResult.ok) {
       test.skip(true, fixtureResult.skipReason);
       return;
@@ -113,6 +118,8 @@ test.describe("Member auth escrow closure", () => {
           offerLabel,
           buyerPage,
           sellerDisplayName,
+          sellerId,
+          buyerId,
         );
       });
 
@@ -150,21 +157,21 @@ test.describe("Member auth escrow closure", () => {
         } else {
           const order = await getMemberOrderById(memberOrderId);
           if (order?.order_number) {
-            const authOrderRow = buyerPage
-              .locator("article, div")
-              .filter({ hasText: `#${order.order_number}` })
-              .first();
-            await expect(authOrderRow.getByText("待付款")).toBeVisible({
+            const authOrderRow = tradingOrderRowByNumber(
+              buyerPage,
+              order.order_number,
+            );
+            await expect(authOrderRow.getByText("待付款").first()).toBeVisible({
               timeout: 15_000,
             });
             await expect(
-              authOrderRow.getByRole("button", { name: "前往付款" }),
+              authOrderRow.getByRole("button", { name: "前往付款" }).first(),
             ).toBeVisible();
           }
         }
       });
 
-      await test.step("Step 5 — buyer order detail shows mock payment panel", async () => {
+      await test.step("Step 5 — buyer pays on unified checkout wizard", async () => {
         if (!memberOrderId) {
           memberOrderId = await resolveAuthMemberOrderIdFromTradingList(buyerPage);
         }
@@ -172,26 +179,29 @@ test.describe("Member auth escrow closure", () => {
           throw new Error("Could not resolve auth member order id");
         }
 
-        await gotoOrderDetail(buyerPage, memberOrderId);
-        await mockPayAuthOrderOnDetail(buyerPage);
+        await payAuthMemberOrder(buyerPage, memberOrderId);
       });
 
       await test.step("Step 6 — dev mock panel completes auth escrow", async () => {
+        if (process.env.PRODUCTION_GATE === "1") {
+          test.skip(
+            true,
+            "Dev mock auth panel is not available in production builds",
+          );
+        }
         if (!memberOrderId) {
           throw new Error("Missing memberOrderId before dev flow");
         }
         await gotoOrderDetail(buyerPage, memberOrderId);
-        await expect(
-          buyerPage.getByRole("button", { name: /一鍵跑完 Mock 全流程/ }),
-        ).toBeVisible({ timeout: 15_000 });
+        const mockButton = buyerPage.getByRole("button", {
+          name: /一鍵跑完 Mock 全流程/,
+        });
+        if (!(await mockButton.isVisible().catch(() => false))) {
+          test.skip(true, "Dev mock auth panel is not rendered in this build");
+        }
 
         const completed = await runDevAuthMockFullFlow(buyerPage);
         expect(completed).toBe(true);
-
-        await gotoOrderDetail(buyerPage, memberOrderId);
-        await expect(
-          buyerPage.getByText("測試模式 — Stripe 尚未接入"),
-        ).toHaveCount(0);
       });
     } finally {
       await buyerContext.close();

@@ -11,7 +11,8 @@
 | In scope | Out of scope (future) |
 |----------|----------------------|
 | `getUserSettings` — profile + auth email | `notification_settings` table / toggles |
-| `updateUserProfile` — `display_name`, `username`, `short_description` | Avatar upload on settings page |
+| `updateUserProfile` — `display_name`, `username`, `short_description`, **`fps_id`** | Avatar upload on settings page |
+| **`updateUserFpsId`** — lightweight FPS-only update (auth seller dialog) | Merchant shop settings (`merchant_shops`) |
 | `updateUserAvatar` — persist Bunny CDN URL to `profiles.avatar_path` | Merchant shop settings (`merchant_shops`) |
 | `POST /api/profile/upload-avatar` — auth + Bunny PUT (`avatars/{userId}/{uuid}.ext`) | Email change flow (`auth.updateUser` email) |
 | Default avatar via `profiles.avatar_path` DB default + `resolveAvatarUrl()` | Remove / relax `display_name` unique index (product decision) |
@@ -40,6 +41,7 @@
 | `display_name` | 顯示名稱 | Required non-empty; **unique** index `profiles_display_name_lower_idx` still enforced at DB |
 | `username` | 用戶名 (Handle) | Auto-set on signup (`user_<random>` — see [auth-login-register](../auth-login-register/backend.md)); editable here; 3–24 chars `[A-Za-z0-9_-]`; unique when set |
 | `short_description` | 個人簡介 | Optional; max 280 chars |
+| `fps_id` | 轉數快 ID / 電話 / 電郵 | Optional; max 100 chars; required for auth seller FPS payout (soft remind) |
 | `avatar_path` | Dashboard avatar edit (not on settings page) | Default `/asset/default-avator.webp`; custom uploads stored as full Bunny CDN URL (`https://{BUNNY_CDN_HOSTNAME}/avatars/{userId}/…`) |
 | `auth.users.email` | 電郵地址 | Read-only in UI |
 
@@ -62,8 +64,17 @@ type UserSettingsData = {
   email: string;
   avatarUrl: string;  // resolved via resolveAvatarUrl
   role: "member" | "merchant" | "admin";
+  fpsId?: string;
 };
 ```
+
+### `updateUserFpsId(fpsId: string)`
+
+```ts
+{ success: true } | { success: false; error: string }
+```
+
+Validates via `validateFpsId`; revalidates `/profile/user/settings`, `/profile/user`, `/profile/user/trading`.
 
 Called from **Server Component** `app/profile/user/settings/page.tsx` (not from client fetch on mount).
 

@@ -1,11 +1,19 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import {
+  adjustAdminModerationCaseScore,
+  previewModerationOrderRefund,
+  requestAdminModerationEvidence,
+  resolveAdminModerationCase,
+  retryModerationOrderRefund,
+} from "@/app/actions/admin-moderation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -13,583 +21,1030 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  statusLabelMap,
-  type DisputeCase,
-  type DisputeStatus,
-  arbitrationActionLabelMap,
-} from "../mockDisputes";
+  categoryBadgeClasses,
+  deriveSeverityBand,
+  formatCategoryLabel,
+  formatModerationDateTime,
+  moderationResolutionLabel,
+  moderationStatusBadgeClasses,
+  moderationStatusLabel,
+  sanctionScopeLabel,
+  sanctionTypeLabel,
+  severityBadgeClasses,
+  severityLabel,
+} from "@/lib/moderation/admin-case-presenters";
+import {
+  isUpheldResolutionOption,
+  mapResolutionOptionToInput,
+  MODERATION_RESOLUTION_OPTIONS,
+  VIOLATION_PERSONA_OPTIONS,
+  type ModerationResolutionOptionValue,
+} from "@/lib/moderation/resolution-config";
+import type {
+  AdminModerationCaseBundle,
+  AdminSubjectModerationHistory,
+  ModerationRefundBreakdownPreview,
+  ViolationPersona,
+} from "@/lib/moderation/types";
+import ModerationAuditTimeline from "./ModerationAuditTimeline";
+import ModerationChatHistoryPanel from "./ModerationChatHistoryPanel";
+import ModerationEvidencePanel from "./ModerationEvidencePanel";
+import ModerationOrderContextPanel from "./ModerationOrderContextPanel";
+import ModerationReportSummaryPanel from "./ModerationReportSummaryPanel";
+import ModerationSubjectHistoryPanel from "./ModerationSubjectHistoryPanel";
+import {
+  BTN_OUTLINE_CLASS,
+  BTN_PRIMARY_CLASS,
+  INPUT_CLASS,
+  META_TEXT_CLASS,
+  MODERATION_META_BADGE_CLASS,
+  SECTION_BLOCK_CLASS,
+  SECTION_TITLE_CLASS,
+  SELECT_CONTENT_CLASS,
+  SELECT_ITEM_CLASS,
+  SELECT_TRIGGER_CLASS,
+  TEXTAREA_CLASS,
+} from "./moderation-detail-ui";
 
 interface DisputeDetailClientProps {
-  dispute: DisputeCase;
+  bundle: AdminModerationCaseBundle;
+  subjectHistory: AdminSubjectModerationHistory | null;
 }
 
-const ESCROW_STEPS: Array<{ key: DisputeCase["escrowStep"]; label: string }> = [
-  { key: "payment", label: "付款" },
-  { key: "custody", label: "保管中" },
-  { key: "grading", label: "鑑定中" },
-  { key: "shipped", label: "已發貨" },
-  { key: "released", label: "已釋放" },
-];
-
-const STATUS_SELECT_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "buyer_refunded", label: "全額退款給買家 (Refund Full)" },
-  { value: "buyer_refunded_partial", label: "部分退款給買家 (Partial Refund)" },
-  { value: "seller_released", label: "強制釋放款項給賣家 (Release to Seller)" },
-  { value: "frozen", label: "標記完成並結案 (Mark Complete)" },
-  {
-    value: "freeze_account",
-    label: "凍結涉事帳戶 (Freeze Account)",
-  },
-];
-
-const FREEZE_ACTION_VALUE = "freeze_account";
-
-function formatCurrency(n: number): string {
-  return `HK$ ${n.toLocaleString("zh-HK")}`;
-}
-
-function cn(...classes: Array<string | false | undefined>): string {
-  return classes.filter(Boolean).join(" ");
-}
-
-function statusBadgeClasses(status: DisputeStatus): string {
-  switch (status) {
-    case "pending":
-      return "bg-[rgba(245,158,11,0.12)] text-[#f59e0b] border-[#f59e0b]/20";
-    case "completed":
-      return "bg-[rgba(16,185,129,0.12)] text-[#10b981] border-[#10b981]/20";
-    default:
-      return "bg-[rgba(16,185,129,0.12)] text-[#10b981] border-[#10b981]/20";
-  }
-}
-
-function categoryBadgeClasses(category: DisputeCase["category"]): string {
-  switch (category) {
-    case "惡意欺詐":
-      return "bg-[rgba(239,68,68,0.12)] text-[#ef4444] border-[#ef4444]/20";
-    case "卡牌品相不符":
-      return "bg-[rgba(212,165,116,0.15)] text-[#d4a574] border-[#d4a574]/20";
-    case "誘導私下交易":
-      return "bg-[rgba(16,185,129,0.10)] text-[#10b981] border-[#10b981]/20";
-    case "物流爭議":
-      return "bg-[#2e2925] text-[#d4c4b7] border-white/10";
-    default:
-      return "bg-[#2e2925] text-[#d4c4b7] border-white/10";
-  }
-}
-
-function highlightSensitiveKeywords(text: string): React.ReactNode {
-  const regex = /(PayMe|FPS|轉數快|WhatsApp|https?:\/\/\S+|[569]\d{3}[\s-]?\d{4})/gi;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-
-  text.replace(regex, (match, _group, offset) => {
-    if (offset > lastIndex) {
-      parts.push(text.slice(lastIndex, offset));
-    }
-    parts.push(
-      <span
-        key={`${offset}-${match}`}
-        className="rounded bg-[#ef4444]/10 px-1 text-[#ef4444]"
-      >
-        {match}
-      </span>,
-    );
-    lastIndex = offset + match.length;
-    return match;
-  });
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts.length > 0 ? parts : text;
-}
-
-function isValidFreezeDays(value: string | undefined): value is string {
-  if (value === undefined) return false;
-  const n = Number(value);
-  return value !== "" && Number.isFinite(n) && n >= 1 && n <= 365;
-}
-
-function getCurrentTimestamp(): string {
-  return new Date().toISOString().replace("T", " ").slice(0, 16);
+function isCaseOpen(status: AdminModerationCaseBundle["case"]["status"]): boolean {
+  return status === "open" || status === "reviewing";
 }
 
 export default function DisputeDetailClient({
-  dispute,
+  bundle,
+  subjectHistory,
 }: DisputeDetailClientProps) {
   const router = useRouter();
-  const [caseState, setCaseState] = useState<DisputeCase>(() => dispute);
-  const [action, setAction] = useState<string>("");
-  const [reason, setReason] = useState<string>("");
-  const [freezeDays, setFreezeDays] = useState<string>("7");
-  const [auditLog, setAuditLog] = useState<DisputeCase["auditLog"]>(
-    dispute.auditLog,
+  const [isAdjustPending, startAdjustTransition] = useTransition();
+  const [isResolvePending, startResolveTransition] = useTransition();
+  const { case: caseDetail, reports, attachments, chatAccess, auditLog, activeSanctions, relatedOrders } =
+    bundle;
+  const severity = deriveSeverityBand(caseDetail.finalScore);
+  const primaryReporter = bundle.reporterSummaries[0];
+  const primaryReporterUsername = primaryReporter
+    ? reports.find((r) => r.reporterId === primaryReporter.id)?.reporterUsername
+    : null;
+  const caseOpen = isCaseOpen(caseDetail.status);
+  const showScoreBreakdown =
+    caseOpen ||
+    caseDetail.adminAdjustment !== 0 ||
+    reports.length > 1;
+  const chatRoomIds =
+    chatAccess.roomIds.length > 0
+      ? chatAccess.roomIds
+      : chatAccess.roomId
+        ? [chatAccess.roomId]
+        : [];
+
+  const [scoreAdjustment, setScoreAdjustment] = useState("0");
+  const [adjustmentReason, setAdjustmentReason] = useState(
+    caseDetail.adjustmentReason ?? "",
   );
-
-  const activeStepIndex = useMemo(
-    () => ESCROW_STEPS.findIndex((s) => s.key === caseState.escrowStep),
-    [caseState.escrowStep],
+  const [resolutionOption, setResolutionOption] = useState<
+    ModerationResolutionOptionValue | ""
+  >("");
+  const [violationPersona, setViolationPersona] = useState<
+    ViolationPersona | ""
+  >("");
+  const [evidenceOverride, setEvidenceOverride] = useState(false);
+  const [evidenceOverrideReason, setEvidenceOverrideReason] = useState("");
+  const [notifyReporter, setNotifyReporter] = useState(true);
+  const [executeOrderRefund, setExecuteOrderRefund] = useState(false);
+  const [refundOrderId, setRefundOrderId] = useState(() => {
+    const eligible = bundle.relatedOrders.filter((order) => order.refundEligible);
+    return eligible.length === 1 ? eligible[0].id : "";
+  });
+  const [faultParty, setFaultParty] = useState<
+    "seller" | "buyer" | "platform" | "carrier" | "inconclusive" | ""
+  >("");
+  const [platformFaultReason, setPlatformFaultReason] = useState("");
+  const [carrierLiabilityParty, setCarrierLiabilityParty] = useState<
+    "seller" | "platform" | ""
+  >("");
+  const [refundPreview, setRefundPreview] =
+    useState<ModerationRefundBreakdownPreview | null>(null);
+  const [refundPreviewError, setRefundPreviewError] = useState<string | null>(
+    null,
   );
+  const [previewFetchGeneration, setPreviewFetchGeneration] = useState(0);
+  const [previewResolvedGeneration, setPreviewResolvedGeneration] = useState(0);
+  const [isRetryPending, startRetryTransition] = useTransition();
+  const [isEvidenceRequestPending, startEvidenceRequestTransition] = useTransition();
+  const [evidenceRequestTarget, setEvidenceRequestTarget] = useState<
+    "subject" | "reporter" | ""
+  >("");
+  const [evidenceRequestMessage, setEvidenceRequestMessage] = useState("");
 
-  // Keep form frozen-days default when action switches back to freeze.
-  // Leave explicit for deterministic UI state.
+  const eligibleRefundOrders = relatedOrders.filter((order) => order.refundEligible);
 
-  const appendSystemMessage = useCallback(
-    (message: string, timestamp: string) => {
-      setCaseState((prev) => ({
-        ...prev,
-        chatHistory: [
-          ...prev.chatHistory,
-          { sender: "system", name: "系統 Escrow 通知", message, timestamp },
-        ],
-      }));
-    },
-    [],
-  );
+  const canPreviewRefund =
+    executeOrderRefund &&
+    Boolean(refundOrderId) &&
+    Boolean(faultParty) &&
+    (faultParty !== "carrier" || Boolean(carrierLiabilityParty)) &&
+    (faultParty !== "platform" || Boolean(platformFaultReason.trim()));
 
-  const clearForm = useCallback(() => {
-    setAction("");
-    setReason("");
-    setFreezeDays("7");
-  }, []);
+  useEffect(() => {
+    if (!canPreviewRefund || !faultParty) {
+      return;
+    }
 
-  const buildAuditReason = useCallback(
-    (baseReason: string, selectedAction: string): string => {
-      if (selectedAction === FREEZE_ACTION_VALUE && isValidFreezeDays(freezeDays)) {
-        return `${baseReason}（凍結 ${Number(freezeDays)} 日）`;
+    const timer = window.setTimeout(() => {
+      setPreviewFetchGeneration((value) => value + 1);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    canPreviewRefund,
+    refundOrderId,
+    faultParty,
+    platformFaultReason,
+    carrierLiabilityParty,
+  ]);
+
+  useEffect(() => {
+    if (!canPreviewRefund || !faultParty || previewFetchGeneration === 0) {
+      return;
+    }
+
+    const generation = previewFetchGeneration;
+    let cancelled = false;
+
+    void previewModerationOrderRefund({
+      orderId: refundOrderId,
+      faultParty,
+      ...(faultParty === "platform"
+        ? { platformFaultReason: platformFaultReason.trim() }
+        : {}),
+      ...(faultParty === "carrier" && carrierLiabilityParty
+        ? { carrierLiabilityParty }
+        : {}),
+    }).then((result) => {
+      if (cancelled) {
+        return;
       }
-      return baseReason;
-    },
-    [freezeDays],
-  );
+      if (!result.success) {
+        setRefundPreview(null);
+        setRefundPreviewError(result.error);
+        setPreviewResolvedGeneration(generation);
+        return;
+      }
+      setRefundPreview(result.data);
+      setRefundPreviewError(null);
+      setPreviewResolvedGeneration(generation);
+    });
 
-  // TODO: [Supabase Wiring] Replace mock data with real Supabase query / Server Action
-  // Target Table: user_reports, orders, escrow_accounts | View / RPC: resolve_arbitration_case
-  const handleSubmit = () => {
-    if (!action) {
-      toast.error("請先選擇仲裁判定動作。", {
-        description: "你必須選擇一項最終裁定後才能執行。",
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    previewFetchGeneration,
+    canPreviewRefund,
+    refundOrderId,
+    faultParty,
+    platformFaultReason,
+    carrierLiabilityParty,
+  ]);
+
+  const visibleRefundPreview = canPreviewRefund ? refundPreview : null;
+  const visibleRefundPreviewError = canPreviewRefund ? refundPreviewError : null;
+  const visibleRefundPreviewLoading =
+    canPreviewRefund &&
+    previewFetchGeneration > 0 &&
+    previewFetchGeneration !== previewResolvedGeneration;
+
+  const handleSaveScoreAdjustment = () => {
+    const adjustment = Number(scoreAdjustment);
+    if (!Number.isFinite(adjustment)) {
+      toast.error("請輸入有效的分數調整值");
+      return;
+    }
+
+    if (adjustment !== 0 && !adjustmentReason.trim()) {
+      toast.error("調整分數時必須填寫原因");
+      return;
+    }
+
+    startAdjustTransition(async () => {
+      const result = await adjustAdminModerationCaseScore({
+        caseId: caseDetail.id,
+        adjustment,
+        reason: adjustmentReason.trim() || undefined,
       });
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success("風控分數已更新");
+      router.refresh();
+    });
+  };
+
+  const handleRequestEvidence = () => {
+    if (!evidenceRequestTarget) {
+      toast.error("請選擇通知對象");
       return;
     }
-    if (!reason.trim()) {
-      toast.error("請輸入仲裁裁決理由。", {
-        description: "理由為必填項目，將寫入 Audit Log 存檔。",
+
+    startEvidenceRequestTransition(async () => {
+      const result = await requestAdminModerationEvidence({
+        caseId: caseDetail.id,
+        targetRole: evidenceRequestTarget,
+        message: evidenceRequestMessage.trim() || undefined,
       });
-      return;
-    }
-    if (action === FREEZE_ACTION_VALUE && !isValidFreezeDays(freezeDays)) {
-      toast.error("請輸入 1 至 365 之間嘅凍結天數");
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success("已發送補充證據通知郵件");
+      setEvidenceRequestMessage("");
+    });
+  };
+
+  const handleResolve = () => {
+    if (!resolutionOption) {
+      toast.error("請選擇仲裁結果");
       return;
     }
 
-    const selectedLabel = arbitrationActionLabelMap[action] ?? action;
-    const auditReason = buildAuditReason(reason.trim(), action);
-    const timestamp = getCurrentTimestamp();
+    const requiresUpheld = isUpheldResolutionOption(resolutionOption);
+    if (requiresUpheld && !violationPersona) {
+      toast.error("裁定成立時必須指定違規身分");
+      return;
+    }
 
-    setCaseState((prev) => ({ ...prev, status: "completed" }));
-    setAuditLog((prev) => [
-      ...prev,
-      {
-        action: selectedLabel,
-        reason: auditReason,
-        timestamp,
-        ...(action === FREEZE_ACTION_VALUE
-          ? { freezeDays: Number(freezeDays) }
+    if (
+      requiresUpheld &&
+      !chatAccess.evidenceSufficient &&
+      !evidenceOverride
+    ) {
+      toast.error("證據不足時無法裁定成立，請勾選管理員覆寫或改選其他結果");
+      return;
+    }
+
+    if (evidenceOverride && !evidenceOverrideReason.trim()) {
+      toast.error("請填寫證據覆寫原因");
+      return;
+    }
+
+    if (requiresUpheld && executeOrderRefund) {
+      if (!refundOrderId) {
+        toast.error("請選擇要退款的訂單");
+        return;
+      }
+      if (!faultParty) {
+        toast.error("請選擇退款責任方");
+        return;
+      }
+      if (faultParty === "platform" && !platformFaultReason.trim()) {
+        toast.error("平台責任退款必須填寫原因");
+        return;
+      }
+      if (faultParty === "carrier" && !carrierLiabilityParty) {
+        toast.error("物流責任必須指定承擔方");
+        return;
+      }
+    }
+
+    const resolveInput = mapResolutionOptionToInput(
+      resolutionOption,
+      violationPersona || undefined,
+    );
+
+    if (evidenceOverride && evidenceOverrideReason.trim()) {
+      resolveInput.evidenceOverrideReason = evidenceOverrideReason.trim();
+    }
+
+    if (requiresUpheld && executeOrderRefund && refundOrderId && faultParty) {
+      resolveInput.orderRefund = {
+        enabled: true,
+        orderId: refundOrderId,
+        faultParty,
+        ...(faultParty === "platform"
+          ? { platformFaultReason: platformFaultReason.trim() }
           : {}),
-      },
-    ]);
+        ...(faultParty === "carrier" && carrierLiabilityParty
+          ? { carrierLiabilityParty }
+          : {}),
+      };
+    }
 
-    const systemMessage =
-      `[系統仲裁通知] 管理員已完成本案仲裁：${selectedLabel}。` +
-      `已向舉報方 ${caseState.reporter} 發送裁決回覆，案件狀態更新為「已完成」。`;
-    appendSystemMessage(systemMessage, timestamp);
+    startResolveTransition(async () => {
+      const result = await resolveAdminModerationCase({
+        caseId: caseDetail.id,
+        ...resolveInput,
+        notifyReporter,
+      });
 
-    toast.success(`已向舉報方 ${caseState.reporter} 發送裁決通知，案件狀態更新為已完成`);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
 
-    clearForm();
+      if (result.data.authBanWarning) {
+        toast.warning(result.data.authBanWarning);
+      }
+
+      if (result.data.refundWarning) {
+        toast.warning(result.data.refundWarning);
+      }
+
+      toast.success("案件已裁定結案");
+      router.push("/admin/disputes?status=completed");
+    });
   };
 
   return (
-    <div className="space-y-6">
-      {/* ── Back Button ─────────────────────────────────────────────── */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/admin/disputes")}
-        className="text-[#d4c4b7] hover:bg-[#26211C] hover:text-[#eae1da] active:scale-[0.98]"
-      >
-        <ArrowLeft className="mr-1.5 size-4" />
-        返回舉報與爭議列表
-      </Button>
-
-      {/* ── Case Header ─────────────────────────────────────────────── */}
-        <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[#26211C] p-5 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-        <div className="flex flex-col flex-wrap gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="font-mono text-[18px] font-bold text-[#eae1da]">
-              {caseState.id}
-            </span>
-            <Badge
-              variant="outline"
-              className={categoryBadgeClasses(caseState.category)}
-            >
-              {caseState.category}
-            </Badge>
-            <span
-              className={cn(
-                "rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium",
-                caseState.severity === "critical"
-                  ? "border-[#ef4444]/20 bg-[#ef4444]/10 text-[#ef4444]"
-                  : "border-white/10 bg-[#2e2925] text-[#d4c4b7]",
-              )}
-            >
-              {caseState.severity === "critical" ? "緊急" : "一般"}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge
-              variant="outline"
-              className={statusBadgeClasses(caseState.status)}
-            >
-              {statusLabelMap[caseState.status]}
-            </Badge>
-            <span className="font-sans text-[12px] text-[#8A8680]">
-              提交於 {caseState.submittedAt}
-            </span>
-          </div>
-        </div>
-
-        <div className="border-t border-white/[0.06] pt-4">
-          <h1 className="font-sans text-[20px] font-bold text-[#eae1da]">
-            {caseState.cardName}
-          </h1>
-          <p className="mt-1 font-sans text-[13px] leading-relaxed text-[#d4c4b7]">
-            {caseState.description}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 font-sans text-[12px] text-[#8A8680]">
-            <span>
-              舉報方：<span className="text-[#d4c4b7]">{caseState.reporter}</span>
-            </span>
-            <span>
-              被控方：
-              <span className="text-[#d4c4b7]">
-                {caseState.accused.name} {caseState.accused.handle}
-              </span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Main Grid ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[55fr_45fr]">
-        {/* Left: Chat History */}
-        <div className="rounded-2xl border border-white/10 bg-[#26211C] p-5 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-sans text-[15px] font-bold text-[#eae1da]">
-              唯讀聊天室歷史
-            </h2>
-            <span className="font-mono text-[10px] text-[#8A8680]">
-              {caseState.chatHistory.length} 則訊息
-            </span>
-          </div>
-          <div className="space-y-4">
-            {caseState.chatHistory.map((chat, index) => {
-              if (chat.sender === "system") {
-                return (
-                  <div key={index} className="flex justify-center py-1">
-                    <span className="max-w-[85%] rounded-full border border-white/[0.04] bg-[#1A1612] px-3 py-1 text-center font-sans text-[11px] italic text-[#8A8680]">
-                      [系統 Escrow 通知] {chat.message} · {chat.timestamp}
-                    </span>
-                  </div>
-                );
-              }
-
-              const isBuyer = chat.sender === "buyer";
-              return (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex max-w-[85%] flex-col",
-                    isBuyer ? "mr-auto items-start" : "ml-auto items-end",
-                  )}
-                >
-                  <span className="mb-0.5 px-1 font-mono text-[10px] text-[#8A8680]">
-                    [{isBuyer ? "買家" : "賣家"}] {chat.name} · {chat.timestamp}
-                  </span>
-                  <div
-                    className={cn(
-                      "rounded-xl px-3.5 py-2.5 font-sans text-[13px] leading-relaxed",
-                      isBuyer
-                        ? "rounded-tl-none border border-white/10 bg-[#2e2925] text-[#eae1da]"
-                        : "rounded-tr-none border border-[#d4a574]/10 bg-[rgba(212,165,116,0.15)] text-[#eae1da]",
-                    )}
-                  >
-                    {highlightSensitiveKeywords(chat.message)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Right Upper: Order & Escrow */}
-          <div className="rounded-2xl border border-white/10 bg-[#26211C] p-5 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-            <h2 className="font-sans text-[15px] font-bold text-[#eae1da]">
-              訂單與財務流水
-            </h2>
-
-            {/* Escrow Timeline */}
-            <div className="my-5">
-              <div className="relative flex items-start justify-between">
-                {ESCROW_STEPS.map((step, index) => {
-                  const isCompleted = index < activeStepIndex;
-                  const isActive = index === activeStepIndex;
-                  const isLast = index === ESCROW_STEPS.length - 1;
-
-                  return (
-                    <div
-                      key={step.key}
-                      className="relative flex flex-1 flex-col items-center"
-                    >
-                      {!isLast && (
-                        <div
-                          className={cn(
-                            "absolute top-[10px] left-[50%] h-px w-full",
-                            index < activeStepIndex
-                              ? "bg-[#10b981]"
-                              : "bg-white/10",
-                          )}
-                        />
-                      )}
-                      <div
-                        className={cn(
-                          "relative z-10 flex size-5 items-center justify-center rounded-full border text-[10px] font-bold",
-                          isCompleted
-                            ? "border-[#10b981] bg-[#10b981] text-[#111]"
-                            : isActive
-                              ? "border-[#d4a574] bg-[#d4a574] text-[#111]"
-                              : "border-white/10 bg-[#26211C] text-[#8A8680]",
-                        )}
-                      >
-                        {isCompleted ? "✓" : index + 1}
-                      </div>
-                      <span
-                        className={cn(
-                          "mt-2 text-center font-sans text-[11px]",
-                          isCompleted || isActive
-                            ? "text-[#eae1da]"
-                            : "text-[#8A8680]",
-                          isActive && "font-semibold text-[#d4a574]",
-                        )}
-                      >
-                        {step.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+    <div className="pb-8">
+      <header className={`${SECTION_BLOCK_CLASS} space-y-2`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+              <p className="font-mono text-[10px] text-text-disabled">
+                {caseDetail.caseNumber}
+              </p>
+              <p className={META_TEXT_CLASS}>
+                {formatModerationDateTime(caseDetail.createdAt)}
+              </p>
             </div>
-
-            {/* Metadata Grid */}
-            <div className="grid grid-cols-1 gap-4 border-t border-white/[0.06] pt-4 sm:grid-cols-2">
-              <div>
-                <span className="block font-sans text-[11px] uppercase text-[#8A8680]">
-                  卡牌名稱及評級
-                </span>
-                <span className="block font-sans text-[13px] font-medium text-[#eae1da]">
-                  {caseState.cardName}
-                </span>
-              </div>
-              <div>
-                <span className="block font-sans text-[11px] uppercase text-[#8A8680]">
-                  關聯訂單
-                </span>
-                <span className="block font-mono text-[13px] text-[#d4a574]">
-                  {caseState.orderId}
-                </span>
-              </div>
-              <div>
-                <span className="block font-sans text-[11px] uppercase text-[#8A8680]">
-                  Stripe Charge ID
-                </span>
-                <span
-                  className="block truncate font-mono text-[13px] text-[#eae1da]"
-                  title={caseState.stripeChargeId}
-                >
-                  {caseState.stripeChargeId}
-                </span>
-              </div>
-              <div>
-                <span className="block font-sans text-[11px] uppercase text-[#8A8680]">
-                  託管金額
-                </span>
-                <span className="block font-mono text-[18px] font-semibold text-[#eae1da]">
-                  {formatCurrency(caseState.escrowAmount)}
-                </span>
-              </div>
-            </div>
-
-            {/* Evidence */}
-            <div className="mt-5 border-t border-white/[0.06] pt-4">
-              <h3 className="font-sans text-[13px] font-bold text-[#eae1da]">
-                佐證材料
-              </h3>
-              <ul className="mt-2 space-y-1.5">
-                {caseState.evidence.photos.map((photo, index) => (
-                  <li
-                    key={index}
-                    className="font-sans text-[12px] text-[#d4c4b7]"
-                  >
-                    <span className="mr-1 text-[#8A8680]">•</span>
-                    {photo}
-                  </li>
-                ))}
-                {caseState.evidence.videoUrl && (
-                  <li className="font-sans text-[12px]">
-                    <span className="mr-1 text-[#8A8680]">•</span>
-                    影片證據：
-                    <a
-                      href={caseState.evidence.videoUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-1 font-mono text-[#d4a574] underline underline-offset-2 hover:text-[#e8b896]"
-                    >
-                      {caseState.evidence.videoUrl}
-                    </a>
-                  </li>
-                )}
-              </ul>
-            </div>
-          </div>
-
-          {/* Right Lower: Arbitration Actions */}
-          <div className="rounded-2xl border border-white/10 bg-[#26211C] p-5 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-            <h2 className="font-sans text-[15px] font-bold text-[#eae1da]">
-              仲裁判定動作
-            </h2>
-            <p className="mt-1 font-sans text-[12px] text-[#8A8680]">
-              一旦做出最終裁定，款項將由 Stripe 釋放或全額返還，本操作無法撤銷。
+            <h1 className="mt-1 font-sans text-[17px] font-bold leading-snug text-text-primary sm:text-[19px]">
+              被舉報：{caseDetail.subject.displayName ?? "未知用戶"}
+            </h1>
+            <p className={`mt-0.5 ${META_TEXT_CLASS} text-text-secondary`}>
+              @{caseDetail.subject.username ?? "—"} ·{" "}
+              {caseDetail.subject.role ?? "—"}
             </p>
+          </div>
+          <Badge
+            variant="outline"
+            className={`shrink-0 ${MODERATION_META_BADGE_CLASS} ${moderationStatusBadgeClasses(caseDetail.status)}`}
+          >
+            {moderationStatusLabel(caseDetail.status)}
+          </Badge>
+        </div>
 
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1.5 block font-sans text-[12px] font-medium text-[#d4c4b7]">
-                  選擇仲裁結果
-                </label>
-                <Select
-                  value={action}
-                  onValueChange={(value) => setAction(value ?? "")}
-                >
-                  <SelectTrigger className="h-10 w-full border-white/10 bg-[#17130f] text-[#eae1da] data-placeholder:text-[#50453b]">
-                    <SelectValue placeholder="請選擇一項仲裁判定動作" />
-                  </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-[#26211C]">
-                    {STATUS_SELECT_OPTIONS.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value}
-                        className="text-[#d4c4b7]"
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge
+            variant="outline"
+            className={`${MODERATION_META_BADGE_CLASS} ${categoryBadgeClasses(caseDetail.primaryCategory)}`}
+          >
+            {formatCategoryLabel(caseDetail.primaryCategory)}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={`${MODERATION_META_BADGE_CLASS} ${severityBadgeClasses(severity)}`}
+          >
+            {severityLabel(severity)}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={`${MODERATION_META_BADGE_CLASS} border-brand/20 bg-brand/10 text-brand`}
+          >
+            分數 {caseDetail.finalScore ?? 0}
+          </Badge>
+        </div>
 
-              {/* Backend hard threshold notice (always visible) */}
-              <div className="bg-bg-elevated/50 rounded-r-lg border-l-2 border-brand/40 py-2 pl-3">
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  系統已設定不可修改嘅自動封禁閾值，被舉報方累計檢報數超標將由系統自動封禁帳戶，管理員無法覆寫此規則。
-                </p>
-              </div>
+        <p className={META_TEXT_CLASS}>
+          主要舉報方{" "}
+          <span className="text-text-secondary">
+            {primaryReporter?.displayName ?? "—"}
+            {primaryReporterUsername ? ` · @${primaryReporterUsername}` : null}
+          </span>
+          <span className="text-text-disabled/50"> · </span>
+          {bundle.reporterSummaries.length} 人舉報
+        </p>
 
-              {action === FREEZE_ACTION_VALUE && (
-                <div>
-                  <label className="mb-1.5 block font-sans text-[12px] font-medium text-[#d4c4b7]">
-                    凍結天數
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min={1}
-                      max={365}
-                      required
-                      value={freezeDays}
-                      onChange={(e) => setFreezeDays(e.target.value)}
-                      placeholder="請輸入 1 至 365"
-                      className="w-full h-10 rounded-lg border border-[rgba(237,232,224,0.12)] bg-bg-card px-3 pr-12 font-mono text-[13px] text-text-primary placeholder:text-text-disabled outline-none transition-all focus-visible:border-brand/40 focus-visible:ring-2 focus-visible:ring-brand/40"
+        {activeSanctions.length > 0 ? (
+          <div className="space-y-0.5">
+            <p className="font-sans text-[12px] font-medium text-text-secondary">
+              有效制裁
+            </p>
+            {activeSanctions.map((sanction) => (
+              <p
+                key={sanction.id}
+                className="font-sans text-[12px] text-text-disabled"
+              >
+                {sanctionScopeLabel(sanction.scope)} ·{" "}
+                {sanctionTypeLabel(sanction.type)}
+                {sanction.endsAt
+                  ? ` · 至 ${formatModerationDateTime(sanction.endsAt)}`
+                  : " · 永久"}
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </header>
+
+      <ModerationReportSummaryPanel
+        reports={reports}
+        primaryCategory={caseDetail.primaryCategory}
+        primaryReporterId={primaryReporter?.id}
+      />
+
+      {!chatAccess.evidenceSufficient ? (
+        <p className={`${SECTION_BLOCK_CLASS} font-sans text-[13px] text-error`}>
+          證據不足 — 此類別需調閱對話紀錄。若下方無聊天紀錄，可先標記
+          insufficient_evidence 或駁回。
+        </p>
+      ) : null}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] lg:gap-8">
+        <div>
+          {subjectHistory ? (
+            <ModerationSubjectHistoryPanel
+              history={subjectHistory}
+              currentFinalScore={caseDetail.finalScore}
+            />
+          ) : null}
+
+          <section className={SECTION_BLOCK_CLASS}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className={SECTION_TITLE_CLASS}>用戶上傳證據</h2>
+              {attachments.length === 0 ? (
+                <span className={META_TEXT_CLASS}>暫無</span>
+              ) : null}
+            </div>
+            {attachments.length > 0 ? (
+              <ModerationEvidencePanel attachments={attachments} />
+            ) : null}
+          </section>
+
+          <ModerationChatHistoryPanel
+            caseId={caseDetail.id}
+            subjectUserId={caseDetail.subject.id}
+            chatRoomIds={chatRoomIds}
+          />
+        </div>
+
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          {caseOpen ? (
+            <section className={SECTION_BLOCK_CLASS}>
+              <h2 className={SECTION_TITLE_CLASS}>風控分數明細</h2>
+              {showScoreBreakdown ? (
+                <div className="space-y-1.5">
+                  <ScoreDetailRow
+                    label="自動分數"
+                    value={String(caseDetail.autoScore)}
+                  />
+                  {reports.map((report) => (
+                    <ScoreDetailRow
+                      key={report.id}
+                      label={formatCategoryLabel(report.category)}
+                      value={`+${report.contributionScore ?? 0}`}
+                      hint={report.reporterDisplayName ?? "未知"}
                     />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[11px] text-text-secondary">
-                      日
-                    </span>
-                  </div>
+                  ))}
+                  <ScoreDetailRow
+                    label="管理員調整"
+                    value={String(caseDetail.adminAdjustment)}
+                  />
+                  {caseDetail.adjustmentReason ? (
+                    <p className={META_TEXT_CLASS}>
+                      調整原因：{caseDetail.adjustmentReason}
+                    </p>
+                  ) : null}
+                  <ScoreDetailRow
+                    label="最終分數"
+                    value={String(caseDetail.finalScore ?? 0)}
+                    emphasize
+                  />
                 </div>
-              )}
+              ) : null}
+              <div className="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+                <div>
+                  <label
+                    htmlFor="admin-score-adjustment"
+                    className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary"
+                  >
+                    分數調整 (+/−)
+                  </label>
+                  <Input
+                    id="admin-score-adjustment"
+                    name="adjustment"
+                    type="number"
+                    value={scoreAdjustment}
+                    onChange={(event) => setScoreAdjustment(event.target.value)}
+                    disabled={isAdjustPending}
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="admin-adjustment-reason"
+                    className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary"
+                  >
+                    調整原因
+                  </label>
+                  <Textarea
+                    id="admin-adjustment-reason"
+                    name="adjustmentReason"
+                    rows={3}
+                    value={adjustmentReason}
+                    onChange={(event) => setAdjustmentReason(event.target.value)}
+                    disabled={isAdjustPending}
+                    className={TEXTAREA_CLASS}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  disabled={isAdjustPending}
+                  onClick={handleSaveScoreAdjustment}
+                  className={BTN_PRIMARY_CLASS}
+                >
+                  {isAdjustPending ? "儲存中…" : "儲存調整"}
+                </Button>
+              </div>
+            </section>
+          ) : null}
 
-              <div>
-                <label className="mb-1.5 block font-sans text-[12px] font-medium text-[#d4c4b7]">
-                  仲裁裁決理由（必填 Audit Log 存檔）
+          <ModerationOrderContextPanel
+            relatedOrders={relatedOrders}
+            primaryCategory={caseDetail.primaryCategory}
+            caseId={caseDetail.id}
+            caseOpen={caseOpen}
+            isRetryPending={isRetryPending}
+            onRetryRefund={(orderId) => {
+              startRetryTransition(async () => {
+                const result = await retryModerationOrderRefund({
+                  caseId: caseDetail.id,
+                  orderId,
+                });
+                if (!result.success) {
+                  toast.error(result.error);
+                  return;
+                }
+                toast.success("已重新提交售後退款");
+                router.refresh();
+              });
+            }}
+          />
+
+          {caseOpen ? (
+            <section className={SECTION_BLOCK_CLASS}>
+              <h2 className={SECTION_TITLE_CLASS}>要求補充證據</h2>
+              <p className="mb-4 font-sans text-[12px] text-text-secondary">
+                案件審查中向被舉報人或舉報人發送電郵，請其補充證據；不會關閉案件。
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                    通知對象
+                  </label>
+                  <Select
+                    value={evidenceRequestTarget}
+                    onValueChange={(value) =>
+                      setEvidenceRequestTarget(value as "subject" | "reporter")
+                    }
+                    disabled={isEvidenceRequestPending}
+                  >
+                    <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                      <SelectValue placeholder="請選擇通知對象" />
+                    </SelectTrigger>
+                    <SelectContent className={SELECT_CONTENT_CLASS}>
+                      <SelectItem value="subject" className={SELECT_ITEM_CLASS}>
+                        被舉報人（{caseDetail.subject.displayName}）
+                      </SelectItem>
+                      <SelectItem
+                        value="reporter"
+                        className={SELECT_ITEM_CLASS}
+                        disabled={!primaryReporter}
+                      >
+                        舉報人
+                        {primaryReporter
+                          ? `（${primaryReporter.displayName}）`
+                          : "（無舉報人）"}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                    補充說明（選填）
+                  </label>
+                  <Textarea
+                    name="evidenceRequestMessage"
+                    rows={3}
+                    placeholder="請說明需要補充的證據或資料"
+                    value={evidenceRequestMessage}
+                    onChange={(event) => setEvidenceRequestMessage(event.target.value)}
+                    disabled={isEvidenceRequestPending}
+                    className={TEXTAREA_CLASS}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  disabled={isEvidenceRequestPending || !evidenceRequestTarget}
+                  onClick={handleRequestEvidence}
+                  className={BTN_OUTLINE_CLASS}
+                >
+                  {isEvidenceRequestPending ? "發送中…" : "發送補充證據通知"}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {caseOpen ? (
+            <section className={SECTION_BLOCK_CLASS}>
+              <h2 className={SECTION_TITLE_CLASS}>仲裁判定動作</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                    選擇仲裁結果
+                  </label>
+                  <Select
+                    value={resolutionOption}
+                    onValueChange={(value) =>
+                      setResolutionOption(value as ModerationResolutionOptionValue)
+                    }
+                    disabled={isResolvePending}
+                  >
+                    <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                      <SelectValue placeholder="請選擇一項仲裁判定動作" />
+                    </SelectTrigger>
+                    <SelectContent className={SELECT_CONTENT_CLASS}>
+                      {MODERATION_RESOLUTION_OPTIONS.map((option) => {
+                        const disabled =
+                          !chatAccess.evidenceSufficient &&
+                          option.disabledWhenEvidenceInsufficient;
+                        return (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={disabled}
+                            className={SELECT_ITEM_CLASS}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {resolutionOption && isUpheldResolutionOption(resolutionOption) ? (
+                  <div>
+                    <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                      違規身分
+                    </label>
+                    <Select
+                      value={violationPersona}
+                      onValueChange={(value) =>
+                        setViolationPersona(value as ViolationPersona)
+                      }
+                      disabled={isResolvePending}
+                    >
+                      <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                        <SelectValue placeholder="請選擇違規身分" />
+                      </SelectTrigger>
+                      <SelectContent className={SELECT_CONTENT_CLASS}>
+                        {VIOLATION_PERSONA_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            className={SELECT_ITEM_CLASS}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+
+                {resolutionOption && isUpheldResolutionOption(resolutionOption) ? (
+                  <div className="space-y-3 border-t border-white/[0.06] pt-3">
+                    <label className="flex items-center gap-2 font-sans text-[12px] text-text-secondary">
+                      <Checkbox
+                        checked={executeOrderRefund}
+                        onCheckedChange={(checked) =>
+                          setExecuteOrderRefund(checked === true)
+                        }
+                        disabled={isResolvePending}
+                      />
+                      執行售後退款
+                    </label>
+                    {executeOrderRefund ? (
+                      <>
+                        <div>
+                          <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                            退款訂單
+                          </label>
+                          {eligibleRefundOrders.length === 0 ? (
+                            <p className="font-sans text-[12px] text-text-disabled">
+                              無符合條件的關聯訂單
+                            </p>
+                          ) : eligibleRefundOrders.length === 1 ? (
+                            <p className="font-mono text-[12px] text-text-primary">
+                              {eligibleRefundOrders[0].orderNumber ??
+                                eligibleRefundOrders[0].id.slice(0, 8)}
+                            </p>
+                          ) : (
+                            <Select
+                              value={refundOrderId}
+                              onValueChange={(value) =>
+                                setRefundOrderId(value ?? "")
+                              }
+                              disabled={isResolvePending}
+                            >
+                              <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                                <SelectValue placeholder="選擇訂單" />
+                              </SelectTrigger>
+                              <SelectContent className={SELECT_CONTENT_CLASS}>
+                                {eligibleRefundOrders.map((order) => (
+                                  <SelectItem
+                                    key={order.id}
+                                    value={order.id}
+                                    className={SELECT_ITEM_CLASS}
+                                  >
+                                    {order.orderNumber ?? order.id.slice(0, 8)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                            退款責任方
+                          </label>
+                          <Select
+                            value={faultParty}
+                            onValueChange={(value) =>
+                              setFaultParty(
+                                value as
+                                  | "seller"
+                                  | "buyer"
+                                  | "platform"
+                                  | "carrier"
+                                  | "inconclusive"
+                                  | "",
+                              )
+                            }
+                            disabled={isResolvePending}
+                          >
+                            <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                              <SelectValue placeholder="請選擇" />
+                            </SelectTrigger>
+                            <SelectContent className={SELECT_CONTENT_CLASS}>
+                              <SelectItem value="seller" className={SELECT_ITEM_CLASS}>
+                                賣家責任
+                              </SelectItem>
+                              <SelectItem value="buyer" className={SELECT_ITEM_CLASS}>
+                                買家責任
+                              </SelectItem>
+                              <SelectItem value="platform" className={SELECT_ITEM_CLASS}>
+                                平台責任
+                              </SelectItem>
+                              <SelectItem value="carrier" className={SELECT_ITEM_CLASS}>
+                                物流責任
+                              </SelectItem>
+                              <SelectItem
+                                value="inconclusive"
+                                className={SELECT_ITEM_CLASS}
+                              >
+                                無法判定
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {faultParty === "carrier" ? (
+                          <div>
+                            <label className="mb-1.5 block font-sans text-[12px] font-medium text-text-secondary">
+                              物流承擔方
+                            </label>
+                            <Select
+                              value={carrierLiabilityParty}
+                              onValueChange={(value) =>
+                                setCarrierLiabilityParty(
+                                  value as "seller" | "platform" | "",
+                                )
+                              }
+                              disabled={isResolvePending}
+                            >
+                              <SelectTrigger className={SELECT_TRIGGER_CLASS}>
+                                <SelectValue placeholder="請選擇" />
+                              </SelectTrigger>
+                              <SelectContent className={SELECT_CONTENT_CLASS}>
+                                <SelectItem value="seller" className={SELECT_ITEM_CLASS}>
+                                  賣家安排物流
+                                </SelectItem>
+                                <SelectItem
+                                  value="platform"
+                                  className={SELECT_ITEM_CLASS}
+                                >
+                                  平台安排物流
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : null}
+                        {faultParty === "platform" ? (
+                          <Textarea
+                            name="platformFaultReason"
+                            rows={2}
+                            placeholder="平台責任原因"
+                            value={platformFaultReason}
+                            onChange={(event) =>
+                              setPlatformFaultReason(event.target.value)
+                            }
+                            disabled={isResolvePending}
+                            className={TEXTAREA_CLASS}
+                          />
+                        ) : null}
+                        {canPreviewRefund ? (
+                          <div
+                            data-testid="moderation-refund-preview"
+                            className="space-y-1 font-sans text-[12px] text-text-secondary"
+                          >
+                            {visibleRefundPreviewLoading ? (
+                              <p>載入退款預覽中…</p>
+                            ) : visibleRefundPreviewError ? (
+                              <p className="text-error">{visibleRefundPreviewError}</p>
+                            ) : visibleRefundPreview ? (
+                              <>
+                                <p>
+                                  政策可退基數：{visibleRefundPreview.eligiblePolicyHkd}{" "}
+                                  HKD
+                                </p>
+                                <p>
+                                  Stripe 手續費：{visibleRefundPreview.stripeFeeNote}
+                                </p>
+                                <p>
+                                  退買家：{visibleRefundPreview.refundToBuyerHkd} HKD
+                                </p>
+                                <p>
+                                  鑑定費留平台：
+                                  {visibleRefundPreview.authFeeRetainedHkd} HKD
+                                </p>
+                                <p>
+                                  賣家追償：{visibleRefundPreview.sellerRecoveryHkd} HKD
+                                </p>
+                                <p>
+                                  平台承擔：{visibleRefundPreview.platformAbsorbHkd} HKD
+                                </p>
+                              </>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {!chatAccess.evidenceSufficient ? (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 font-sans text-[12px] text-text-secondary">
+                      <Checkbox
+                        checked={evidenceOverride}
+                        onCheckedChange={(checked) =>
+                          setEvidenceOverride(checked === true)
+                        }
+                        disabled={isResolvePending}
+                      />
+                      管理員強制裁定（證據不足覆寫）
+                    </label>
+                    {evidenceOverride ? (
+                      <Textarea
+                        name="evidenceOverrideReason"
+                        rows={2}
+                        placeholder="覆寫原因"
+                        value={evidenceOverrideReason}
+                        onChange={(event) =>
+                          setEvidenceOverrideReason(event.target.value)
+                        }
+                        disabled={isResolvePending}
+                        className={TEXTAREA_CLASS}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <label className="flex items-center gap-2 font-sans text-[12px] text-text-secondary">
+                  <Checkbox
+                    checked={notifyReporter}
+                    onCheckedChange={(checked) =>
+                      setNotifyReporter(checked === true)
+                    }
+                    disabled={isResolvePending}
+                  />
+                  通知舉報人結果（in-app）
                 </label>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="請詳細說明仲裁理由，包括依據的證據與判斷..."
-                  rows={4}
-                  className="w-full resize-none rounded-lg border border-white/10 bg-[#17130f] p-3 font-sans text-[13px] text-[#eae1da] placeholder:text-[#50453b] outline-none transition-all focus-visible:border-[#d4a574]/40 focus-visible:ring-2 focus-visible:ring-[#d4a574]/40"
-                />
               </div>
 
               <Button
-                onClick={handleSubmit}
-                className="h-11 w-full bg-[#d4a574] text-[#111] hover:bg-[#e8b896] active:scale-[0.98]"
+                type="button"
+                disabled={isResolvePending || !resolutionOption}
+                onClick={handleResolve}
+                className={`mt-4 h-11 ${BTN_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}
               >
-                <span className="mr-2">⚖️</span>
-                執行最終仲裁裁決
+                {isResolvePending ? "提交中…" : "執行最終仲裁裁決"}
               </Button>
-            </div>
-          </div>
+            </section>
+          ) : null}
 
-          {/* Audit Log */}
-          <div className="rounded-2xl border border-white/10 bg-[#26211C] p-5 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-            <h2 className="font-sans text-[15px] font-bold text-[#eae1da]">
-              審計紀錄
-            </h2>
-            {auditLog.length === 0 ? (
-              <p className="mt-3 font-sans text-[12px] text-[#8A8680]">
-                暫無審計紀錄。
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {auditLog.map((entry, index) => (
-                  <li
-                    key={index}
-                    className="border-l-2 border-[#d4a574] bg-[#17130f] py-2 pl-3 pr-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-sans text-[13px] font-medium text-[#eae1da]">
-                        {entry.action}
-                      </span>
-                      <span className="font-mono text-[10px] text-[#8A8680]">
-                        {entry.timestamp}
-                      </span>
-                    </div>
-                    <p className="mt-1 font-sans text-[12px] text-[#d4c4b7]">
-                      {entry.reason}
+          <ModerationAuditTimeline entries={auditLog} />
+
+          {!caseOpen ? (
+            <section className={SECTION_BLOCK_CLASS}>
+              <h2 className={SECTION_TITLE_CLASS}>案件結果</h2>
+              <div className="space-y-1.5">
+                <ScoreDetailRow
+                  label="案件狀態"
+                  value={moderationStatusLabel(caseDetail.status)}
+                />
+                {caseDetail.resolution ? (
+                  <ScoreDetailRow
+                    label="裁定結果"
+                    value={moderationResolutionLabel(caseDetail.resolution)}
+                  />
+                ) : null}
+                {caseDetail.resolvedAt ? (
+                  <ScoreDetailRow
+                    label="結案時間"
+                    value={formatModerationDateTime(caseDetail.resolvedAt)}
+                  />
+                ) : null}
+              </div>
+              {showScoreBreakdown ? (
+                <div className="space-y-1.5 border-t border-white/[0.06] pt-3">
+                  <p className={META_TEXT_CLASS}>分數明細</p>
+                  <ScoreDetailRow
+                    label="自動分數"
+                    value={String(caseDetail.autoScore)}
+                  />
+                  {reports.map((report) => (
+                    <ScoreDetailRow
+                      key={report.id}
+                      label={formatCategoryLabel(report.category)}
+                      value={`+${report.contributionScore ?? 0}`}
+                      hint={report.reporterDisplayName ?? "未知"}
+                    />
+                  ))}
+                  <ScoreDetailRow
+                    label="管理員調整"
+                    value={String(caseDetail.adminAdjustment)}
+                  />
+                  {caseDetail.adjustmentReason ? (
+                    <p className={META_TEXT_CLASS}>
+                      調整原因：{caseDetail.adjustmentReason}
                     </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                  ) : null}
+                  <ScoreDetailRow
+                    label="最終分數"
+                    value={String(caseDetail.finalScore ?? 0)}
+                    emphasize
+                  />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ScoreDetailRow({
+  label,
+  value,
+  hint,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 font-sans text-[12px]">
+      <span className={META_TEXT_CLASS}>
+        {label}
+        {hint ? (
+          <span className="text-text-disabled/70"> · {hint}</span>
+        ) : null}
+      </span>
+      <span
+        className={
+          emphasize
+            ? "font-mono text-[13px] font-semibold text-brand"
+            : "font-mono text-[12px] text-text-primary"
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }

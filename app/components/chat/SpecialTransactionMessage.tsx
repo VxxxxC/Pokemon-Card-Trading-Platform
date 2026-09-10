@@ -1,6 +1,7 @@
 "use client";
 
 import type { OfferCardContext } from "@/app/actions/offers";
+import { DEFAULT_AUTH_FEE_HKD } from "@/lib/platform/auth-escrow-config";
 import type { SpecialTransactionData } from "@/app/store/useHkCardVaultStore";
 import { OfferCard, type OfferCardMessage } from "./OfferCard";
 
@@ -12,6 +13,7 @@ export interface SpecialTransactionProps {
   sellerName: string;
   cardName: string;
   cardId: string;
+  listingId?: string;
   offerId?: string;
   imageUrl?: string;
   offerPrice: number;
@@ -21,6 +23,7 @@ export interface SpecialTransactionProps {
   isMe: boolean;
   currentUserId: string | null;
   roomId?: string;
+  listingImageUrls?: string[];
 }
 
 function mapInitialStatusToOfferStatus(
@@ -46,15 +49,17 @@ function buildHydratedContext(
       room_id: props.roomId ?? "",
       use_authentication: props.useAuthentication ?? false,
     },
-    listingId: props.cardId,
+    listingId: props.listingId ?? props.cardId,
     productId: props.cardId,
     cardName: props.cardName,
     cardNumber: null,
     setCode: "",
     displayId: null,
+    listingImageUrls: props.listingImageUrls,
     imageUrl: props.imageUrl,
     buyerName: props.buyerName,
     sellerId: props.sellerId,
+    authServiceFeeHkd: DEFAULT_AUTH_FEE_HKD,
   };
 }
 
@@ -102,8 +107,10 @@ export function buildOfferCardHydrationFromSpecialData(
     sellerName: specialData.sellerName,
     cardName: specialData.cardName,
     cardId: specialData.cardId,
+    listingId: specialData.listingId,
     offerId: specialData.offerId,
     imageUrl: specialData.imageUrl,
+    listingImageUrls: specialData.listingImageUrls,
     offerPrice: specialData.offerPrice,
     initialModifiedCount: specialData.modifiedCount ?? 0,
     useAuthentication: specialData.useAuthentication,

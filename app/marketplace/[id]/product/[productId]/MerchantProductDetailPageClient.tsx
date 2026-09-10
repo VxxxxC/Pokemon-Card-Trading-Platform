@@ -6,15 +6,30 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RarityBadge } from "@/app/components/cards/RarityBadge";
 import { GradeBadge } from "@/app/components/cards/GradeBadge";
-import { BuyButton } from "@/app/components/transactions/GlobalTxButtons";
+import { ExecutionActionFooter } from "@/app/components/transactions/ExecutionActionFooter";
+import { Switch } from "@/components/ui/switch";
+import { mapMarketplaceListingToExecutionPayload } from "@/lib/marketplace/map-listing-to-execution";
 import type { MarketplaceSellerListingDetailView } from "@/app/lib/marketplace/types";
 import { formatElementTypeZh } from "@/lib/catalog/element-types";
 import { isSealedCatalogType } from "@/lib/catalog/item-kind";
 import {
+  BUYER_AUTH_DISABLED_COPY,
+  buildBuyerAuthAddOnDescription,
+} from "@/lib/listings/auth-service-copy";
+import { usePlatformAuthFee } from "@/lib/platform/use-platform-auth-fee";
+import {
   formatListingGrade,
   formatTradeGradeLabel,
 } from "@/lib/marketplace/listing-display";
-import { IoChevronBack } from "react-icons/io5";
+import {
+  resolveSellerProfilePath,
+  resolveSellerStorefrontPath,
+} from "@/lib/marketplace/seller-identity";
+import { IoChevronBack, IoChevronForward } from "react-icons/io5";
+import { ClipboardList } from "lucide-react";
+import { ProfileAvatar } from "@/app/components/profile/ProfileAvatar";
+import { CertifiedMerchantBadge } from "@/app/components/profile/CertifiedMerchantBadge";
+import { SellerReputationMeta } from "@/lib/marketplace/seller-reputation-meta";
 import { ImageViewer } from "@/app/components/shared/ImageViewer";
 import { trackListingView } from "@/lib/listings/track-listing-view";
 
@@ -34,8 +49,15 @@ export function MerchantProductDetailPageClient({
   const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
-  const carouselRef = useRef<HTMLDivElement>(null);
+  const [useAuthentication, setUseAuthentication] = useState(false);
+  const [authResetProductId, setAuthResetProductId] = useState(routeProductId);
+  const authServiceFeeHkd = usePlatformAuthFee();
   const lastTrackedListingIdRef = useRef<string | null>(null);
+
+  if (authResetProductId !== routeProductId) {
+    setAuthResetProductId(routeProductId);
+    setUseAuthentication(false);
+  }
 
   useEffect(() => {
     if (!detail) {
@@ -56,23 +78,8 @@ export function MerchantProductDetailPageClient({
     });
   }, [detail, routeProductId, currentUserId]);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    const index = Math.round(container.scrollLeft / container.clientWidth);
-    if (index >= 0 && index < galleryPhotos.length && index !== activeImageIndex) {
-      setActiveImageIndex(index);
-    }
-  };
-
   const handleThumbnailClick = (i: number) => {
     setActiveImageIndex(i);
-    if (carouselRef.current) {
-      const width = carouselRef.current.clientWidth;
-      carouselRef.current.scrollTo({
-        left: i * width,
-        behavior: "smooth",
-      });
-    }
   };
 
   if (!detail) {
@@ -91,7 +98,7 @@ export function MerchantProductDetailPageClient({
     );
   }
 
-  const { seller, catalog, storefrontListing, photos, batchLabel, price } =
+  const { seller, catalog, storefrontListing, photos, batchLabel } =
     detail;
   const isSealedProduct = isSealedCatalogType(catalog.catalogType);
   const grade = formatListingGrade(
@@ -109,6 +116,18 @@ export function MerchantProductDetailPageClient({
   const publicProductHref = `/marketplace/product/${
     catalog.displayId ?? catalog.productId
   }`;
+  const listingSellerPersona = storefrontListing.sellerPersona ?? "member";
+  const sellerHandleUsername = seller.handle.startsWith("@")
+    ? seller.handle.slice(1)
+    : seller.handle;
+  const sellerProfileHref =
+    listingSellerPersona === "merchant"
+      ? resolveSellerStorefrontPath(seller.id, "merchant")
+      : resolveSellerProfilePath({
+          sellerId: seller.id,
+          sellerUsername: sellerHandleUsername,
+          sellerPersona: "member",
+        });
 
   const specRows = isSealedProduct
     ? [{ label: "所屬系列", val: catalog.setCode || "—" }].filter(
@@ -128,83 +147,67 @@ export function MerchantProductDetailPageClient({
   const galleryPhotos =
     photos.length > 0 ? photos : [catalog.imageUrl || "/placeholder-card.png"];
   const galleryRemarks = detail.photosDetail?.map((img) => img.remark) ?? [];
-  const activeRemark = galleryRemarks[activeImageIndex];
+  const batchDisplay = (batchLabel || routeProductId).trim();
+  const thumbnailGridClass =
+    galleryPhotos.length <= 4
+      ? "grid-cols-4"
+      : galleryPhotos.length === 5
+        ? "grid-cols-5"
+        : "grid-cols-6";
+  const executionPayload = mapMarketplaceListingToExecutionPayload(
+    storefrontListing,
+  );
+  const listingAcceptsBuyerAuth = detail.useAuthentication !== false;
 
   return (
     <div className="flex-1 w-full flex flex-col bg-[#17130f]">
-      <main className="flex-1 max-w-[1240px] mx-auto w-full px-4 lg:px-8 py-6 pb-32 animate-fadeIn">
+      <main className="flex-1 max-w-[1240px] mx-auto w-full px-4 lg:px-8 py-4 sm:py-6 pb-44 lg:pb-24 animate-fadeIn">
         <button
           type="button"
           onClick={() => router.back()}
-          className="h-8 px-2.5 rounded-lg bg-[#1A1612] font-sans text-[12px] font-medium text-brand focus:outline-none"
+          className="mb-4 h-8 px-2.5 rounded-lg bg-[#1A1612] font-sans text-[12px] font-medium text-brand focus:outline-none"
         >
           <IoChevronBack />
         </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-8 items-start">
-          <section className="lg:col-span-5 lg:sticky lg:top-[5.5rem] space-y-3.5 mb-6 lg:mb-0">
-            {/* 主圖輪播/淡入淡出容器 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-8 items-start gap-6">
+          <section className="lg:col-span-5 lg:sticky lg:top-[5.5rem] space-y-3 lg:space-y-3.5">
             <div
-              ref={carouselRef}
-              onScroll={handleScroll}
-              className="relative w-full aspect-[3/4] bg-[#26211C] rounded-2xl border border-[rgba(237,232,224,0.08)] overflow-x-auto lg:overflow-hidden snap-x snap-mandatory scroll-smooth scrollbar-none shadow-xl"
+              className="relative w-full max-w-[280px] sm:max-w-[300px] mx-auto lg:max-w-none aspect-5/7 max-h-[min(48vh,420px)] lg:max-h-none lg:aspect-[3/4] overflow-hidden rounded-2xl bg-[#17130f]"
             >
-              <div className="flex h-full lg:block lg:relative">
-                {galleryPhotos.map((img, i) => (
-                  <div
-                    key={i}
-                    onClick={() => {
-                      if (activeImageIndex === i) {
-                        setIsViewerOpen(true);
-                      } else {
-                        handleThumbnailClick(i);
-                      }
-                    }}
-                    className="w-full h-full shrink-0 snap-center relative lg:absolute lg:inset-0 lg:opacity-0 lg:transition-opacity lg:duration-300 cursor-zoom-in"
-                    style={{
-                      opacity: activeImageIndex === i ? 1 : undefined,
-                      zIndex: activeImageIndex === i ? 10 : undefined,
-                    }}
-                  >
-                    <Image
-                      src={img}
-                      alt={`${catalog.productName} 賣家實物特寫角度 ${i + 1}`}
-                      fill
-                      priority={i === 0}
-                      className="object-cover hover:scale-[1.02] transition-transform duration-300"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* 3D 存證標籤 */}
-              <div className="absolute top-3 left-3 pointer-events-none z-20">
-                <span className="inline-flex px-2 py-1 rounded bg-[#17130f]/85 backdrop-blur-sm border border-[rgba(237,232,224,0.15)] font-mono text-[9px] font-black text-brand uppercase tracking-widest">
-                  📸 賣家實物 3D 多維存證圖
-                </span>
-              </div>
-
-              {/* 描述資訊 Floating HUD */}
-              {activeRemark && (
-                <div className="absolute bottom-3 left-3 z-20 pointer-events-none select-none max-w-[85%]">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#17130f]/90 backdrop-blur-md border border-[#d4a574]/40 shadow-lg">
-                    <span className="text-brand shrink-0 text-[11px]">📝</span>
-                    <span className="font-sans font-bold text-[#eae1da] text-[11.5px] truncate leading-none">
-                      {activeRemark}
-                    </span>
-                  </div>
-                </div>
-              )}
+              {galleryPhotos.map((img, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    if (activeImageIndex === i) {
+                      setIsViewerOpen(true);
+                    } else {
+                      handleThumbnailClick(i);
+                    }
+                  }}
+                  className={`absolute inset-0 transition-opacity duration-300 cursor-zoom-in focus:outline-none ${
+                    activeImageIndex === i
+                      ? "opacity-100 z-10"
+                      : "opacity-0 z-0 pointer-events-none"
+                  }`}
+                  aria-label={`查看實物特寫角度 ${i + 1}`}
+                >
+                  <Image
+                    src={img}
+                    alt={`${catalog.productName} 賣家實物特寫角度 ${i + 1}`}
+                    fill
+                    priority={i === 0}
+                    className="object-contain bg-[#17130f]"
+                    sizes="(max-width: 1024px) 280px, 40vw"
+                  />
+                </button>
+              ))}
             </div>
 
-            {/* 下方縮圖列表 - 行動端水平滑動加大尺寸，桌面端自適應 Grid */}
-            <div className={`flex lg:grid gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none ${
-              galleryPhotos.length <= 4
-                ? "lg:grid-cols-4"
-                : galleryPhotos.length === 5
-                ? "lg:grid-cols-5"
-                : "lg:grid-cols-6"
-            }`}>
+            <div
+              className={`grid ${thumbnailGridClass} gap-1.5 sm:gap-2 max-w-[280px] sm:max-w-[300px] mx-auto lg:max-w-none w-full`}
+            >
               {galleryPhotos.map((img, i) => (
                 <button
                   key={`${img}-${i}`}
@@ -213,12 +216,10 @@ export function MerchantProductDetailPageClient({
                       handleThumbnailClick(i);
                     }
                   }}
-                  onClick={() => {
-                    handleThumbnailClick(i);
-                  }}
-                  className={`relative w-16 sm:w-20 lg:w-full aspect-[3/4] shrink-0 bg-[#26211C] rounded-xl overflow-hidden border-2 transition-all cursor-pointer focus:outline-none ${
+                  onClick={() => handleThumbnailClick(i)}
+                  className={`relative aspect-5/7 bg-[#26211C] rounded-lg lg:rounded-xl overflow-hidden border-2 transition-all cursor-pointer focus:outline-none ${
                     activeImageIndex === i
-                      ? "border-brand shadow-[0_0_12px_rgba(212,165,116,0.3)] scale-[1.02]"
+                      ? "border-brand shadow-[0_0_12px_rgba(212,165,116,0.3)]"
                       : "border-[rgba(237,232,224,0.12)] hover:border-brand/40"
                   }`}
                   aria-label={`查看實物特寫角度 ${i + 1}`}
@@ -227,118 +228,108 @@ export function MerchantProductDetailPageClient({
                     src={img}
                     alt={`角度 ${i + 1}`}
                     fill
-                    className="object-cover"
-                    sizes="120px"
+                    className="object-contain bg-[#17130f]"
+                    sizes="80px"
                   />
-                  <div className="absolute bottom-1 right-1 font-mono text-[8px] bg-black/60 px-1 rounded text-[#eae1da] scale-90 truncate max-w-[85%]">
-                    {galleryRemarks[i] || `角 ${i + 1}`}
-                  </div>
                 </button>
               ))}
             </div>
           </section>
 
-          <section className="lg:col-span-7 space-y-5">
-            <div>
-              <span className="inline-flex font-mono text-[9px] bg-brand/10 text-brand px-2 py-0.5 rounded font-black border border-brand/20 uppercase tracking-widest">
-                store exclusive item
-              </span>
-              <h1 className="font-sans font-black text-[24px] lg:text-[28px] text-[#eae1da] mt-1.5 leading-tight tracking-tight">
-                {catalog.productName}
-              </h1>
-              <p className="font-mono text-[12px] text-text-disabled mt-1">
-                官方卡號基準:{" "}
-                <span className="text-[#eae1da] font-bold">
-                  {cardCode || "未標註"}
-                </span>{" "}
-                · 出讓批次: {batchLabel || routeProductId}
-              </p>
-            </div>
-
-            <div className="bg-[#26211C] p-5 rounded-2xl border border-[rgba(212,165,116,0.20)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-md">
-              <div>
-                <span className="font-mono text-[10px] text-[#d4c4b7] block mb-1 uppercase tracking-wide">
-                  店主獨立出讓一口價
-                </span>
-                <p className="font-mono font-black text-[30px] text-brand leading-none">
-                  HK$ {price.toLocaleString("en-HK")}
-                </p>
-              </div>
-              <BuyButton
-                listing={storefrontListing}
-                className="h-11 px-8 text-[13px] font-sans font-black rounded-xl shrink-0 active:scale-[0.97] transition-transform cursor-pointer"
-              />
-            </div>
-
-            <Link
-              href={publicProductHref}
-              className="w-full h-12 flex items-center justify-between px-5 rounded-xl bg-linear-to-r from-[#e5c199] via-[#d4a574] to-[#bfa37a] hover:from-[#f3d2ab] hover:to-[#ceb28a] text-[#17130f] font-sans font-black text-[13.5px] tracking-wide transition-all duration-300 shadow-[0_4px_20px_rgba(212,165,116,0.25)] hover:shadow-[0_6px_25px_rgba(212,165,116,0.4)] active:scale-[0.99] cursor-pointer text-left focus:outline-none shrink-0 group"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-[15px] group-hover:rotate-12 transition-transform duration-300">
-                  📊
-                </span>
-                <span>進入公開大盤商品市場</span>
-              </div>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                className="transform group-hover:translate-x-1 transition-transform duration-300"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </Link>
-
-            <div className="bg-[#26211C] rounded-xl border border-[rgba(237,232,224,0.08)] overflow-hidden font-sans text-[13px]">
-              <div className="flex justify-between items-center p-3.5 bg-[#2c2722] border-b border-white/5">
-                <span className="text-[#d4c4b7]">實物鑑定品品相評級</span>
-                <div className="flex items-center gap-1.5">
-                  <RarityBadge rarity={catalog.rarity} />
+          <section className="lg:col-span-7 space-y-4">
+            <div className="space-y-1 pb-3 border-b border-[rgba(237,232,224,0.06)]">
+              <div className="flex items-start justify-between gap-3 min-w-0">
+                <h1 className="font-sans font-black text-[22px] sm:text-[24px] lg:text-[28px] text-[#eae1da] leading-tight tracking-tight min-w-0">
+                  {catalog.productName}
+                </h1>
+                <div className="shrink-0 pt-1">
                   {isSealedProduct ? (
-                    <span className="inline-flex items-center gap-1 font-mono text-[12px] font-medium text-text-primary bg-[rgba(212,165,116,0.15)] rounded-[4px] px-2 py-0.5 shrink-0">
+                    <span className="inline-flex items-center gap-1 font-mono text-[12px] font-medium text-text-primary bg-[rgba(212,165,116,0.15)] rounded-[4px] px-2 py-0.5">
                       {gradeLabel}
                     </span>
                   ) : (
-                  <GradeBadge
-                    authority={grade.authority}
-                    score={grade.score}
-                  />
+                    <GradeBadge
+                      authority={grade.authority}
+                      score={grade.score}
+                    />
                   )}
                 </div>
               </div>
-              <div className="flex justify-between items-center p-3.5 bg-[#26211C] border-b border-white/5">
-                <span className="text-[#d4c4b7]">中介託管狀態</span>
-                <span className="text-[#22c55e] font-bold flex items-center gap-1">
-                  {detail.useAuthentication
-                    ? "🔒 平台官方安全中介存證已鎖定"
-                    : "C2C 直接交割模式"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3.5 bg-[#26211C]">
-                <span className="text-[#d4c4b7]">賣家識別商號</span>
-                <span className="font-mono text-[#eae1da]">
-                  {seller.handle} ·{" "}
-                  <span className="text-brand font-bold">
-                    {seller.completedTrades.toLocaleString()}
-                  </span>{" "}
-                  筆歷史交割
-                </span>
+              <div className="space-y-1 font-mono text-[11px] sm:text-[12px] text-text-disabled">
+                <p className="flex items-center gap-2 flex-wrap">
+                  官方卡號{" "}
+                  <span className="text-[#eae1da] font-bold">
+                    {cardCode || "未標註"}
+                  </span>
+                  {catalog.rarity ? (
+                    <RarityBadge rarity={catalog.rarity} />
+                  ) : null}
+                </p>
+                <p className="break-all">
+                  出讓批次{" "}
+                  <span className="text-[#eae1da] font-bold">{batchDisplay}</span>
+                </p>
               </div>
             </div>
 
+            <Link
+              href={sellerProfileHref}
+              className="flex items-center gap-3 p-3.5 rounded-xl border border-[rgba(237,232,224,0.08)] bg-[#26211C] hover:bg-[#2c2722] hover:border-brand/20 transition-colors focus:outline-none group"
+            >
+              <ProfileAvatar
+                avatarUrl={seller.avatarUrl}
+                displayName={seller.username}
+                className="w-11 h-11 border border-white/10 shrink-0"
+                fallbackClassName="bg-[#1A1612] text-brand text-sm font-bold font-mono"
+              />
+              <div className="min-w-0 flex-1 text-left">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-sans font-bold text-[14px] text-[#eae1da] truncate">
+                    {seller.username}
+                  </span>
+                  {listingSellerPersona === "merchant" ? (
+                    <CertifiedMerchantBadge />
+                  ) : null}
+                </div>
+                <span className="font-mono text-[11px] text-[#8A8680] truncate block">
+                  {seller.handle}
+                </span>
+                <SellerReputationMeta
+                  rating={seller.ratingScore}
+                  totalTrades={seller.completedTrades}
+                  className="mt-1"
+                />
+              </div>
+              <IoChevronForward
+                className="size-4 shrink-0 text-[#8A8680] group-hover:text-brand group-hover:translate-x-0.5 transition-all"
+                aria-hidden
+              />
+            </Link>
+
+            <Link
+              href={publicProductHref}
+              className="w-full h-11 flex items-center justify-between gap-3 px-4 rounded-xl border border-[rgba(237,232,224,0.10)] bg-[#26211C] hover:bg-[#2c2722] hover:border-brand/25 text-[#d4c4b7] hover:text-[#eae1da] font-sans font-semibold text-[13px] transition-colors duration-200 active:scale-[0.99] cursor-pointer text-left focus:outline-none shrink-0 group"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <ClipboardList
+                  className="size-4 shrink-0 text-brand/80 group-hover:text-brand transition-colors"
+                  strokeWidth={2}
+                  aria-hidden
+                />
+                <span className="truncate">查看此卡牌的所有掛單</span>
+              </div>
+              <IoChevronForward
+                className="size-4 shrink-0 text-[#8A8680] group-hover:text-brand group-hover:translate-x-0.5 transition-all"
+                aria-hidden
+              />
+            </Link>
+
             {specRows.length > 0 ? (
               <div className="bg-[#26211C] rounded-xl border border-[rgba(237,232,224,0.08)] overflow-hidden">
-                <div className="px-4 py-3 bg-[#26211C] border-b border-[rgba(237,232,224,0.08)] flex items-center justify-between">
+                <div className="px-4 py-3 bg-[#26211C] border-b border-[rgba(237,232,224,0.08)]">
                   <h3 className="font-sans font-bold text-[13px] text-[#eae1da]">
-                    官方標準資產規格數據
+                    規格
                   </h3>
-                  <span className="font-mono text-[9px] text-[#8A8680] uppercase tracking-widest">
-                    CANONICAL SPEC
-                  </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 font-sans text-[13px]">
                   {specRows.map((row, idx) => (
@@ -365,6 +356,45 @@ export function MerchantProductDetailPageClient({
           </section>
         </div>
       </main>
+
+      {executionPayload ? (
+        <div
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-[rgba(237,232,224,0.08)] bg-[#17130f]/95 backdrop-blur-md lg:mx-auto lg:max-w-[1240px] lg:px-8 lg:border-t-0 lg:bg-transparent lg:backdrop-blur-none"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          {!isSealedProduct ? (
+            <div className="mx-4 mb-2 rounded-lg border border-white/[0.08] bg-[#17130f] p-3 lg:mx-0">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <span className="font-sans font-semibold text-[12px] text-[#eae1da] block">
+                    加購平台鑑定託管
+                  </span>
+                  <p className="font-sans text-[11px] text-text-secondary leading-snug">
+                    {listingAcceptsBuyerAuth
+                      ? buildBuyerAuthAddOnDescription(authServiceFeeHkd)
+                      : BUYER_AUTH_DISABLED_COPY}
+                  </p>
+                </div>
+                <Switch
+                  checked={useAuthentication}
+                  onCheckedChange={setUseAuthentication}
+                  disabled={!listingAcceptsBuyerAuth}
+                  className="shrink-0 data-checked:bg-brand data-unchecked:bg-[#39342f] disabled:opacity-40"
+                />
+              </div>
+            </div>
+          ) : null}
+          <ExecutionActionFooter
+            listingId={executionPayload.listingId}
+            order={executionPayload.order}
+            card={executionPayload.card}
+            productId={executionPayload.productId}
+            layout="embedded"
+            useAuthentication={useAuthentication}
+            onUseAuthenticationChange={setUseAuthentication}
+          />
+        </div>
+      ) : null}
 
       <ImageViewer
         isOpen={isViewerOpen}

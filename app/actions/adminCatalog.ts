@@ -34,6 +34,8 @@ export type ListAdminCatalogParams = {
   itemKind: AdminCatalogItemKind;
   page: number; // 1-based
   pageSize: number;
+  setCode?: string;
+  rarity?: string;
 };
 
 export type ListAdminCatalogResult =
@@ -162,7 +164,7 @@ export async function listAdminCatalogEntries(
       return { success: false, error: "權限不足" };
     }
 
-    const { query, itemKind, page, pageSize } = params;
+    const { query, itemKind, page, pageSize, setCode, rarity } = params;
 
     if (page < 1) {
       return { success: false, error: "頁碼不能小於 1" };
@@ -193,6 +195,17 @@ export async function listAdminCatalogEntries(
         `name_ja.ilike.${pattern},name_en.ilike.${pattern},name_zh.ilike.${pattern},card_number.ilike.${pattern},display_id.ilike.${pattern},set_code.ilike.${pattern},jan_code.ilike.${pattern}`,
         { foreignTable: undefined },
       );
+    }
+
+    const trimmedSetCode = setCode?.trim();
+    if (trimmedSetCode) {
+      const escapedSetCode = escapeIlike(trimmedSetCode);
+      builder = builder.ilike("set_code", `%${escapedSetCode}%`);
+    }
+
+    const trimmedRarity = rarity?.trim();
+    if (trimmedRarity) {
+      builder = builder.eq("rarity", trimmedRarity);
     }
 
     const from = (page - 1) * safePageSize;

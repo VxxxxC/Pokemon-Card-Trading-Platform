@@ -1,12 +1,17 @@
 import { create } from "zustand";
 import { buildPendingChatRoomId } from "@/app/lib/chat/constants";
 import { filterChatRoomsForViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
-import { findRoomByPartnerId } from "@/app/lib/chat/mergeChatRooms";
+import { findRoomByPartnerId, mergeChatRoomsWithDb } from "@/app/lib/chat/mergeChatRooms";
 import type { ChatPartnerPersona } from "@/app/lib/chat/partnerRoomKey";
 import { partnerTierForPersona } from "@/app/lib/chat/partnerRoomKey";
 import { generateDeterministicRoomId } from "@/app/lib/utils/chatUtils";
 import { useUIStore } from "@/app/store/useUIStore";
 import { DEFAULT_AVATAR_URL } from "@/lib/profile/avatar";
+import { shouldIncrementUnreadForInboundMessage } from "@/lib/chat/viewing-chat-thread";
+import {
+  resolveSystemOfferAcceptedText,
+  resolveSystemOfferRejectedText,
+} from "@/app/lib/chat/offerSystemMessageCopy";
 import type { Tables } from "@/types/supabase";
 
 type OfferLedgerStatus = Tables<"offers">["status"];
@@ -18,11 +23,13 @@ export type OfferLedgerEntry = {
   orderKind?: "member" | "merchant";
   offerPrice?: number;
   modifiedCount?: number;
+  paymentHref?: string | null;
 };
 
 export interface SpecialTransactionData {
   cardName: string;
   cardId: string;
+  listingId?: string;
   offerPrice: number;
   buyerName: string;
   buyerId: string;
@@ -31,6 +38,7 @@ export interface SpecialTransactionData {
   offerId?: string;
   modifiedCount?: number;
   imageUrl?: string;
+  listingImageUrls?: string[];
   useAuthentication?: boolean;
   initialStatus?: "pending" | "accepted" | "rejected" | "countered";
 }
@@ -45,7 +53,9 @@ export interface Message {
   sender: "me" | "them" | "system";
   text: string;
   timestamp: string;
-  type?: "text" | "special_transaction" | "system_order_completed";
+  type?: "text" | "special_transaction" | "system_order_completed" | "system_order_cancelled";
+  /** Present on SYSTEM_OFFER_* rows when the DB message carries offer_id */
+  offerId?: string;
   specialData?: SpecialTransactionData;
   orderData?: OrderCompletedData;
 }
@@ -212,7 +222,11 @@ interface HkCardVaultStore {
    * Activates an existing room by its raw ID, or creates a minimal stub if not found.
    * Prefer openGlobalChat for new call sites where buyer/seller IDs are known.
    */
-  activateRoomById: (roomId: string, partnerName: string) => void;
+  activateRoomById: (
+    roomId: string,
+    partnerName: string,
+    partnerId?: string,
+  ) => void;
 
   /** Resolve an existing room by counterparty profile id + persona, or open a pending stub. */
   openChatWithPartner: (
@@ -220,17 +234,6 @@ interface HkCardVaultStore {
     partnerName: string,
     partnerPersona?: ChatPartnerPersona,
   ) => void;
-
-  injectSpecialTransaction: (payload: {
-    sellerName: string;
-    sellerId: string;
-    cardName: string;
-    cardId: string;
-    offerPrice: number;
-    buyerName: string;
-    buyerId: string;
-    isInstantTake: boolean;
-  }) => void;
 
   openOfferChatSession: (payload: {
     roomId: string;
@@ -243,6 +246,7 @@ interface HkCardVaultStore {
     sellerName: string;
     cardName: string;
     cardId: string;
+    listingId?: string;
     offerId: string;
     offerPrice: number;
     modifiedCount?: number;
@@ -251,6 +255,8 @@ interface HkCardVaultStore {
     messageCreatedAt: string;
     offerStatus: "pending" | "accepted" | "rejected" | "cancelled";
     useAuthentication?: boolean;
+    imageUrl?: string;
+    listingImageUrls?: string[];
   }) => void;
 
   applyOfferModification: (payload: {
@@ -267,6 +273,7 @@ interface HkCardVaultStore {
     offerId: string,
     orderId?: string,
     orderKind?: "member" | "merchant",
+    paymentHref?: string | null,
   ) => void;
 
   applyOfferRejected: (offerId: string) => void;
@@ -277,7 +284,11 @@ interface HkCardVaultStore {
     modifiedCount: number;
   }) => void;
 
-  appendRoomMessage: (roomId: string, message: Message) => void;
+  appendRoomMessage: (
+    roomId: string,
+    message: Message,
+    options?: { countAsUnread?: boolean },
+  ) => void;
 
   markRoomRead: (roomId: string) => void;
 
@@ -290,6 +301,9 @@ interface HkCardVaultStore {
   rollbackOptimisticMessage: (roomId: string, optimisticId: string) => void;
 
   reconcileOfferLedger: () => void;
+
+  /** Replace a pending/ephemeral room stub with a persisted DB room row. */
+  promotePendingChatRoom: (pendingRoomId: string, dbRoom: ChatRoom) => void;
 }
 
 export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
@@ -326,8 +340,9 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
       };
     }),
 
-  activateRoomById: (roomId, partnerName) =>
+  activateRoomById: (roomId, partnerName, partnerId) =>
     set((state) => {
+      const resolvedPartnerId = partnerId?.trim() || "";
       const exists = state.chats.some((c) => c.id === roomId);
       if (exists) {
         return {
@@ -335,13 +350,19 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
           isChatOpen: true,
           mobileView: "CHAT" as const,
           chats: state.chats.map((c) =>
-            c.id === roomId ? { ...c, unreadCount: 0 } : c,
+            c.id === roomId
+              ? {
+                  ...c,
+                  unreadCount: 0,
+                  ...(resolvedPartnerId ? { partnerId: resolvedPartnerId } : {}),
+                }
+              : c,
           ),
         };
       }
       const stub: ChatRoom = {
         id: roomId,
-        partnerId: roomId,
+        partnerId: resolvedPartnerId || roomId,
         partnerPersona: "member",
         viewerPersona: readActiveViewerPersona(),
         partnerName,
@@ -516,83 +537,6 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
       };
     }),
 
-  injectSpecialTransaction: (payload) =>
-    set((state) => {
-      const canonicalRoomId = generateDeterministicRoomId(
-        payload.buyerId,
-        "member",
-        payload.sellerId,
-        "member",
-      );
-
-      const status = payload.isInstantTake ? "accepted" : "pending";
-      const msgText = payload.isInstantTake
-        ? "⚡【立即購買】" + payload.buyerName + " 已接受一口價購入並成功預留資產！"
-        : "📩【議價要約】" + payload.buyerName + " 向您提報了 HK$ " + payload.offerPrice.toLocaleString() + " 的預期出價。";
-
-      const specialMsg = createSpecialTransactionMessage(
-        "me",
-        {
-          cardName: payload.cardName,
-          cardId: payload.cardId,
-          offerPrice: payload.offerPrice,
-          buyerName: payload.buyerName,
-          buyerId: payload.buyerId,
-          sellerId: payload.sellerId,
-          sellerName: payload.sellerName,
-          initialStatus: status,
-        },
-        msgText,
-      );
-
-      const exists = state.chats.some((c) => c.id === canonicalRoomId);
-      let updatedChats = [...state.chats];
-
-      if (exists) {
-        updatedChats = state.chats.map((room) => {
-          if (room.id === canonicalRoomId) {
-            return {
-              ...room,
-              lastMessage: specialMsg.text,
-              messages: [...room.messages, specialMsg],
-              unreadCount: 0,
-            };
-          }
-          return room;
-        });
-      } else {
-        const newRoom: ChatRoom = {
-          id: canonicalRoomId,
-          partnerId: payload.sellerId,
-          partnerPersona: "member",
-          viewerPersona: "member",
-          partnerName: payload.sellerName,
-          partnerAvatarUrl: DEFAULT_AVATAR_URL,
-          partnerTier: "認證賣家",
-          lastMessage: specialMsg.text,
-          unreadCount: 0,
-          timestamp: new Date().toISOString(),
-          messages: [
-            {
-              id: "sys-" + Date.now(),
-              sender: "system",
-              text: "🔒 已建立與 " + payload.sellerName + " 的安全中介蒗管交易通道。",
-              timestamp: new Date().toISOString(),
-            },
-            specialMsg,
-          ],
-        };
-        updatedChats = [newRoom, ...state.chats];
-      }
-
-      return {
-        chats: updatedChats,
-        activeRoomId: canonicalRoomId,
-        isChatOpen: true,
-        mobileView: "CHAT",
-      };
-    }),
-
   openOfferChatSession: (payload) =>
     set((state) => {
       const partnerPersona = payload.partnerPersona ?? "member";
@@ -615,6 +559,7 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
         specialData: {
           cardName: payload.cardName,
           cardId: payload.cardId,
+          listingId: payload.listingId,
           offerPrice: payload.offerPrice,
           buyerName: payload.buyerName,
           buyerId: payload.buyerId,
@@ -622,6 +567,8 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
           sellerName: payload.sellerName,
           offerId: payload.offerId,
           modifiedCount,
+          listingImageUrls: payload.listingImageUrls,
+          imageUrl: payload.imageUrl,
           initialStatus,
           useAuthentication: payload.useAuthentication ?? false,
         },
@@ -739,7 +686,7 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
       };
     }),
 
-  applyOfferAccepted: (offerId, orderId, orderKind = "member") =>
+  applyOfferAccepted: (offerId, orderId, orderKind = "member", paymentHref) =>
     set((state) => {
       if (isOfferAlreadyInStatus(state.offers, state.chats, offerId, "accepted")) {
         return state;
@@ -752,6 +699,7 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
           ...state.offers[offerId],
           status: "accepted",
           orderKind,
+          ...(paymentHref !== undefined ? { paymentHref } : {}),
           ...(orderKind === "merchant"
             ? { merchantOrderId: orderId }
             : { memberOrderId: orderId }),
@@ -783,9 +731,18 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
             return message;
           });
 
+          const offerSpecialData = updatedMessages.find(
+            (message) =>
+              message.type === "special_transaction" &&
+              message.specialData?.offerId === offerId,
+          )?.specialData;
+          const isSellerView =
+            offerSpecialData != null &&
+            room.partnerId === offerSpecialData.buyerId;
+
           return {
             ...room,
-            lastMessage: "✅ 賣家已接受出價，商品已成功鎖定（Hold 貨）",
+            lastMessage: resolveSystemOfferAcceptedText(isSellerView),
             messages: updatedMessages,
           };
         }),
@@ -832,9 +789,18 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
             return message;
           });
 
+          const offerSpecialData = updatedMessages.find(
+            (message) =>
+              message.type === "special_transaction" &&
+              message.specialData?.offerId === offerId,
+          )?.specialData;
+          const isSellerView =
+            offerSpecialData != null &&
+            room.partnerId === offerSpecialData.buyerId;
+
           return {
             ...room,
-            lastMessage: "❌ 賣家已拒絕此出價",
+            lastMessage: resolveSystemOfferRejectedText(isSellerView),
             messages: updatedMessages,
           };
         }),
@@ -887,11 +853,20 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
       };
     }),
 
-  appendRoomMessage: (roomId, message) =>
+  appendRoomMessage: (roomId, message, options) =>
     set((state) => {
+      const viewState = {
+        isChatOpen: state.isChatOpen,
+        activeRoomId: state.activeRoomId,
+        mobileView: state.mobileView,
+      };
       const shouldIncrementUnread =
-        message.sender === "them" &&
-        (state.activeRoomId !== roomId || !state.isChatOpen);
+        options?.countAsUnread === true ||
+        shouldIncrementUnreadForInboundMessage(
+          viewState,
+          roomId,
+          message.sender,
+        );
 
       const chats = state.chats.map((room) => {
         if (room.id !== roomId) return room;
@@ -996,6 +971,34 @@ export const useHkCardVaultStore = create<HkCardVaultStore>((set) => ({
         };
       }),
     })),
+
+  promotePendingChatRoom: (pendingRoomId, dbRoom) =>
+    set((state) => {
+      const pendingStub = state.chats.find((room) => room.id === pendingRoomId);
+      const chatsWithoutPending = state.chats.filter(
+        (room) => room.id !== pendingRoomId,
+      );
+
+      const dbRoomWithStubMessages =
+        pendingStub && dbRoom.messages.length === 0 && pendingStub.messages.length > 0
+          ? {
+              ...dbRoom,
+              messages: pendingStub.messages,
+              lastMessage: pendingStub.lastMessage,
+              timestamp: pendingStub.timestamp,
+            }
+          : dbRoom;
+
+      const chats = mergeChatRoomsWithDb(chatsWithoutPending, [dbRoomWithStubMessages], {
+        preferServerUnread: true,
+      });
+
+      return {
+        chats,
+        activeRoomId: dbRoom.id,
+        offers: buildOfferLedgerFromChats(chats),
+      };
+    }),
 
   reconcileOfferLedger: () =>
     set((state) => ({

@@ -17,12 +17,20 @@ import {
 } from "./fixtures/supabase-admin";
 import {
   addAssetModalForm,
+  dismissBlockingOverlays,
   ensureProductInWishlist,
+  expectWishlistProductVisible,
+  expectHoldingsProductAttached,
+  clickHobbyCollectionSubmit,
+  clickMerchListingPublish,
+  clickWishlistRowMenu,
   gotoCollectionPage,
   holdingsSection,
+  merchListingPriceInput,
   openHobbyAddAssetModal,
   openMerchAddAssetModal,
   searchAndSelectCatalogForFixture,
+  selectHobbyRawGrading,
   uploadMerchPhotos,
   wishlistSection,
 } from "./helpers/collection-asset";
@@ -67,11 +75,7 @@ test.describe("Member collection and wishlist", () => {
     await expect(page.getByText("追蹤願望清單")).toBeVisible({
       timeout: 20_000,
     });
-    await expect(
-      wishlistSection(page).getByText(fixture.productName).first(),
-    ).toBeVisible({
-      timeout: 20_000,
-    });
+    await expectWishlistProductVisible(page, fixture.productName);
   });
 
   test("collection page loads holdings and wishlist sections", async ({
@@ -90,16 +94,19 @@ test.describe("Member collection and wishlist", () => {
     await expect(page.getByRole("button", { name: "收錄新卡" })).toBeVisible();
   });
 
-  test("wishlist sort chips are interactive", async ({ page }, testInfo) => {
+  test("wishlist sort dropdown is interactive", async ({ page }, testInfo) => {
     skipUnlessBuyerFixtures(testInfo);
 
     await gotoCollectionPage(page);
 
-    await expect(page.getByRole("button", { name: "卡名 A→Z" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "最新加入" })).toBeVisible();
+    const sortTrigger = page.getByRole("combobox", { name: "願望清單排序" });
+    await expect(sortTrigger).toBeVisible();
+    await expect(sortTrigger).toContainText("按卡名排序");
 
-    await page.getByRole("button", { name: "最新加入" }).click();
+    await sortTrigger.click();
+    await page.getByRole("option", { name: "最新加入" }).click();
 
+    await expect(sortTrigger).toContainText("最新加入");
     await expect(page.getByText("追蹤願望清單")).toBeVisible({
       timeout: 20_000,
     });
@@ -121,18 +128,11 @@ test.describe("Member collection and wishlist", () => {
     await ensureProductInWishlist(page, fixture);
     await gotoCollectionPage(page);
 
-    await expect(
-      wishlistSection(page).getByText(fixture.productName).first(),
-    ).toBeVisible({ timeout: 20_000 });
+    await expectWishlistProductVisible(page, fixture.productName);
 
-    const rowsBefore = await wishlistSection(page)
-      .getByText(fixture.productName)
-      .count();
+    await dismissBlockingOverlays(page);
 
-    await wishlistSection(page)
-      .getByLabel(`${fixture.productName} 更多操作`)
-      .first()
-      .click();
+    await clickWishlistRowMenu(page, fixture.productName);
     await page.getByRole("menuitem", { name: "從願望清單移除" }).click();
 
     await expect(page.getByText("已從願望清單移除")).toBeVisible({
@@ -140,9 +140,11 @@ test.describe("Member collection and wishlist", () => {
     });
     await expect
       .poll(async () =>
-        wishlistSection(page).getByText(fixture.productName).count(),
+        wishlistSection(page)
+          .getByRole("link", { name: fixture.productName })
+          .count(),
       )
-      .toBe(rowsBefore - 1);
+      .toBe(0);
 
     if (buyerId) {
       const remaining = await countProductWatchlistsForUser(
@@ -182,16 +184,15 @@ test.describe("Member collection and wishlist", () => {
     });
     await openHobbyAddAssetModal(page);
     await searchAndSelectCatalogForFixture(page, fixture);
+    await selectHobbyRawGrading(page);
     await addAssetModalForm(page).getByPlaceholder("0").fill("12345");
-    await page.getByRole("button", { name: "★ 收錄至私藏愛好" }).click();
+    await clickHobbyCollectionSubmit(page);
 
     await expect(
       page.getByText("已成功收錄進您的私藏愛好清單"),
     ).toBeVisible({ timeout: 20_000 });
 
-    await expect(
-      holdingsSection(page).getByText(fixture.productName).first(),
-    ).toBeVisible({ timeout: 20_000 });
+    await expectHoldingsProductAttached(page, fixture.productName);
 
     if (buyerId) {
       await deleteUserCollectionsForUserProduct(buyerId, fixture.productId);
@@ -239,11 +240,13 @@ test.describe.serial("Member merch listing via AddAssetModal", () => {
       .count();
     await openMerchAddAssetModal(page);
     await searchAndSelectCatalogForFixture(page, fixture);
-    await addAssetModalForm(page)
-      .getByPlaceholder("一口價放售金額...")
-      .fill("19999");
+    await merchListingPriceInput(page).fill("19999");
     await uploadMerchPhotos(page);
-    await page.getByRole("button", { name: "🚀 立即發佈商品上架" }).click();
+    const publishButton = addAssetModalForm(page).getByRole("button", {
+      name: /立即發佈商品上架/,
+    });
+    await expect(publishButton).toBeEnabled({ timeout: 15_000 });
+    await clickMerchListingPublish(page);
 
     await expect(
       page.getByText("商品已成功錄入並直接上架交易所大盤"),
@@ -308,11 +311,13 @@ test.describe.serial("Member merch listing via AddAssetModal", () => {
     await gotoCollectionPage(page);
     await openMerchAddAssetModal(page);
     await searchAndSelectCatalogForFixture(page, fixture);
-    await addAssetModalForm(page)
-      .getByPlaceholder("一口價放售金額...")
-      .fill("18888");
+    await merchListingPriceInput(page).fill("18888");
     await uploadMerchPhotos(page);
-    await page.getByRole("button", { name: "🚀 立即發佈商品上架" }).click();
+    const publishButton = addAssetModalForm(page).getByRole("button", {
+      name: /立即發佈商品上架/,
+    });
+    await expect(publishButton).toBeEnabled({ timeout: 15_000 });
+    await clickMerchListingPublish(page);
 
     await expect(
       page.getByText("商品已成功錄入並直接上架交易所大盤"),
@@ -329,9 +334,7 @@ test.describe.serial("Member merch listing via AddAssetModal", () => {
     });
 
     await gotoCollectionPage(page);
-    await expect(
-      holdingsSection(page).getByText(fixture.productName).first(),
-    ).toBeVisible({ timeout: 20_000 });
+    await expectHoldingsProductAttached(page, fixture.productName);
 
     const listingIdCreated = await getLatestActiveListingForSellerProduct(
       buyerId,

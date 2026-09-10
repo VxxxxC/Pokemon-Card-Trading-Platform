@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Backend:** ✅ Phase 1 + Phase 2 (grade / target price mutations) · ⏳ Phase 3 OneSignal deferred
+- **Backend:** ✅ Phase 1 + Phase 2 (grade / target price mutations) · 🚧 Phase 3 OneSignal ([push-notifications-ssot.md](../../push-notifications-ssot.md) PR3)
 - **Frontend:** ✅ Marketplace star · ✅ Collection `WishlistTable` live · 🟡 Home mock cards still default `RAW`/`A`
 - **Migration:** ✅ `20260706100000_product_watchlists_wishlist_extend.sql` (pushed to remote)
 
@@ -138,14 +138,12 @@ All return `{ success: true, data }` or `{ success: false, error: string }`.
 
 ---
 
-## Phase 3 (not implemented)
+## Phase 3 (in progress — see [push-notifications-ssot.md](../../push-notifications-ssot.md))
 
-When OneSignal account is ready (separate PR):
-
-1. Cron: rows where `target_price IS NOT NULL AND alert_enabled`
+1. Cron: `/api/cron/wishlist-price-alerts` — rows where `target_price IS NOT NULL AND alert_enabled`
 2. `MIN(listings.price)` for matching grade ≤ `target_price`
-3. Push via OneSignal REST → update `last_alerted_at`
-4. Optional: `profiles.onesignal_player_id` or `user_push_subscriptions`
+3. Push via OneSignal REST (`P-WIS-01`) → update `last_alerted_at`
+4. Subscriptions: `user_push_subscriptions` where `opted_in = true`
 
 ---
 

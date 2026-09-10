@@ -2,47 +2,56 @@ export function MerchantPerformanceSkeleton() {
   return (
     <section
       aria-hidden="true"
-      className="space-y-6 animate-pulse p-4 md:p-6 bg-bg-page min-h-screen text-text-primary"
+      className="space-y-4 animate-pulse text-text-primary"
     >
-      <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-white/5" />
-        <div className="h-7 w-48 rounded bg-white/5" />
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-white/5" />
+        <div className="h-6 w-40 rounded bg-white/5" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div
-            key={index}
-            className="w-full bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5"
-          >
-            <div className="h-4 w-28 rounded bg-white/5 mb-3" />
-            <div className="h-8 w-36 rounded bg-white/5" />
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 space-y-4">
-        <div className="flex justify-between">
-          <div className="h-5 w-40 rounded bg-white/5" />
-          <div className="h-9 w-[125px] rounded-xl bg-white/5" />
-        </div>
-        <div className="h-72 w-full rounded bg-white/5" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-5 border-t border-white/5">
+      <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card overflow-hidden">
+        <div className="flex divide-x divide-[rgba(237,232,224,0.06)]">
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="h-16 rounded-xl bg-white/5" />
+            <div key={index} className="flex-1 px-3 py-3 sm:px-4 sm:py-3.5">
+              <div className="h-3 w-20 rounded bg-white/5 mb-2" />
+              <div className="h-5 w-24 rounded bg-white/5" />
+            </div>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card p-3.5 sm:p-4 space-y-3">
+        <div className="flex justify-between">
+          <div className="h-4 w-32 rounded bg-white/5" />
+          <div className="h-8 w-[110px] rounded-lg bg-white/5" />
+        </div>
+        <div className="h-56 sm:h-64 w-full rounded bg-white/5" />
+        <div className="flex divide-x divide-[rgba(237,232,224,0.06)] border-t border-[rgba(237,232,224,0.06)]">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="flex-1 px-3 py-3">
+              <div className="h-3 w-16 rounded bg-white/5 mb-2" />
+              <div className="h-5 w-20 rounded bg-white/5" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {Array.from({ length: 2 }).map((_, index) => (
           <div
             key={index}
-            className="bg-bg-card rounded-2xl border border-[rgba(237,232,224,0.08)] p-5 space-y-3"
+            className="rounded-xl border border-[rgba(237,232,224,0.08)] bg-bg-card overflow-hidden"
           >
-            <div className="h-5 w-32 rounded bg-white/5" />
-            {Array.from({ length: 5 }).map((__, rowIndex) => (
-              <div key={rowIndex} className="h-12 rounded bg-white/5" />
+            <div className="px-3.5 py-2.5 border-b border-[rgba(237,232,224,0.06)]">
+              <div className="h-4 w-28 rounded bg-white/5" />
+            </div>
+            {Array.from({ length: 4 }).map((__, rowIndex) => (
+              <div
+                key={rowIndex}
+                className="h-10 border-b border-[rgba(237,232,224,0.06)] last:border-b-0 px-3.5"
+              >
+                <div className="h-4 w-full rounded bg-white/5 my-3" />
+              </div>
             ))}
           </div>
         ))}

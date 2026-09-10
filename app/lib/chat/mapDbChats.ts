@@ -4,6 +4,12 @@ import type {
   SpecialTransactionData,
 } from "@/app/store/useHkCardVaultStore";
 import { resolveOfferCardDisplayImage } from "@/app/lib/chat/offerCardImage";
+import { parseListingImageUrls } from "@/lib/listings/images";
+import {
+  resolveSystemOfferAcceptedText,
+  resolveSystemOfferRejectedText,
+  SYSTEM_ORDER_CANCELLED_TEXT,
+} from "@/app/lib/chat/offerSystemMessageCopy";
 import type { Tables } from "@/types/supabase";
 import { resolveAvatarUrl } from "@/lib/profile/avatar";
 
@@ -37,7 +43,9 @@ export type DbOfferSnippet = {
   status: Tables<"offers">["status"];
   modified_count: number;
   use_authentication: boolean;
+  listing_id?: string | null;
   listings: {
+    id?: string;
     product_id: string;
     images: unknown;
     product_catalog: CatalogSnippet | null;
@@ -168,6 +176,8 @@ function buildSpecialData(
   return {
     cardName,
     cardId: catalog.id,
+    listingId:
+      offer.listing_id?.trim() || offer.listings?.id?.trim() || catalog.id,
     offerPrice: Number(offer.offer_price),
     buyerName: partyDisplayName(buyer),
     buyerId: buyer.id,
@@ -175,6 +185,7 @@ function buildSpecialData(
     sellerName: partyDisplayName(seller),
     offerId: offer.id,
     modifiedCount: offer.modified_count ?? 0,
+    listingImageUrls: parseListingImageUrls(listingImages),
     imageUrl: imageUrl || undefined,
     useAuthentication: offer.use_authentication,
     initialStatus: mapOfferStatusToInitialStatus(
@@ -242,9 +253,10 @@ function mapDbMessage(
     return {
       id: row.id,
       sender: "system",
-      text: "✅ 賣家已接受出價，商品已成功鎖定（Hold 貨）",
+      text: resolveSystemOfferAcceptedText(currentUserId === seller.id),
       timestamp,
       type: "text",
+      offerId: row.offer_id ?? undefined,
       orderData: merchantOrderId
         ? { orderId: merchantOrderId, orderKind: "merchant" }
         : memberOrderId
@@ -257,9 +269,10 @@ function mapDbMessage(
     return {
       id: row.id,
       sender: "system",
-      text: "❌ 賣家已拒絕此出價",
+      text: resolveSystemOfferRejectedText(currentUserId === seller.id),
       timestamp,
       type: "text",
+      offerId: row.offer_id ?? undefined,
     };
   }
 
@@ -281,12 +294,19 @@ function mapDbMessage(
   }
 
   if (row.content === "SYSTEM_ORDER_CANCELLED") {
+    const merchantOrderId = row.merchant_order_id?.trim();
+    const memberOrderId = row.member_order_id?.trim();
     return {
       id: row.id,
       sender: "system",
-      text: "❌ 此筆訂單已取消",
+      text: SYSTEM_ORDER_CANCELLED_TEXT,
       timestamp,
-      type: "text",
+      type: "system_order_cancelled",
+      orderData: merchantOrderId
+        ? { orderId: merchantOrderId, orderKind: "merchant" }
+        : memberOrderId
+          ? { orderId: memberOrderId, orderKind: "member" }
+          : undefined,
     };
   }
 
@@ -383,12 +403,16 @@ function mapRoomToStore(
   };
 }
 
-function mapLastMessagePreview(row: DbChatMessageRow): string {
+function mapLastMessagePreview(
+  row: DbChatMessageRow,
+  room: DbChatRoomBaseRow,
+  currentUserId: string,
+): string {
   switch (row.content) {
     case "SYSTEM_OFFER_ACCEPTED":
-      return "✅ 賣家已接受出價，商品已成功鎖定（Hold 貨）";
+      return resolveSystemOfferAcceptedText(currentUserId === room.seller_id);
     case "SYSTEM_OFFER_REJECTED":
-      return "❌ 賣家已拒絕此出價";
+      return resolveSystemOfferRejectedText(currentUserId === room.seller_id);
     case "SYSTEM_ORDER_COMPLETED":
       return "✅ 交易已順利完成";
     case "SYSTEM_ORDER_CANCELLED":
@@ -415,7 +439,7 @@ export function assembleDbChatLobbyRooms(
 
     return {
       ...base,
-      lastMessage: mapLastMessagePreview(last),
+      lastMessage: mapLastMessagePreview(last, room, currentUserId),
       timestamp: last.created_at ?? base.timestamp,
       messages: [],
     };

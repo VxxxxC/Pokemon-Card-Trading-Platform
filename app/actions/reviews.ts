@@ -329,7 +329,7 @@ export async function resolveChatCompletionOrderId(
         .select("id")
         .eq("buyer_id", user.id)
         .eq("merchant_id", revieweeId)
-        .eq("escrow_status", "completed_and_transferred")
+        .not("buyer_confirmed_at", "is", null)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();

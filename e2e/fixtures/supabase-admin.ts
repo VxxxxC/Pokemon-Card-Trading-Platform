@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { getChatRealtimeFixtures } from "./chat-test-data";
 
 export type ChatMessageAuditRow = {
   id: string;
@@ -28,6 +29,17 @@ function createE2eAdminClient() {
   });
 }
 
+export async function getProfileEmailById(userId: string): Promise<string | null> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+
+  if (error) {
+    throw new Error(`[getProfileEmailById] ${error.message}`);
+  }
+
+  return data.user?.email?.trim() ?? null;
+}
+
 export async function getProfileIdByEmail(email: string): Promise<string | null> {
   const admin = createE2eAdminClient();
   const { data, error } = await admin.auth.admin.listUsers({
@@ -53,16 +65,19 @@ export async function ensureDbChatRoom(
 ): Promise<string> {
   const admin = createE2eAdminClient();
 
-  const { data: existing, error: selectError } = await admin
+  const { data: existingRows, error: selectError } = await admin
     .from("chat_rooms")
     .select("id")
     .eq("buyer_id", buyerId)
     .eq("seller_id", sellerId)
-    .maybeSingle();
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
   if (selectError) {
     throw new Error(`[ensureDbChatRoom] ${selectError.message}`);
   }
+
+  const existing = existingRows?.[0];
 
   if (existing?.id) {
     return existing.id;
@@ -79,6 +94,38 @@ export async function ensureDbChatRoom(
   }
 
   return created.id;
+}
+
+export async function getChatRoomSellerPersona(
+  roomId: string,
+): Promise<"member" | "merchant"> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("chat_rooms")
+    .select("seller_persona")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getChatRoomSellerPersona] ${error.message}`);
+  }
+
+  return data?.seller_persona === "merchant" ? "merchant" : "member";
+}
+
+export async function acknowledgePendingRewardGrantsForUser(
+  userId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error } = await admin
+    .from("user_rewards")
+    .update({ acknowledged_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .is("acknowledged_at", null);
+
+  if (error) {
+    throw new Error(`[acknowledgePendingRewardGrantsForUser] ${error.message}`);
+  }
 }
 
 export async function getLatestChatMessage(
@@ -110,6 +157,51 @@ export async function getLatestChatMessage(
   return rows[0] ?? null;
 }
 
+export async function getLatestChatMessageForParties(
+  buyerId: string,
+  sellerId: string,
+  contentContains?: string,
+): Promise<ChatMessageAuditRow | null> {
+  const admin = createE2eAdminClient();
+
+  const { data: rooms, error: roomsError } = await admin
+    .from("chat_rooms")
+    .select("id")
+    .eq("buyer_id", buyerId)
+    .eq("seller_id", sellerId);
+
+  if (roomsError) {
+    throw new Error(`[getLatestChatMessageForParties] ${roomsError.message}`);
+  }
+
+  const roomIds = (rooms ?? []).map((room) => room.id).filter(Boolean);
+  if (roomIds.length === 0) {
+    return null;
+  }
+
+  const { data, error } = await admin
+    .from("chat_messages")
+    .select("id, room_id, content, created_at, sender_id, is_system_warning")
+    .in("room_id", roomIds)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throw new Error(`[getLatestChatMessageForParties] ${error.message}`);
+  }
+
+  const rows = (data ?? []) as ChatMessageAuditRow[];
+  if (rows.length === 0) {
+    return null;
+  }
+
+  if (contentContains) {
+    return rows.find((row) => row.content.includes(contentContains)) ?? null;
+  }
+
+  return rows[0] ?? null;
+}
+
 export async function getOfferStatus(offerId: string): Promise<string | null> {
   const admin = createE2eAdminClient();
 
@@ -124,6 +216,241 @@ export async function getOfferStatus(offerId: string): Promise<string | null> {
   }
 
   return data?.status ?? null;
+}
+
+export async function getOfferRoomId(offerId: string): Promise<string | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("offers")
+    .select("room_id")
+    .eq("id", offerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getOfferRoomId] ${error.message}`);
+  }
+
+  return data?.room_id ?? null;
+}
+
+export async function hasOfferChatMessage(offerId: string): Promise<boolean> {
+  const admin = createE2eAdminClient();
+
+  const { count, error } = await admin
+    .from("chat_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("offer_id", offerId);
+
+  if (error) {
+    throw new Error(`[hasOfferChatMessage] ${error.message}`);
+  }
+
+  return (count ?? 0) > 0;
+}
+
+export async function acceptOfferViaSellerRpc(
+  offerId: string,
+  sellerId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error: adminError } = await (
+    admin as unknown as {
+      rpc: (
+        fn: "rpc_accept_offer",
+        args: { p_offer_id: string; p_seller_id: string },
+      ) => Promise<{ error: { message?: string } | null }>;
+    }
+  ).rpc("rpc_accept_offer", {
+    p_offer_id: offerId,
+    p_seller_id: sellerId,
+  });
+  if (!adminError) {
+    return;
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { sellerEmail, sellerPassword } = getChatRealtimeFixtures();
+
+  if (!url || !anonKey || !sellerEmail || !sellerPassword) {
+    throw new Error(
+      `[acceptOfferViaSellerRpc] admin RPC failed (${adminError.message ?? "unknown"}) and seller auth env is missing`,
+    );
+  }
+
+  const client = createClient<Database>(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  let lastSignInError: { message?: string } | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { error: signInError } = await client.auth.signInWithPassword({
+      email: sellerEmail,
+      password: sellerPassword,
+    });
+    if (!signInError) {
+      const { error } = await client.rpc("rpc_accept_offer", {
+        p_offer_id: offerId,
+        p_seller_id: sellerId,
+      });
+      if (error) {
+        throw new Error(`[acceptOfferViaSellerRpc] ${error.message}`);
+      }
+      return;
+    }
+    lastSignInError = signInError;
+    await new Promise((resolve) => setTimeout(resolve, 1_500 * (attempt + 1)));
+  }
+
+  throw new Error(
+    `[acceptOfferViaSellerRpc] admin RPC failed (${adminError.message ?? "unknown"}); sign-in failed: ${lastSignInError?.message ?? JSON.stringify(lastSignInError)}`,
+  );
+}
+
+export async function rejectOfferViaSellerRpc(
+  offerId: string,
+  sellerId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error } = await (
+    admin as unknown as {
+      rpc: (
+        fn: "rpc_reject_offer",
+        args: { p_offer_id: string; p_seller_id: string },
+      ) => Promise<{ error: { message?: string } | null }>;
+    }
+  ).rpc("rpc_reject_offer", {
+    p_offer_id: offerId,
+    p_seller_id: sellerId,
+  });
+
+  if (error) {
+    throw new Error(`[rejectOfferViaSellerRpc] ${error.message}`);
+  }
+}
+
+export async function submitChatReportViaBuyerRpc(params: {
+  sellerId: string;
+  roomId: string;
+  details: string;
+  category?: Database["public"]["Enums"]["report_category"];
+}): Promise<
+  | { success: true; reportId: string; caseId: string }
+  | { success: false; error: string }
+> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const email = process.env.E2E_BUYER_EMAIL?.trim();
+  const password = process.env.E2E_BUYER_PASSWORD?.trim();
+
+  if (!url || !anonKey || !email || !password) {
+    throw new Error(
+      "Missing Supabase public env or E2E buyer credentials for chat report RPC",
+    );
+  }
+
+  const client = createClient<Database>(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) {
+    throw new Error(
+      `[submitChatReportViaBuyerRpc] sign-in failed: ${signInError.message}`,
+    );
+  }
+
+  const { data, error } = await client.rpc("rpc_submit_user_report_v2", {
+    p_target_id: params.sellerId,
+    p_category: params.category ?? "fraud",
+    p_details: params.details,
+    p_chat_room_id: params.roomId,
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  const payload = data as { report_id?: string; case_id?: string } | null;
+  if (!payload?.report_id || !payload?.case_id) {
+    return { success: false, error: "提交舉報回傳資料格式異常" };
+  }
+
+  return {
+    success: true,
+    reportId: payload.report_id,
+    caseId: payload.case_id,
+  };
+}
+
+export async function simulateMemberAuthOrderPayment(
+  memberOrderId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { data: order, error: orderError } = await admin
+    .from("member_orders")
+    .select("stripe_payment_intent_id")
+    .eq("id", memberOrderId)
+    .maybeSingle<{ stripe_payment_intent_id: string | null }>();
+
+  if (orderError) {
+    throw new Error(`[simulateMemberAuthOrderPayment] ${orderError.message}`);
+  }
+
+  const paymentIntentId =
+    order?.stripe_payment_intent_id?.trim() ||
+    `pi_e2e_${memberOrderId.replace(/-/g, "").slice(0, 24)}`;
+
+  const { error } = await (
+    admin as unknown as {
+      rpc: (
+        fn: "rpc_mark_member_auth_order_authorized",
+        args: {
+          p_order_id: string;
+          p_payment_intent_id: string;
+          p_amounts: Record<string, never>;
+        },
+      ) => Promise<{ error: { message: string } | null }>;
+    }
+  ).rpc("rpc_mark_member_auth_order_authorized", {
+    p_order_id: memberOrderId,
+    p_payment_intent_id: paymentIntentId,
+    p_amounts: {},
+  });
+
+  if (error) {
+    throw new Error(`[simulateMemberAuthOrderPayment] ${error.message}`);
+  }
+}
+
+export async function submitInboundTrackingViaAdmin(
+  orderId: string,
+  trackingNo: string,
+  courierName: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error } = await admin
+    .from("member_orders")
+    .update({
+      inbound_tracking_no: trackingNo,
+      inbound_courier_name: courierName,
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    if (isAdminPermissionDenied(error)) {
+      throw new Error(
+        "[submitInboundTrackingViaAdmin] service role lacks member_orders update grant",
+      );
+    }
+    throw new Error(`[submitInboundTrackingViaAdmin] ${error.message}`);
+  }
 }
 
 export async function getListingSellerId(
@@ -160,9 +487,28 @@ export async function getProfileDisplayName(profileId: string): Promise<string> 
   return data?.display_name?.trim() || "對話夥伴";
 }
 
+export async function isBuyerWithinP2pNewAccountGrace(
+  profileId: string,
+): Promise<boolean> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("created_at")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error || !data?.created_at) {
+    return false;
+  }
+
+  const ageMs = Date.now() - new Date(data.created_at).getTime();
+  return ageMs < 14 * 24 * 60 * 60 * 1000;
+}
+
 export type ListingMarketplaceFixture = {
   listingId: string;
   productId: string;
+  displayId: string | null;
   sellerId: string;
   sellerName: string;
   productName: string;
@@ -182,6 +528,8 @@ export type GetListingMarketplaceFixtureOptions = {
   expectedSellerId?: string;
   /** When set, preferred over catalog fields for `searchKeyword`. */
   preferredSearchKeyword?: string;
+  /** When set, skips listings whose `seller_persona` does not match. */
+  requiredSellerPersona?: "member" | "merchant";
 };
 
 type ProductCatalogSummary = {
@@ -198,6 +546,7 @@ type ListingCatalogJoinRow = {
   status: string;
   product_id: string;
   seller_id: string;
+  seller_persona: "member" | "merchant" | null;
   profiles: { display_name: string } | { display_name: string }[] | null;
   product_catalog: ProductCatalogSummary | ProductCatalogSummary[] | null;
 };
@@ -315,6 +664,35 @@ async function getLowestActiveListingPrice(
   return Math.min(...prices);
 }
 
+async function resolveMarketplaceSellerDisplayName(
+  admin: ReturnType<typeof createE2eAdminClient>,
+  sellerId: string,
+  sellerPersona: string | null | undefined,
+  displayName: string | undefined,
+): Promise<string | null> {
+  if (sellerPersona === "merchant") {
+    const { data: merchant, error } = await admin
+      .from("merchant_shops")
+      .select("shop_name")
+      .eq("merchant_id", sellerId)
+      .maybeSingle();
+
+    if (error) {
+      const permissionDenied = /permission denied/i.test(error.message);
+      if (!permissionDenied) {
+        throw new Error(`[resolveMarketplaceSellerDisplayName] ${error.message}`);
+      }
+    } else {
+      const shopName = merchant?.shop_name?.trim();
+      if (shopName) {
+        return shopName;
+      }
+    }
+  }
+
+  return displayName?.trim() ?? null;
+}
+
 /**
  * Loads marketplace search/order-book fixture data for a listing.
  * Returns `{ ok: false, skipReason }` when env or listing state is unsuitable for E2E.
@@ -347,6 +725,7 @@ export async function getListingMarketplaceFixture(
       status,
       product_id,
       seller_id,
+      seller_persona,
       profiles!fk_listings_seller_id (
         display_name
       ),
@@ -382,6 +761,16 @@ export async function getListingMarketplaceFixture(
     };
   }
 
+  if (
+    options.requiredSellerPersona &&
+    row.seller_persona !== options.requiredSellerPersona
+  ) {
+    return {
+      ok: false,
+      skipReason: `Listing ${normalizedListingId} seller_persona=${row.seller_persona ?? "unknown"} (expected ${options.requiredSellerPersona})`,
+    };
+  }
+
   const expectedSellerId =
     options.expectedSellerId?.trim() ?? readTrimmedEnv("E2E_SELLER_ID");
   if (expectedSellerId && row.seller_id !== expectedSellerId) {
@@ -392,11 +781,16 @@ export async function getListingMarketplaceFixture(
   }
 
   const sellerProfile = unwrapJoinRow(row.profiles);
-  const sellerName = sellerProfile?.display_name?.trim();
+  const sellerName = await resolveMarketplaceSellerDisplayName(
+    admin,
+    row.seller_id,
+    row.seller_persona,
+    sellerProfile?.display_name,
+  );
   if (!sellerName) {
     return {
       ok: false,
-      skipReason: `Listing ${normalizedListingId} is missing seller display_name`,
+      skipReason: `Listing ${normalizedListingId} is missing seller display_name or shop_name`,
     };
   }
 
@@ -446,6 +840,7 @@ export async function getListingMarketplaceFixture(
     fixture: {
       listingId: row.id,
       productId: row.product_id,
+      displayId: catalog.display_id?.trim() ?? null,
       sellerId: row.seller_id,
       sellerName,
       productName: resolveProductName(catalog),
@@ -457,21 +852,138 @@ export async function getListingMarketplaceFixture(
   };
 }
 
+/**
+ * Seeds a minimal active listing when staging wipe removed E2E fixtures.
+ * Uses the first catalog row with a Chinese name for reliable marketplace search.
+ */
+export async function seedE2eMarketplaceListingForSeller(
+  sellerId: string,
+  sellerPersona: "member" | "merchant" = "member",
+): Promise<string | null> {
+  if (!hasE2eAdminEnv()) {
+    return null;
+  }
+
+  const admin = createE2eAdminClient();
+  const { data: catalog, error: catalogError } = await admin
+    .from("product_catalog")
+    .select("id, display_id, name_zh, card_number")
+    .not("name_zh", "is", null)
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (catalogError) {
+    throw new Error(`[seedE2eMarketplaceListingForSeller] ${catalogError.message}`);
+  }
+
+  if (!catalog?.id) {
+    return null;
+  }
+
+  const useAuthentication = sellerPersona === "merchant";
+  const { data, error } = await admin
+    .from("listings")
+    .insert({
+      seller_id: sellerId,
+      product_id: catalog.id,
+      price: 299,
+      status: "active",
+      seller_persona: sellerPersona,
+      grading_company: "RAW",
+      seller_description: "E2E marketplace fixture listing (auto-seeded)",
+      images: [],
+      use_authentication: useAuthentication,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`[seedE2eMarketplaceListingForSeller] ${error.message}`);
+  }
+
+  return data.id;
+}
+
+export async function getProfileUsername(profileId: string): Promise<string | null> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("profiles")
+    .select("username")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getProfileUsername] ${error.message}`);
+  }
+
+  return data?.username?.trim() ?? null;
+}
+
+export async function getProfilePublicSlug(profileId: string): Promise<string | null> {
+  const admin = createE2eAdminClient();
+  const { data: merchant, error: merchantError } = await admin
+    .from("merchant_shops")
+    .select("shop_handle")
+    .eq("merchant_id", profileId)
+    .maybeSingle();
+
+  if (merchantError && !/permission denied/i.test(merchantError.message)) {
+    throw new Error(`[getProfilePublicSlug] ${merchantError.message}`);
+  }
+
+  const shopHandle = merchant?.shop_handle?.trim();
+  if (shopHandle) {
+    return shopHandle;
+  }
+
+  return getProfileUsername(profileId);
+}
+
 async function findActiveListingIdForSeller(
   admin: ReturnType<typeof createE2eAdminClient>,
   sellerId: string,
+  sellerPersona?: "member" | "merchant",
 ): Promise<string | null> {
-  const { data, error } = await admin
+  let query = admin
     .from("listings")
     .select("id")
     .eq("seller_id", sellerId)
-    .eq("status", "active")
+    .eq("status", "active");
+
+  if (sellerPersona) {
+    query = query.eq("seller_persona", sellerPersona);
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error) {
     throw new Error(`[findActiveListingIdForSeller] ${error.message}`);
+  }
+
+  return data?.id ?? null;
+}
+
+async function findRecyclableListingIdForSeller(
+  admin: ReturnType<typeof createE2eAdminClient>,
+  sellerId: string,
+  sellerPersona: "member" | "merchant",
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("listings")
+    .select("id")
+    .eq("seller_id", sellerId)
+    .eq("seller_persona", sellerPersona)
+    .in("status", ["active", "sold", "inactive"])
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[findRecyclableListingIdForSeller] ${error.message}`);
   }
 
   return data?.id ?? null;
@@ -508,9 +1020,43 @@ export async function resolveE2eMarketplaceFixture(
   }
 
   const admin = createE2eAdminClient();
-  const fallbackListingId = await findActiveListingIdForSeller(admin, sellerId);
+  const fallbackListingId = await findActiveListingIdForSeller(
+    admin,
+    sellerId,
+    options.requiredSellerPersona,
+  );
   if (!fallbackListingId || fallbackListingId === configuredListingId) {
-    return primary;
+    if (!options.requiredSellerPersona) {
+      const seededListingId = await seedE2eMarketplaceListingForSeller(
+        sellerId,
+        "member",
+      );
+      if (seededListingId) {
+        await ensureListingActive(seededListingId);
+        return getListingMarketplaceFixture(seededListingId, options);
+      }
+      return primary;
+    }
+
+    const recycledListingId = await findRecyclableListingIdForSeller(
+      admin,
+      sellerId,
+      options.requiredSellerPersona,
+    );
+    if (!recycledListingId || recycledListingId === configuredListingId) {
+      const seededListingId = await seedE2eMarketplaceListingForSeller(
+        sellerId,
+        options.requiredSellerPersona,
+      );
+      if (seededListingId) {
+        await ensureListingActive(seededListingId);
+        return getListingMarketplaceFixture(seededListingId, options);
+      }
+      return primary;
+    }
+
+    await ensureListingActive(recycledListingId);
+    return getListingMarketplaceFixture(recycledListingId, options);
   }
 
   return getListingMarketplaceFixture(fallbackListingId, options);
@@ -531,23 +1077,52 @@ function isSupabaseAccessDenied(
   return isAdminPermissionDenied(error);
 }
 
+export async function getOfferById(offerId: string): Promise<{
+  id: string;
+  status: string | null;
+  offer_price: number | null;
+  modified_count: number | null;
+  room_id: string | null;
+} | null> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("offers")
+    .select("id, status, offer_price, modified_count, room_id")
+    .eq("id", offerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getOfferById] ${error.message}`);
+  }
+
+  return data;
+}
+
 export async function getLatestOfferForListing(params: {
-  roomId: string;
   listingId: string;
   buyerId: string;
+  roomId?: string;
 }): Promise<{
   id: string;
   status: string | null;
   use_authentication: boolean | null;
+  offer_price: number | null;
+  modified_count: number | null;
+  room_id?: string;
 } | null> {
   const admin = createE2eAdminClient();
 
-  const { data, error } = await admin
+  let query = admin
     .from("offers")
-    .select("id, status, use_authentication")
-    .eq("room_id", params.roomId)
+    .select("id, status, use_authentication, room_id, offer_price, modified_count")
     .eq("listing_id", params.listingId)
-    .eq("buyer_id", params.buyerId)
+    .eq("buyer_id", params.buyerId);
+
+  if (params.roomId) {
+    query = query.eq("room_id", params.roomId);
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -564,6 +1139,9 @@ export async function getLatestOfferForListing(params: {
     id: data.id,
     status: data.status,
     use_authentication: data.use_authentication,
+    offer_price: data.offer_price,
+    modified_count: data.modified_count,
+    room_id: data.room_id ?? undefined,
   };
 }
 
@@ -682,6 +1260,34 @@ export async function getLatestMemberOrderForListing(params: {
   }
 
   return data as MemberOrderAuditRow | null;
+}
+
+export async function cancelMemberOrderViaRpc(
+  orderId: string,
+  userId: string,
+): Promise<boolean> {
+  const admin = createE2eAdminClient();
+
+  const { error } = await (
+    admin as unknown as {
+      rpc: (
+        fn: "rpc_cancel_member_order",
+        args: { p_order_id: string; p_user_id: string },
+      ) => Promise<{ error: { message: string } | null }>;
+    }
+  ).rpc("rpc_cancel_member_order", {
+    p_order_id: orderId,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    if (isAdminPermissionDenied(error)) {
+      return false;
+    }
+    throw new Error(`[cancelMemberOrderViaRpc] ${error.message}`);
+  }
+
+  return true;
 }
 
 export async function getMemberOrderById(
@@ -840,11 +1446,28 @@ export async function deleteProductWatchlistsForUser(
     .eq("user_id", userId)
     .eq("product_id", productId);
 
-  if (error) {
-    if (isSupabaseAccessDenied(error, status)) {
-      return;
-    }
+  if (error && !isSupabaseAccessDenied(error, status)) {
     throw new Error(`[deleteProductWatchlistsForUser] ${error.message}`);
+  }
+}
+
+export async function seedProductWatchlistForUser(
+  userId: string,
+  productId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+  await deleteProductWatchlistsForUser(userId, productId);
+
+  const { error, status } = await admin.from("product_watchlists").insert({
+    user_id: userId,
+    product_id: productId,
+    grading_company: "RAW",
+    grading_score: "A",
+    alert_enabled: true,
+  });
+
+  if (error) {
+    throw new Error(`[seedProductWatchlistForUser] ${error.message}`);
   }
 }
 
@@ -1008,15 +1631,26 @@ export async function getListingSourceCollectionId(
 export async function ensureListingActive(listingId: string): Promise<boolean> {
   const admin = createE2eAdminClient();
 
-  const { error } = await admin
-    .from("listings")
-    .update({ status: "active" })
-    .eq("id", listingId);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { error } = await admin
+      .from("listings")
+      .update({ status: "active" })
+      .eq("id", listingId);
 
-  if (error) {
+    if (!error) {
+      return true;
+    }
+
     if (isAdminPermissionDenied(error)) {
       return false;
     }
+
+    const isStatementTimeout = /statement timeout/i.test(error.message);
+    if (isStatementTimeout && attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
+      continue;
+    }
+
     throw new Error(`[ensureListingActive] ${error.message}`);
   }
 
@@ -1152,6 +1786,27 @@ export async function deactivateActiveListingsForSellerProduct(
     if (row.id) {
       await setListingStatusInactive(row.id);
     }
+  }
+}
+
+export async function clearListingsForSellerProduct(
+  sellerId: string,
+  productId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error, status } = await admin
+    .from("listings")
+    .delete()
+    .eq("seller_id", sellerId)
+    .eq("product_id", productId);
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      await deactivateActiveListingsForSellerProduct(sellerId, productId);
+      return;
+    }
+    throw new Error(`[clearListingsForSellerProduct] ${error.message}`);
   }
 }
 
@@ -1362,13 +2017,54 @@ export type ReportAuditRow = {
   target_type: string;
   reason: string;
   status: string | null;
+  category: string | null;
+  case_id: string | null;
+  contribution_score: number | null;
 };
+
+export async function deletePendingReportAttachments(
+  reporterId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error, status } = await admin
+    .from("report_attachments")
+    .delete()
+    .eq("reporter_id", reporterId);
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      return;
+    }
+    throw new Error(`[deletePendingReportAttachments] ${error.message}`);
+  }
+}
+
+export async function deleteModerationCasesForSubject(
+  subjectId: string,
+): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error, status } = await admin
+    .from("moderation_cases")
+    .delete()
+    .eq("subject_user_id", subjectId);
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      return;
+    }
+    throw new Error(`[deleteModerationCasesForSubject] ${error.message}`);
+  }
+}
 
 export async function deletePendingReports(params: {
   reporterId: string;
   targetId: string;
 }): Promise<void> {
   const admin = createE2eAdminClient();
+
+  await deletePendingReportAttachments(params.reporterId);
 
   const { error, status } = await admin
     .from("reports")
@@ -1383,6 +2079,52 @@ export async function deletePendingReports(params: {
     }
     throw new Error(`[deletePendingReports] ${error.message}`);
   }
+
+  await deleteModerationCasesForSubject(params.targetId);
+}
+
+export async function acknowledgeAllReportOutcomesForReporter(
+  reporterId: string,
+): Promise<number> {
+  const admin = createE2eAdminClient();
+  const acknowledgedAt = new Date().toISOString();
+  const { data, error, status } = await admin
+    .from("reports")
+    .update({ outcome_acknowledged_at: acknowledgedAt })
+    .eq("reporter_id", reporterId)
+    .is("outcome_acknowledged_at", null)
+    .select("id");
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      return 0;
+    }
+    throw new Error(
+      `[acknowledgeAllReportOutcomesForReporter] ${error.message}`,
+    );
+  }
+
+  return data?.length ?? 0;
+}
+
+export async function countPendingReports(params: {
+  reporterId: string;
+  targetId: string;
+}): Promise<number> {
+  const admin = createE2eAdminClient();
+
+  const { count, error } = await admin
+    .from("reports")
+    .select("id", { count: "exact", head: true })
+    .eq("reporter_id", params.reporterId)
+    .eq("target_id", params.targetId)
+    .eq("status", "pending");
+
+  if (error) {
+    throw new Error(`[countPendingReports] ${error.message}`);
+  }
+
+  return count ?? 0;
 }
 
 export async function getLatestReport(params: {
@@ -1393,7 +2135,9 @@ export async function getLatestReport(params: {
 
   const { data, error } = await admin
     .from("reports")
-    .select("id, reporter_id, target_id, target_type, reason, status")
+    .select(
+      "id, reporter_id, target_id, target_type, reason, status, category, case_id, contribution_score",
+    )
     .eq("reporter_id", params.reporterId)
     .eq("target_id", params.targetId)
     .order("created_at", { ascending: false })
@@ -1405,4 +2149,485 @@ export async function getLatestReport(params: {
   }
 
   return (data as ReportAuditRow | null) ?? null;
+}
+
+export type ReportAttachmentAuditRow = {
+  id: string;
+  report_id: string | null;
+  reporter_id: string;
+  storage_path: string;
+};
+
+export async function getReportAttachmentsForReport(
+  reportId: string,
+): Promise<ReportAttachmentAuditRow[]> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("report_attachments")
+    .select("id, report_id, reporter_id, storage_path")
+    .eq("report_id", reportId);
+
+  if (error) {
+    throw new Error(`[getReportAttachmentsForReport] ${error.message}`);
+  }
+
+  return (data as ReportAttachmentAuditRow[] | null) ?? [];
+}
+
+export type ModerationCaseAuditRow = {
+  id: string;
+  case_number: string;
+  subject_user_id: string;
+  status: string;
+  final_score: number | null;
+  primary_category?: string | null;
+};
+
+export async function getLatestModerationCaseForSubject(
+  subjectId: string,
+): Promise<ModerationCaseAuditRow | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("moderation_cases")
+    .select("id, case_number, subject_user_id, status, final_score")
+    .eq("subject_user_id", subjectId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getLatestModerationCaseForSubject] ${error.message}`);
+  }
+
+  return (data as ModerationCaseAuditRow | null) ?? null;
+}
+
+export type ModerationCaseWithChatRoom = ModerationCaseAuditRow & {
+  chatRoomId: string;
+};
+
+export async function getLatestModerationCaseWithChatRoom(
+  subjectId: string,
+): Promise<ModerationCaseWithChatRoom | null> {
+  const admin = createE2eAdminClient();
+
+  const { data: cases, error: casesError } = await admin
+    .from("moderation_cases")
+    .select("id, case_number, subject_user_id, status, final_score, created_at, primary_category")
+    .eq("subject_user_id", subjectId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (casesError) {
+    throw new Error(`[getLatestModerationCaseWithChatRoom] ${casesError.message}`);
+  }
+
+  for (const moderationCase of cases ?? []) {
+    const { data: report, error: reportError } = await admin
+      .from("reports")
+      .select("context_type, context_id")
+      .eq("case_id", moderationCase.id)
+      .eq("context_type", "chat_room")
+      .not("context_id", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (reportError) {
+      throw new Error(`[getLatestModerationCaseWithChatRoom] ${reportError.message}`);
+    }
+
+    if (report?.context_id) {
+      return {
+        ...(moderationCase as ModerationCaseAuditRow),
+        chatRoomId: report.context_id,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function resolveModerationCaseChatRoomId(
+  caseId: string,
+): Promise<string | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("reports")
+    .select("context_id")
+    .eq("case_id", caseId)
+    .eq("context_type", "chat_room")
+    .not("context_id", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[resolveModerationCaseChatRoomId] ${error.message}`);
+  }
+
+  return data?.context_id ?? null;
+}
+
+export async function getLatestOpenModerationCaseForSubject(
+  subjectId: string,
+): Promise<ModerationCaseAuditRow | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("moderation_cases")
+    .select("id, case_number, subject_user_id, status, final_score")
+    .eq("subject_user_id", subjectId)
+    .in("status", ["open", "reviewing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getLatestOpenModerationCaseForSubject] ${error.message}`);
+  }
+
+  return (data as ModerationCaseAuditRow | null) ?? null;
+}
+
+export async function getModerationCaseStatus(
+  caseId: string,
+): Promise<{ status: string; resolution: string | null } | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("moderation_cases")
+    .select("status, resolution")
+    .eq("id", caseId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getModerationCaseStatus] ${error.message}`);
+  }
+
+  return (data as { status: string; resolution: string | null } | null) ?? null;
+}
+
+export async function countModerationAuditLogsForCase(
+  caseId: string,
+  action?: string,
+): Promise<number> {
+  const admin = createE2eAdminClient();
+
+  let query = admin
+    .from("moderation_audit_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("case_id", caseId);
+
+  if (action) {
+    query = query.eq("action", action);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`[countModerationAuditLogsForCase] ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+export async function insertChatMessageForE2e(params: {
+  roomId: string;
+  senderId: string;
+  content: string;
+  createdAt?: string;
+}): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error } = await admin.from("chat_messages").insert({
+    room_id: params.roomId,
+    sender_id: params.senderId,
+    content: params.content,
+    is_system_warning: false,
+    ...(params.createdAt ? { created_at: params.createdAt } : {}),
+  });
+
+  if (error) {
+    throw new Error(`[insertChatMessageForE2e] ${error.message}`);
+  }
+}
+
+export type ModerationCaseDetailAuditRow = ModerationCaseAuditRow & {
+  primary_category: string | null;
+};
+
+export async function getLatestModerationCaseDetailForSubject(
+  subjectId: string,
+): Promise<ModerationCaseDetailAuditRow | null> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("moderation_cases")
+    .select("id, case_number, subject_user_id, status, final_score, primary_category")
+    .eq("subject_user_id", subjectId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getLatestModerationCaseDetailForSubject] ${error.message}`);
+  }
+
+  return (data as ModerationCaseDetailAuditRow | null) ?? null;
+}
+
+export async function insertAccountSanctionForE2e(params: {
+  userId: string;
+  type: "suspend" | "ban";
+  endsAt?: string | null;
+  caseId?: string | null;
+}): Promise<string> {
+  const admin = createE2eAdminClient();
+
+  const { data, error } = await admin
+    .from("account_sanctions")
+    .insert({
+      user_id: params.userId,
+      scope: "account",
+      type: params.type,
+      ends_at: params.endsAt ?? null,
+      source: "admin",
+      reason: "E2E test sanction",
+      case_id: params.caseId ?? null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`[insertAccountSanctionForE2e] ${error.message}`);
+  }
+
+  return data.id as string;
+}
+
+export async function deleteAccountSanctionsForUser(userId: string): Promise<void> {
+  const admin = createE2eAdminClient();
+
+  const { error, status } = await admin
+    .from("account_sanctions")
+    .delete()
+    .eq("user_id", userId);
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      return;
+    }
+    throw new Error(`[deleteAccountSanctionsForUser] ${error.message}`);
+  }
+}
+
+export async function countResolvedModerationCasesForSubject(
+  subjectId: string,
+): Promise<number> {
+  const admin = createE2eAdminClient();
+  const { count, error } = await admin
+    .from("moderation_cases")
+    .select("id", { count: "exact", head: true })
+    .eq("subject_user_id", subjectId)
+    .in("status", ["resolved", "dismissed"]);
+
+  if (error) {
+    throw new Error(
+      `[countResolvedModerationCasesForSubject] ${error.message}`,
+    );
+  }
+
+  return count ?? 0;
+}
+
+export async function resolveModerationCaseForE2e(params: {
+  caseId: string;
+  resolution?: "dismissed" | "insufficient_evidence" | "upheld";
+  notifyReporter?: boolean;
+}): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const email = process.env.E2E_ADMIN_EMAIL?.trim();
+  const password = process.env.E2E_ADMIN_PASSWORD?.trim();
+
+  if (!url || !anonKey || !email || !password) {
+    throw new Error(
+      "Missing Supabase public env or E2E admin credentials for moderation resolve",
+    );
+  }
+
+  const client = createClient<Database>(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) {
+    throw new Error(
+      `[resolveModerationCaseForE2e] sign-in failed: ${signInError.message}`,
+    );
+  }
+
+  const { error } = await client.rpc("rpc_resolve_moderation_case", {
+    p_case_id: params.caseId,
+    p_payload: {
+      resolution: params.resolution ?? "dismissed",
+      notifyReporter: params.notifyReporter ?? true,
+    },
+  });
+  if (error) {
+    throw new Error(`[resolveModerationCaseForE2e] ${error.message}`);
+  }
+}
+
+export async function getAdminProfileIdFromEnv(): Promise<string | null> {
+  const email = process.env.E2E_ADMIN_EMAIL?.trim();
+  if (!email) {
+    return null;
+  }
+
+  return getProfileIdByEmail(email);
+}
+
+export async function expireAccountSanctionForE2e(userId: string): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error, status } = await admin
+    .from("account_sanctions")
+    .update({ ends_at: new Date(Date.now() - 60_000).toISOString() })
+    .eq("user_id", userId)
+    .eq("type", "suspend");
+
+  if (error) {
+    if (isSupabaseAccessDenied(error, status)) {
+      return;
+    }
+    throw new Error(`[expireAccountSanctionForE2e] ${error.message}`);
+  }
+}
+
+export async function unbanUserForE2e(userId: string): Promise<void> {
+  const admin = createE2eAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: "none",
+  });
+
+  if (error) {
+    throw new Error(`[unbanUserForE2e] ${error.message}`);
+  }
+}
+
+export async function insertOpenFraudCaseForE2e(params: {
+  subjectId: string;
+  reporterId: string;
+  suffix: string;
+}): Promise<string> {
+  const admin = createE2eAdminClient();
+  const caseNumber = `E2E-BAN-${params.suffix}-${Date.now()}`;
+
+  const { data: moderationCase, error: caseError } = await admin
+    .from("moderation_cases")
+    .insert({
+      case_number: caseNumber,
+      subject_user_id: params.subjectId,
+      status: "open",
+      primary_category: "fraud",
+      auto_score: 40,
+      admin_adjustment: 0,
+    })
+    .select("id")
+    .single();
+
+  if (caseError) {
+    throw new Error(`[insertOpenFraudCaseForE2e:case] ${caseError.message}`);
+  }
+
+  const { error: reportError } = await admin.from("reports").insert({
+    reporter_id: params.reporterId,
+    target_id: params.subjectId,
+    target_type: "user",
+    reason: "E2E AB-7 ban fixture",
+    status: "pending",
+    category: "fraud",
+    case_id: moderationCase.id,
+    source: "profile",
+    contribution_score: 40,
+  });
+
+  if (reportError) {
+    await admin.from("moderation_cases").delete().eq("id", moderationCase.id);
+    throw new Error(`[insertOpenFraudCaseForE2e:report] ${reportError.message}`);
+  }
+
+  return moderationCase.id;
+}
+
+export async function hasActiveBanSanctionForUser(userId: string): Promise<boolean> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("account_sanctions")
+    .select("id, type, revoked_at, ends_at")
+    .eq("user_id", userId)
+    .eq("type", "ban");
+
+  if (error) {
+    throw new Error(`[hasActiveBanSanctionForUser] ${error.message}`);
+  }
+
+  return (data ?? []).some(
+    (row) =>
+      row.revoked_at == null &&
+      (row.ends_at == null || new Date(row.ends_at).getTime() > Date.now()),
+  );
+}
+
+export async function isSellerPasswordSignInBlocked(): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const email = process.env.E2E_SELLER_EMAIL?.trim();
+  const password = process.env.E2E_SELLER_PASSWORD?.trim();
+
+  if (!url || !anonKey || !email || !password) {
+    throw new Error("Missing seller auth env for ban assertion");
+  }
+
+  const client = createClient<Database>(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  return Boolean(error);
+}
+
+export async function getLatestMemberOrderForPair(params: {
+  buyerId: string;
+  sellerId: string;
+}): Promise<{ id: string; orderNumber: string | null } | null> {
+  const admin = createE2eAdminClient();
+  const { data, error } = await admin
+    .from("member_orders")
+    .select("id, order_number")
+    .eq("buyer_id", params.buyerId)
+    .eq("seller_id", params.sellerId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`[getLatestMemberOrderForPair] ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    orderNumber: data.order_number ?? null,
+  };
 }

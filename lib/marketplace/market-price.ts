@@ -123,6 +123,22 @@ export function dbGradingScoreToOptionScore(
   return trimmed;
 }
 
+function gradingOptionLabelFromMarketPriceRow(
+  gradingCompany: string,
+  gradingScore: string,
+): string | null {
+  const optionId = matchGradeOptionIdFromMarketPriceRow(
+    gradingCompany,
+    gradingScore,
+  );
+  if (!optionId) {
+    return null;
+  }
+
+  const option = GRADING_OPTIONS.find((entry) => entry.id === optionId);
+  return option?.label ?? null;
+}
+
 export function formatMarketGradeLabel(
   gradingCompany: string,
   gradingScore: string,
@@ -135,12 +151,27 @@ export function formatMarketGradeLabel(
   const rawCondition = rawConditionFromMarketPriceScore(gradingScore);
 
   if (company === "RAW") {
+    const optionLabel = gradingOptionLabelFromMarketPriceRow(
+      gradingCompany,
+      gradingScore,
+    );
+    if (optionLabel) {
+      return optionLabel;
+    }
     return rawCondition ? `裸卡 ${rawCondition}` : "裸卡";
   }
 
   if (company === "OTHER") {
     const optionScore = dbGradingScoreToOptionScore(company, gradingScore);
     return optionScore ? `其他鑑定 ${optionScore}` : "其他鑑定";
+  }
+
+  const optionLabel = gradingOptionLabelFromMarketPriceRow(
+    gradingCompany,
+    gradingScore,
+  );
+  if (optionLabel) {
+    return optionLabel;
   }
 
   const optionScore = dbGradingScoreToOptionScore(company, gradingScore);

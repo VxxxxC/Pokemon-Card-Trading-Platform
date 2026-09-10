@@ -11,6 +11,15 @@ import {
   getSparklinePoints,
   hasWishlistTrendData,
 } from "@/lib/wishlist/sparkline";
+import {
+  HOME_HORIZONTAL_CARD_CLASS,
+  HOME_HORIZONTAL_CARD_IMAGE_CLASS,
+  HOME_HORIZONTAL_CARD_SIZES,
+  HOME_SECTION_HEADER_ROW_CLASS,
+  HOME_SECTION_LINK_CLASS,
+  HOME_SECTION_TITLE_CLASS,
+  HOME_WISHLIST_SECTION_CLASS,
+} from "@/app/components/home/home-section-ui";
 import { useIsMemberPersonaActive } from "@/app/lib/hooks/useIsMemberPersonaActive";
 
 interface TrackedCardProps {
@@ -66,8 +75,10 @@ function Sparkline({
 
 function WishlistCardSkeleton() {
   return (
-    <div className="shrink-0 w-36 rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)]">
-      <div className="w-full aspect-5/7 bg-linear-to-b from-[#26211C] via-[#2e2925] to-[#26211C] animate-pulse" />
+    <div
+      className={`${HOME_HORIZONTAL_CARD_CLASS} animate-pulse`}
+    >
+      <div className={`${HOME_HORIZONTAL_CARD_IMAGE_CLASS} bg-linear-to-b from-[#26211C] via-[#2e2925] to-[#26211C]`} />
       <div className="p-2.5 space-y-1.5">
         <div className="h-3 bg-bg-elevated rounded animate-pulse w-3/4" />
         <div className="h-2.5 bg-bg-elevated rounded animate-pulse w-1/2" />
@@ -121,16 +132,16 @@ function WishlistCardItem({ card }: { card: TrackedCardProps }) {
   return (
     <Link
       href={`/marketplace/product/${card.productId}`}
-      className="shrink-0 w-36 md:w-48 rounded-xl overflow-hidden bg-bg-card border border-[rgba(237,232,224,0.08)] hover:border-brand/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.60)] transition-all active:scale-[0.98] block"
+      className={`${HOME_HORIZONTAL_CARD_CLASS} hover:border-brand/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.60)] transition-all active:scale-[0.98] block`}
     >
-      <div className="relative w-full aspect-5/7 overflow-hidden bg-bg-elevated">
+      <div className={HOME_HORIZONTAL_CARD_IMAGE_CLASS}>
         {card.image ? (
           <Image
             src={card.image}
             alt={card.name}
             fill
             className="object-cover"
-            sizes="(max-width: 768px) 144px, 192px"
+            sizes={HOME_HORIZONTAL_CARD_SIZES}
           />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-text-disabled px-2 text-center">
@@ -202,25 +213,21 @@ export function WishlistTicker({
   const cards = entries.map(mapEntryToTrackedCard);
 
   return (
-    <section aria-labelledby="wishlist-ticker-heading" className="mb-8">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h2
-            id="wishlist-ticker-heading"
-            className="font-sans font-semibold text-[20px] text-text-primary flex items-center gap-2"
-          >
-            <span className="text-brand" aria-hidden="true">
-              ★
-            </span>
-            我的心水情報
-          </h2>
-          <p className="font-sans text-[13px] text-text-secondary mt-0.5">
-            登入追蹤心水神卡，降價即時通知
-          </p>
-        </div>
+    <section
+      aria-labelledby="wishlist-ticker-heading"
+      className={HOME_WISHLIST_SECTION_CLASS}
+    >
+      <div className={HOME_SECTION_HEADER_ROW_CLASS}>
+        <h2
+          id="wishlist-ticker-heading"
+          className={`${HOME_SECTION_TITLE_CLASS} flex items-center gap-1.5`}
+        >
+          <span className="text-brand" aria-hidden="true">★</span>
+          我的心水情報
+        </h2>
         <Link
           href="/profile/user/collection"
-          className="font-mono text-[12px] text-brand hover:text-brand-hover transition-colors shrink-0 mt-1"
+          className={HOME_SECTION_LINK_CLASS}
         >
           管理 →
         </Link>

@@ -10,16 +10,15 @@ import { useHkCardVaultStore } from "@/app/store/useHkCardVaultStore";
 import { useUIStore } from "@/app/store/useUIStore";
 import { getProfileHomePath } from "@/lib/auth/roles";
 import { isChatRoomId } from "@/app/lib/chat/constants";
-import { persistMarkRoomReadAsync } from "@/app/lib/chat/persistMarkRoomRead";
 import { filterChatRoomsForViewerPersona } from "@/app/lib/chat/filter-rooms-for-viewer-persona";
-import {
-  MOCK_ANNOUNCEMENTS,
-  getActiveAnnouncements,
-} from "@/app/lib/mockAnnouncements";
+import { useHasActiveAnnouncements } from "@/lib/announcements/use-has-active-announcements";
 import {
   ChatUnreadDot,
   ChatUnreadDotInline,
 } from "@/app/components/chat/ChatUnreadDot";
+import { HeaderBreadcrumbNav } from "@/app/components/navigation/HeaderBreadcrumbNav";
+import { BrandWordmark } from "@/app/components/branding/BrandWordmark";
+import { getHeaderBreadcrumb } from "@/lib/navigation/header-breadcrumb";
 
 const baseNavLinks = [
   { href: "/", label: "首頁" },
@@ -45,7 +44,7 @@ export function TopNav() {
     { href: profileHomeHref, label: "會員中心" },
   ];
 
-  // 從 Zustand 接入受控雷達狀態
+  const hasActiveAnnouncements = useHasActiveAnnouncements();
   const {
     chats,
     setIsChatOpen,
@@ -78,18 +77,19 @@ export function TopNav() {
         roomId?: string;
       }>;
       const detail = customEvent.detail;
+      if (detail?.roomId) {
+        activateRoomById(
+          detail.roomId,
+          detail.partnerName || "\u672a\u77e5\u540d\u5546\u6236",
+          detail.partnerId,
+        );
+        return;
+      }
       if (detail?.partnerId) {
         openChatWithPartner(
           detail.partnerId,
           detail.partnerName || "\u672a\u77e5\u540d\u5546\u6236",
           detail.partnerPersona ?? "member",
-        );
-        return;
-      }
-      if (detail?.roomId) {
-        activateRoomById(
-          detail.roomId,
-          detail.partnerName || "\u672a\u77e5\u540d\u5546\u6236",
         );
       }
     };
@@ -110,61 +110,70 @@ export function TopNav() {
         .filter((room) => !isChatRoomId(room.id))
         .reduce((acc, curr) => acc + curr.unreadCount, 0);
 
+  const breadcrumb = getHeaderBreadcrumb(pathname);
+
   return (
     <>
-      <header className="hidden lg:flex sticky top-0 z-50 w-full h-16 bg-[#1A1612] border-b border-[rgba(237,232,224,0.08)]">
-        <div className="max-w-[1200px] mx-auto w-full px-8 flex items-center justify-between">
-          <Link
-            href="/"
-            className="flex flex-row items-center font-sans font-semibold text-lg text-brand"
-          >
-            <div className="max-w-20 p-3">
+      <header className="hidden lg:flex sticky top-0 z-50 w-full h-14 bg-[#17130f]/95 backdrop-blur-md border-b border-white/[0.06]">
+        <div className="max-w-[1100px] mx-auto w-full px-6 lg:px-8 h-14 flex items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 shrink-0 group"
+            >
               <Image
                 src="/asset/logo.png"
-                alt="logo"
-                height={100}
-                width={100}
-                className="rounded-xl"
+                alt="HKCardVault"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-lg object-cover ring-1 ring-white/[0.06] group-hover:ring-brand/25 transition-all"
               />
-            </div>
-            <p> HKCardVault</p>
-          </Link>
+              <BrandWordmark
+                className="text-[16px] font-semibold group-hover:[&>span:last-child]:text-brand-hover [&>span:last-child]:transition-colors"
+              />
+            </Link>
 
-          {/* 導航 */}
-          <nav className="flex items-center gap-1 ml-8">
-            {navLinks.map((link) => {
-              const isActive =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname === link.href ||
-                    pathname.startsWith(link.href + "/");
+            {breadcrumb ? (
+              <HeaderBreadcrumbNav breadcrumb={breadcrumb} />
+            ) : null}
+          </div>
 
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`h-9 px-4 inline-flex items-center rounded-xl font-sans text-[13.5px] font-medium transition-colors ${
-                    isActive
-                      ? "text-brand bg-[#26211C]"
-                      : "text-[#d4c4b7] hover:text-[#eae1da] hover:bg-[#26211C]/50"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
+          {!breadcrumb ? (
+            <nav className="flex items-center gap-0.5 mx-auto">
+              {navLinks.map((link) => {
+                const isActive =
+                  link.href === "/"
+                    ? pathname === "/"
+                    : pathname === link.href ||
+                      pathname.startsWith(link.href + "/");
 
-          {/* 右側：狀態、公告、收件匣、登入 */}
-          <div className="flex items-center gap-3 shrink-0 ml-auto">
-            {/* 📢 官方公告按鈕 */}
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`h-8 px-3.5 inline-flex items-center rounded-lg font-sans text-[13px] font-medium transition-colors ${
+                      isActive
+                        ? "text-brand bg-white/[0.06]"
+                        : "text-[#d4c4b7] hover:text-[#eae1da] hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          ) : (
+            <div className="flex-1" />
+          )}
+
+          <div className="flex items-center gap-1.5 shrink-0">
             <Link
               href="/announcements"
               title="官方公告"
-              className="relative p-2 text-text-secondary hover:text-brand transition-colors rounded-xl hover:bg-[#26211C] active:scale-[0.95]"
+              className="relative h-9 w-9 inline-flex items-center justify-center text-text-secondary hover:text-brand transition-colors rounded-lg hover:bg-white/[0.04] active:scale-[0.95]"
             >
-              <Megaphone className="h-5 w-5" />
-              {getActiveAnnouncements(MOCK_ANNOUNCEMENTS).length > 0 && (
+              <Megaphone className="h-[18px] w-[18px]" />
+              {hasActiveAnnouncements && (
                 <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-brand" />
@@ -172,20 +181,23 @@ export function TopNav() {
               )}
             </Link>
 
-            {/* 📥 收件匣下拉選單入口 */}
             <div className="relative" ref={popoverRef}>
               <button
                 type="button"
+                aria-label="收件匣"
                 onClick={() => setIsInboxOpen(!isInboxOpen)}
-                className={`relative p-2 text-text-secondary hover:text-brand transition-colors rounded-xl hover:bg-[#26211C] active:scale-[0.95] ${isInboxOpen ? "text-brand bg-[#26211C]" : ""}`}
+                className={`relative h-9 w-9 inline-flex items-center justify-center text-text-secondary hover:text-brand transition-colors rounded-lg hover:bg-white/[0.04] active:scale-[0.95] ${
+                  isInboxOpen ? "text-brand bg-white/[0.06]" : ""
+                }`}
               >
                 <svg
-                  width="20"
-                  height="20"
+                  width="18"
+                  height="18"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
+                  aria-hidden
                 >
                   <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
                   <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
@@ -222,7 +234,6 @@ export function TopNav() {
                             setIsChatOpen(true);
                             setIsInboxOpen(false);
                             setActiveRoomId(room.id);
-                            persistMarkRoomReadAsync(room.id, room.timestamp);
                           }}
                           className="w-full text-left p-2.5 rounded-xl hover:bg-[#26211C] transition-all flex items-start gap-2.5 group border border-transparent"
                         >
@@ -253,36 +264,34 @@ export function TopNav() {
               </AnimatePresence>
             </div>
 
-            {/* 🟢 權限動態控制分流區 */}
             {!isGuest ? (
-              /* 情況 A: 已登入 ➔ 顯示快捷新增商品上架 [+] 掣 */
               <button
                 type="button"
                 onClick={() => openAddAssetModal({ mode: "merch" })}
-                className="flex-row h-9 w-28 bg-[#d4a574] hover:bg-[#e8b896] text-[#1A1612] rounded-xl flex items-center justify-center shadow-md active:scale-[0.95] transition-all cursor-pointer focus:outline-none group animate-fadeIn"
+                className="h-9 px-3.5 ml-1 gap-1.5 bg-brand hover:bg-brand-hover text-[#17130f] rounded-lg inline-flex items-center justify-center active:scale-[0.97] transition-all cursor-pointer focus:outline-none group animate-fadeIn"
                 title="新增商品"
               >
                 <svg
-                  width="16"
-                  height="16"
+                  width="15"
+                  height="15"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="3"
-                  className="group-hover:rotate-90 transition-transform duration-200"
+                  className="group-hover:rotate-90 transition-transform duration-200 shrink-0"
+                  aria-hidden
                 >
                   <line x1="12" y1="5" x2="12" y2="19" strokeLinecap="round" />
                   <line x1="5" y1="12" x2="19" y2="12" strokeLinecap="round" />
                 </svg>
-                <span className="text-sm font-medium text-[#17130f] p-2">
+                <span className="font-sans text-[13px] font-semibold">
                   新增商品
                 </span>
               </button>
             ) : (
-              /* 情況 B: 未登入 ➔ 顯示高冷 [登入 / 註冊] 按鈕 */
               <Link
                 href="/auth"
-                className="h-9 px-4 font-sans text-sm font-medium text-[#17130f] bg-brand rounded-lg hover:bg-brand-hover inline-flex items-center justify-center active:scale-[0.97] transition-all animate-fadeIn"
+                className="h-9 px-3.5 ml-1 font-sans text-[13px] font-semibold text-[#17130f] bg-brand rounded-lg hover:bg-brand-hover inline-flex items-center justify-center active:scale-[0.97] transition-all animate-fadeIn"
               >
                 登入 / 註冊
               </Link>

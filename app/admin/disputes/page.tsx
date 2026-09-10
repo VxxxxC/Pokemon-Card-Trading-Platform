@@ -1,436 +1,66 @@
-"use client";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { searchAdminModerationCases } from "@/app/actions/admin-moderation";
+import { AdminDisputesClient } from "@/app/admin/disputes/AdminDisputesClient";
+import { isCurrentUserAdmin } from "@/lib/auth/require-admin";
+import { getOptionalAuthUser } from "@/lib/auth/session";
+import type { AdminModerationSearchStatus } from "@/lib/moderation/types";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { createClient } from "@/lib/supabase/server";
 
-import { useMemo, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  mockDisputes,
-  statusLabelMap,
-  type DisputeCase,
-  type DisputeStatus,
-} from "./mockDisputes";
+export const metadata: Metadata = {
+  title: "舉報與爭議仲裁 — HKCardVault Admin",
+  description: "全平台舉報與風控案件仲裁工作台",
+};
 
-type TabValue = "all" | DisputeStatus;
+type PageProps = {
+  searchParams: Promise<{ status?: string }>;
+};
 
-function formatCurrency(n: number): string {
-  return `HK$ ${n.toLocaleString("zh-HK")}`;
-}
-
-function statusBadgeClasses(status: DisputeStatus): string {
-  switch (status) {
-    case "pending":
-      return "bg-[rgba(245,158,11,0.12)] text-[#f59e0b] border-[#f59e0b]/20";
-    case "completed":
-      return "bg-[rgba(16,185,129,0.12)] text-[#10b981] border-[#10b981]/20";
-    default:
-      return "bg-[rgba(16,185,129,0.12)] text-[#10b981] border-[#10b981]/20";
+function resolveInitialStatus(status?: string): AdminModerationSearchStatus {
+  if (status === "pending") {
+    return "pending";
   }
-}
-
-function categoryBadgeClasses(category: DisputeCase["category"]): string {
-  switch (category) {
-    case "惡意欺詐":
-      return "bg-[rgba(239,68,68,0.12)] text-[#ef4444] border-[#ef4444]/20";
-    case "卡牌品相不符":
-      return "bg-[rgba(212,165,116,0.15)] text-[#d4a574] border-[#d4a574]/20";
-    case "誘導私下交易":
-      return "bg-[rgba(16,185,129,0.10)] text-[#10b981] border-[#10b981]/20";
-    case "物流爭議":
-      return "bg-[#2e2925] text-[#d4c4b7] border-white/10";
-    default:
-      return "bg-[#2e2925] text-[#d4c4b7] border-white/10";
+  if (status === "completed" || status === "resolved") {
+    return "completed";
   }
+  return "all";
 }
 
-function AdminDisputesContent({
-  statusParam,
-}: {
-  statusParam: string | null;
-}) {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<TabValue>(
-    statusParam === "pending"
-      ? "pending"
-      : statusParam === "completed" || statusParam === "resolved"
-        ? "completed"
-        : "all",
-  );
+export default async function AdminDisputesPage({ searchParams }: PageProps) {
+  if (!isSupabaseConfigured()) {
+    redirect("/auth");
+  }
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const user = await getOptionalAuthUser();
+  if (!user) {
+    redirect("/auth");
+  }
 
-  const counts = useMemo(() => {
-    const all = mockDisputes.length;
-    const pending = mockDisputes.filter((c) => c.status === "pending").length;
-    const completed = mockDisputes.filter((c) => c.status === "completed").length;
-    return { all, pending, completed };
-  }, []);
+  const supabase = await createClient();
+  const isAdmin = await isCurrentUserAdmin(supabase, user.id);
+  if (!isAdmin) {
+    redirect("/");
+  }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return mockDisputes.filter((c) => {
-      const matchesTab =
-        activeTab === "all"
-          ? true
-          : c.status === activeTab;
+  const params = await searchParams;
+  const initialStatus = resolveInitialStatus(params.status);
 
-      if (!q) return matchesTab;
-
-      const searchable = [
-        c.id.toLowerCase(),
-        c.accused.name.toLowerCase(),
-        c.accused.handle.toLowerCase(),
-        c.reporter.toLowerCase(),
-        c.category.toLowerCase(),
-        c.description.toLowerCase(),
-        c.orderId.toLowerCase(),
-      ].join(" ");
-
-      return matchesTab && searchable.includes(q);
-    });
-  }, [activeTab, query]);
-
-  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
-  const paginatedDisputes = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
-
-  const handleRowClick = (id: string) => {
-    router.push(`/admin/disputes/${id}`);
-  };
+  const result = await searchAdminModerationCases({
+    status: initialStatus,
+    page: 1,
+    pageSize: 10,
+  });
 
   return (
-    <div className="space-y-6">
-      {/* ── Page Header ─────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="font-sans text-[24px] font-bold text-[#eae1da]">
-            舉報與爭議仲裁工作台
-          </h1>
-          <p className="mt-0.5 font-sans text-[13px] text-[#d4c4b7]">
-            全平台舉報、糾紛投訴、Stripe 支付爭議聯合仲裁管控面板
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <div className="rounded-xl border border-white/10 bg-[#26211C] px-4 py-2">
-            <span className="block font-mono text-[18px] font-semibold text-[#f59e0b]">
-              {counts.pending.toString().padStart(2, "0")}
-            </span>
-            <span className="block font-sans text-[11px] text-[#d4c4b7]">
-              待處理
-            </span>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-[#26211C] px-4 py-2">
-            <span className="block font-mono text-[18px] font-semibold text-[#10b981]">
-              {counts.completed.toString().padStart(2, "0")}
-            </span>
-            <span className="block font-sans text-[11px] text-[#d4c4b7]">
-              已完成
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Toolbar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-[#8A8680]" />
-          <Input
-            type="text"
-            placeholder="搜尋案件單號、被舉報人、舉報人、類別..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="h-10 border-white/10 bg-[#17130f] pl-9 text-[#eae1da] placeholder:text-[#50453b] focus-visible:border-[#d4a574]/40 focus-visible:ring-[#d4a574]/40"
-          />
-        </div>
-
-        <Tabs
-          value={activeTab}
-          onValueChange={(v) => {
-            setActiveTab(v as TabValue);
-            setCurrentPage(1);
-          }}
-          className="w-full lg:w-auto"
-        >
-          <TabsList className="h-10 w-full border border-white/10 bg-[#26211C] p-1 lg:w-auto">
-            <TabsTrigger
-              value="all"
-              className="flex-1 text-[13px] text-[#d4c4b7] data-active:bg-[#d4a574]/15 data-active:text-[#d4a574]"
-            >
-              全部 ({counts.all})
-            </TabsTrigger>
-            <TabsTrigger
-              value="pending"
-              className="flex-1 text-[13px] text-[#d4c4b7] data-active:bg-[#d4a574]/15 data-active:text-[#d4a574]"
-            >
-              待處理 ({counts.pending})
-            </TabsTrigger>
-            <TabsTrigger
-              value="completed"
-              className="flex-1 text-[13px] text-[#d4c4b7] data-active:bg-[#d4a574]/15 data-active:text-[#d4a574]"
-            >
-              已完成 ({counts.completed})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* ── Cases Table ─────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-white/10 bg-[#26211C] p-1 shadow-[0_2px_12px_rgba(0,0,0,0.50)]">
-        <div className="overflow-x-auto rounded-xl">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/[0.06] hover:bg-transparent">
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  案件單號
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  被舉報用戶
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  申訴買家/舉報人
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  舉報類別
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  詳細舉報原因
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  爭議金額
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  提交時間
-                </TableHead>
-                <TableHead className="font-sans text-[12px] font-semibold text-[#d4c4b7]">
-                  案件狀態
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow className="border-transparent hover:bg-transparent">
-                  <TableCell colSpan={9} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-3 text-[#d4c4b7]">
-                      <span className="font-mono text-[28px]">⚖️</span>
-                      <p className="font-sans text-[14px]">
-                        目前沒有符合篩選條件的爭議案件。
-                      </p>
-                      <p className="font-sans text-[12px] text-[#8A8680]">
-                        請嘗試清除搜尋字詞或切換其他狀態分頁。
-                      </p>
-                      {(query || activeTab !== "all") && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setQuery("");
-                            setActiveTab("all");
-                          }}
-                          className="mt-2 border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10"
-                        >
-                          清除篩選條件
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedDisputes.map((c) => (
-                  <TableRow
-                    key={c.id}
-                    className="cursor-pointer border-white/[0.06] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:bg-[#39342f]"
-                  >
-                    <TableCell>
-                      <span className="font-mono text-[13px] font-medium text-[#eae1da]">
-                        {c.id}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-sans text-[13px] text-[#eae1da]">
-                          {c.accused.name}
-                        </span>
-                        <span className="font-sans text-[11px] text-[#8A8680]">
-                          {c.accused.handle}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-sans text-[13px] text-[#eae1da]">
-                        {c.reporter}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={categoryBadgeClasses(c.category)}
-                      >
-                        {c.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <p className="max-w-[240px] cursor-help truncate font-sans text-[13px] text-[#d4c4b7]">
-                              {c.description}
-                            </p>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="top"
-                            align="start"
-                            className="max-w-sm border border-white/10 bg-[#2e2925] text-[#eae1da]"
-                          >
-                            <p className="font-sans text-[12px] leading-relaxed">
-                              {c.description}
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-[13px] font-semibold text-[#eae1da]">
-                        {formatCurrency(c.escrowAmount)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-sans text-[12px] text-[#8A8680]">
-                        {c.submittedAt}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={statusBadgeClasses(c.status)}
-                      >
-                        {statusLabelMap[c.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRowClick(c.id);
-                        }}
-                        className="border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10 active:scale-[0.98]"
-                      >
-                        <span className="mr-1">🔍</span>
-                        查看詳情
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* ── Table Pagination Bar ───────────────────────────────────── */}
-        {filtered.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-[#17130f] border-t border-white/10 rounded-b-xl">
-            <div className="font-mono text-[12px] text-[#d4c4b7]">
-              顯示第{" "}
-              <span className="font-bold text-[#eae1da]">
-                {(currentPage - 1) * pageSize + 1}
-              </span>{" "}
-              -{" "}
-              <span className="font-bold text-[#eae1da]">
-                {Math.min(currentPage * pageSize, filtered.length)}
-              </span>{" "}
-              筆，共{" "}
-              <span className="font-bold text-[#d4a574]">
-                {filtered.length}
-              </span>{" "}
-              筆資料
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                className="h-8 px-2.5 rounded-lg border border-white/10 bg-[#26211C] font-sans text-xs text-[#d4c4b7] hover:text-[#eae1da] hover:bg-[#2e2925] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                上一頁
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setCurrentPage(p)}
-                  className={`h-8 w-8 rounded-lg font-mono text-xs font-semibold transition-all ${
-                    currentPage === p
-                      ? "bg-[#d4a574] text-[#17130f] font-bold shadow-sm shadow-[#d4a574]/20"
-                      : "border border-white/10 bg-[#26211C] text-[#d4c4b7] hover:text-[#eae1da] hover:bg-[#2e2925]"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={currentPage === totalPages}
-                onClick={() =>
-                  setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                }
-                className="h-8 px-2.5 rounded-lg border border-white/10 bg-[#26211C] font-sans text-xs text-[#d4c4b7] hover:text-[#eae1da] hover:bg-[#2e2925] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                下一頁
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DisputesPageContentWithKey() {
-  const searchParams = useSearchParams();
-  const statusParam = searchParams.get("status");
-  return (
-    <AdminDisputesContent
-      key={statusParam || "default"}
-      statusParam={statusParam}
-    />
-  );
-}
-
-export default function AdminDisputesPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-4 text-[#d4c4b7] font-mono text-xs">
-          載入爭議資料中...
-        </div>
+    <AdminDisputesClient
+      initialData={
+        result.success
+          ? result.data
+          : { rows: [], total: 0, pendingCount: 0 }
       }
-    >
-      <DisputesPageContentWithKey />
-    </Suspense>
+      initialStatus={initialStatus}
+      loadError={result.success ? null : result.error}
+    />
   );
 }

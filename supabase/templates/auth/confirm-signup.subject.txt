@@ -1,0 +1,1 @@
+{{ if eq .Data.onboarding_intent "merchant_apply" }}確認電郵 — 開始商戶入駐 · Cardvault HK{{ else }}確認你的 Cardvault HK 帳戶{{ end }}

@@ -1,13 +1,46 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { isCurrentUserAdmin } from "@/lib/auth/require-admin";
+import { getOptionalAuthUser } from "@/lib/auth/session";
 import type { MemberOrderActionResult } from "@/app/actions/orders";
 import {
   runMemberAuthMockFlowDev,
   type MemberAuthMockFlowResult,
 } from "@/lib/member-order/dev-mock-flow";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { createClient } from "@/lib/supabase/server";
+
+type DevAdminAccessResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Fail-closed gate for dev-only member-auth mock RPCs.
+ * Production: blocked by NODE_ENV.
+ * Non-production: requires authenticated platform admin (not env-name trust alone).
+ */
+async function assertDevAdminMemberOrderAccess(): Promise<DevAdminAccessResult> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: "未登入" };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return { ok: false, error: "此操作僅限開發環境使用" };
+  }
+
+  const user = await getOptionalAuthUser();
+  if (!user) {
+    return { ok: false, error: "請先登入" };
+  }
+
+  const supabase = await createClient();
+  const isAdmin = await isCurrentUserAdmin(supabase, user.id);
+  if (!isAdmin) {
+    return { ok: false, error: "無管理員權限" };
+  }
+
+  return { ok: true };
+}
 
 async function runAdminAuthRpc(
   fn:
@@ -16,12 +49,9 @@ async function runAdminAuthRpc(
     | "rpc_fail_member_auth_order",
   orderId: string,
 ): Promise<MemberOrderActionResult> {
-  if (!isSupabaseConfigured()) {
-    return { success: false, error: "未登入" };
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    return { success: false, error: "此操作僅限開發環境使用" };
+  const access = await assertDevAdminMemberOrderAccess();
+  if (!access.ok) {
+    return { success: false, error: access.error };
   }
 
   const trimmedOrderId = orderId.trim();
@@ -77,12 +107,9 @@ export async function submitOutboundTracking(
   orderId: string,
   trackingNo: string,
 ): Promise<MemberOrderActionResult> {
-  if (!isSupabaseConfigured()) {
-    return { success: false, error: "未登入" };
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    return { success: false, error: "此操作僅限開發環境使用" };
+  const access = await assertDevAdminMemberOrderAccess();
+  if (!access.ok) {
+    return { success: false, error: access.error };
   }
 
   const trimmedOrderId = orderId.trim();
@@ -130,12 +157,9 @@ export type RunMemberAuthMockFlowDevResult =
 export async function runMemberAuthMockFlowDevAction(
   orderId: string,
 ): Promise<RunMemberAuthMockFlowDevResult> {
-  if (!isSupabaseConfigured()) {
-    return { success: false, error: "未登入" };
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    return { success: false, error: "此操作僅限開發環境使用" };
+  const access = await assertDevAdminMemberOrderAccess();
+  if (!access.ok) {
+    return { success: false, error: access.error };
   }
 
   const trimmedOrderId = orderId.trim();

@@ -9,7 +9,8 @@ import type {
   PublicProfileReviewItem,
   ReviewPersona,
 } from "@/app/lib/reviews/types";
-import { resolveCurrentAuthRole } from "@/lib/auth/session";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
+import { resolveCurrentAuthRole, getOptionalAuthUser } from "@/lib/auth/session";
 import {
   buildDualPersonaContext,
   EMPTY_DUAL_PERSONA_CONTEXT,
@@ -28,9 +29,11 @@ import {
   isAllowedBunnyCdnUrl,
 } from "@/lib/storage/bunny";
 import {
+  validateFpsPayoutDetails,
   validateUserProfileFields,
   type UserProfileFormErrors,
 } from "@/lib/profile/validation";
+import { mapProfileRowToNotificationPrefs } from "@/lib/notifications/notification-prefs";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, Tables } from "@/types/supabase";
@@ -43,7 +46,21 @@ type ProfileRow = Pick<
 
 type SettingsProfileRow = Pick<
   Tables<"profiles">,
-  "id" | "display_name" | "username" | "short_description" | "avatar_path" | "role"
+  | "id"
+  | "display_name"
+  | "username"
+  | "short_description"
+  | "avatar_path"
+  | "role"
+  | "fps_id"
+  | "fps_name"
+  | "push_transactional"
+  | "push_market_alerts"
+  | "push_chat_digest"
+  | "push_rewards"
+  | "email_transactional"
+  | "email_market_alerts"
+  | "email_rewards"
 >;
 
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
@@ -65,6 +82,14 @@ export type UserSettingsData = {
   role: Tables<"profiles">["role"];
   bankAccount?: string;
   fpsId?: string;
+  fpsName?: string;
+  pushTransactional: boolean;
+  pushMarketAlerts: boolean;
+  pushChatDigest: boolean;
+  pushRewards: boolean;
+  emailTransactional: boolean;
+  emailMarketAlerts: boolean;
+  emailRewards: boolean;
 };
 
 export type PublicProfilePageProfile = import("@/lib/marketplace/load-seller-profile").MarketplaceSellerProfile & {
@@ -118,6 +143,7 @@ export async function getPublicProfilePageBootstrap(
     const [listingsResult, reviewsResult] = await Promise.all([
       searchMarketplaceSellerListings({
         sellerId: baseProfile.id,
+        sellerPersona: reviewPersona,
         page: 1,
         pageSize: 5,
         sortKey: "最新",
@@ -289,13 +315,17 @@ export async function getUserSettings(): Promise<
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, display_name, username, short_description, avatar_path, role")
+    .select(
+      "id, display_name, username, short_description, avatar_path, role, fps_id, fps_name, push_transactional, push_market_alerts, push_chat_digest, push_rewards, email_transactional, email_market_alerts, email_rewards",
+    )
     .eq("id", user.id)
     .maybeSingle<SettingsProfileRow>();
 
   if (error || !profile) {
     return { success: false, error: "無法取得用戶資料" };
   }
+
+  const notificationPrefs = mapProfileRowToNotificationPrefs(profile);
 
   return {
     success: true,
@@ -307,6 +337,15 @@ export async function getUserSettings(): Promise<
       email: user.email ?? "",
       avatarUrl: resolveAvatarUrl(profile.avatar_path),
       role: profile.role,
+      fpsId: profile.fps_id ?? "",
+      fpsName: profile.fps_name ?? "",
+      pushTransactional: notificationPrefs.push_transactional,
+      pushMarketAlerts: notificationPrefs.push_market_alerts,
+      pushChatDigest: notificationPrefs.push_chat_digest,
+      pushRewards: notificationPrefs.push_rewards,
+      emailTransactional: notificationPrefs.email_transactional,
+      emailMarketAlerts: notificationPrefs.email_market_alerts,
+      emailRewards: notificationPrefs.email_rewards,
     },
   };
 }
@@ -339,19 +378,17 @@ export async function updateUserProfile(
     ).trim(),
     bankAccount: ((formData.get("bankAccount") as string | null) ?? "").trim(),
     fpsId: ((formData.get("fpsId") as string | null) ?? "").trim(),
+    fpsName: ((formData.get("fpsName") as string | null) ?? "").trim(),
   };
 
   const errors = validateUserProfileFields(fields);
   if (Object.keys(errors).length) return errors;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { form: "未登入" };
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { form: guard.error };
   }
+  const { user, supabase } = guard;
 
   try {
     const { data: currentProfile, error: fetchError } = await supabase
@@ -388,6 +425,8 @@ export async function updateUserProfile(
       display_name: fields.displayName,
       username: normalizedUsername,
       short_description: fields.shortDescription || null,
+      fps_id: fields.fpsId || null,
+      fps_name: fields.fpsName || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -432,6 +471,74 @@ export async function updateUserProfile(
   return null;
 }
 
+export async function updateUserFpsId(
+  fpsId: string,
+  fpsName: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "未登入" };
+  }
+
+  const fieldErrors = validateFpsPayoutDetails(fpsId, fpsName);
+  const firstError = fieldErrors.fpsId ?? fieldErrors.fpsName;
+  if (firstError) {
+    return { success: false, error: firstError };
+  }
+
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { success: false, error: guard.error };
+  }
+  const { user, supabase } = guard;
+
+  try {
+    const payload: ProfileUpdate = {
+      fps_id: fpsId.trim(),
+      fps_name: fpsName.trim(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const profilesClient = supabase.from("profiles") as unknown as {
+      update: (values: ProfileUpdate) => {
+        eq: (
+          column: "id",
+          value: string,
+        ) => {
+          select: (columns: "id") => Promise<{
+            data: { id: string }[] | null;
+            error: { code?: string; message?: string } | null;
+          }>;
+        };
+      };
+    };
+
+    const { data: updatedRows, error: updateError } = await profilesClient
+      .update(payload)
+      .eq("id", user.id)
+      .select("id");
+
+    if (updateError) {
+      const mapped = mapProfileUpdateError(updateError);
+      return { success: false, error: mapped.form ?? "儲存失敗，請稍後再試" };
+    }
+
+    if (!updatedRows?.length) {
+      return {
+        success: false,
+        error: "沒有權限更新資料，請確認已套用 profiles UPDATE migration",
+      };
+    }
+  } catch {
+    return { success: false, error: "儲存失敗，請稍後再試" };
+  }
+
+  revalidatePath("/profile/user/settings");
+  revalidatePath("/profile/user");
+  revalidatePath("/profile/user/trading");
+
+  return { success: true };
+}
+
 export async function updateUserAvatar(
   cdnUrl: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
@@ -444,14 +551,11 @@ export async function updateUserAvatar(
     return { success: false, error: "頭像網址無效" };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "未登入" };
+  const guard = await requireActiveAuthUser();
+  if (!guard.ok) {
+    return { success: false, error: guard.error };
   }
+  const { user, supabase } = guard;
 
   try {
     const { data: currentProfile, error: fetchError } = await supabase

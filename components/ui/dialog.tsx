@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { XIcon } from "lucide-react";
 
+const DIALOG_CLOSE_CLASS =
+  "absolute top-2 right-2 inline-flex size-7 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-text-secondary shadow-none outline-none ring-0 transition-colors hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-0 dark:hover:bg-transparent";
+
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
@@ -62,15 +65,9 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
-              />
-            }
+            className={DIALOG_CLOSE_CLASS}
           >
-            <XIcon />
+            <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         )}

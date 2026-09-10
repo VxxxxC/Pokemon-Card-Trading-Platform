@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>確認新電郵</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f0ebe4;font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      請確認你的 Cardvault HK 新電郵地址
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0ebe4;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e8dcc8;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="background:#1a1612;padding:20px 24px;">
+                <img src="{{ .SiteURL }}/asset/logo.png" alt="Cardvault HK" width="120" style="display:block;border:0;max-width:120px;height:auto;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 24px 8px;">
+                <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;font-weight:700;color:#1a1612;">
+                  確認新電郵地址
+                </h1>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#1a1612;">你正在更改 Cardvault HK 帳戶的登入電郵。</p><p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#1a1612;">請點擊下方按鈕確認新電郵地址。</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:20px 0 8px;">
+  <tr>
+    <td style="border-radius:10px;background:#d4a574;">
+      <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email_change&next=/profile/user/settings" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:700;color:#1a1612;text-decoration:none;border-radius:10px;">
+        確認新電郵
+      </a>
+    </td>
+  </tr>
+</table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 24px 24px;border-top:1px solid #e8dcc8;">
+                <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#6b5e52;">Cardvault HK — Pokémon TCG 專業交易平台</p><p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#6b5e52;">如非本人操作，請忽略此郵件或聯絡客服。</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

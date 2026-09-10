@@ -1,5 +1,10 @@
 import { resolveOfferCardDisplayImage } from "@/app/lib/chat/offerCardImage";
 import type { UserTradingOrder } from "@/app/actions/orders";
+import { computeMerchantPaymentExpiresAt } from "@/lib/merchant-checkout/pending-payment-expiry";
+import {
+  getMerchantBuyerActionFlags,
+  mapMerchantEscrowToMemberEscrowStatus,
+} from "@/lib/merchant-order/buyer-actions";
 import {
   isOpenMerchantBuyerOrder,
   mapMerchantEscrowToMemberStatus,
@@ -20,6 +25,13 @@ type MerchantBuyerOrderRow = Pick<
   | "escrow_status"
   | "requires_authentication"
   | "created_at"
+  | "outbound_tracking_no"
+  | "payment_capture_status"
+  | "auth_result"
+  | "shipping_method"
+  | "buyer_confirmed_at"
+  | "payout_status"
+  | "payout_hold_until"
 > & {
   listings: {
     grading_company: string;
@@ -67,6 +79,13 @@ export async function loadBuyerMerchantTradingOrders(
       escrow_status,
       requires_authentication,
       created_at,
+      outbound_tracking_no,
+      payment_capture_status,
+      auth_result,
+      shipping_method,
+      buyer_confirmed_at,
+      payout_status,
+      payout_hold_until,
       listings (
         grading_company,
         grading_score,
@@ -120,6 +139,21 @@ export async function loadBuyerMerchantTradingOrders(
     const expiresAt = new Date(
       new Date(createdAt).getTime() + 14 * 24 * 60 * 60 * 1000,
     ).toISOString();
+    const useAuthentication = Boolean(row.requires_authentication);
+    const buyerFlags = getMerchantBuyerActionFlags({
+      escrowStatus: row.escrow_status,
+      requiresAuthentication: useAuthentication,
+      shippingMethod: row.shipping_method,
+      buyerConfirmedAt: row.buyer_confirmed_at,
+      outboundTrackingNo: row.outbound_tracking_no,
+      authResult: row.auth_result,
+      paymentCaptureStatus: row.payment_capture_status,
+    });
+
+    const pendingPayment = row.escrow_status === "pending_payment";
+    const paymentExpiresAt = pendingPayment
+      ? computeMerchantPaymentExpiresAt(createdAt)
+      : null;
 
     return {
       id: row.id,
@@ -128,13 +162,28 @@ export async function loadBuyerMerchantTradingOrders(
       buyerId: row.buyer_id,
       sellerId: row.merchant_id,
       finalPrice: Number(row.final_price),
-      status: mapMerchantEscrowToMemberStatus(row.escrow_status),
+      status: mapMerchantEscrowToMemberStatus(
+        row.escrow_status,
+        row.buyer_confirmed_at,
+      ),
       createdAt: row.created_at,
       expiresAt,
       persona: "buy",
       hasReviewedByMe: reviewedOrderIds.has(row.id),
-      useAuthentication: Boolean(row.requires_authentication),
-      escrowStatus: null,
+      useAuthentication,
+      escrowStatus: mapMerchantEscrowToMemberEscrowStatus(
+        row.escrow_status,
+        useAuthentication,
+        row.buyer_confirmed_at,
+      ),
+      pendingPayment,
+      paymentExpiresAt,
+      canCompleteMerchantPurchase: buyerFlags.canCompleteMerchantPurchase,
+      shippingMethod: row.shipping_method,
+      merchantEscrowStatus: row.escrow_status,
+      merchantPayoutStatus: row.payout_status,
+      buyerConfirmedAt: row.buyer_confirmed_at,
+      payoutHoldUntil: row.payout_hold_until,
       counterparty: {
         id: row.merchant_id,
         displayName:

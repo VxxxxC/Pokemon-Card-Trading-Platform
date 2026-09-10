@@ -2,14 +2,45 @@
 
 import { Skeleton } from "@/components/ui/skeleton";
 
-// 💼 1. User Dashboard Top Portfolio Analytics 4-Grid Card Skeleton
-export function PortfolioStatsSkeleton() {
+// 💼 1. User Dashboard Top Portfolio Analytics Grid Card Skeleton
+export function PortfolioStatsSkeleton({
+  count = 4,
+  embedded = false,
+}: {
+  count?: number;
+  embedded?: boolean;
+}) {
+  if (count === 3) {
+    return (
+      <div
+        className={
+          embedded
+            ? "flex divide-x divide-[rgba(237,232,224,0.08)] w-full"
+            : "flex rounded-xl border border-[rgba(237,232,224,0.08)] bg-[#26211C] divide-x divide-[rgba(237,232,224,0.08)] w-full"
+        }
+      >
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className={`min-w-0 py-2.5 sm:py-3 space-y-1.5 ${
+              i === 2 ? "flex-[1.55] px-2 sm:px-3" : "flex-[0.85] px-2.5 sm:px-4"
+            }`}
+          >
+            <Skeleton className="h-2.5 bg-[#17130f] w-2/3 rounded" />
+            <Skeleton className="h-4 sm:h-5 bg-[#17130f] w-full rounded-md" />
+            <Skeleton className="hidden sm:block h-2.5 bg-[#17130f] w-1/2 rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full">
-      {Array.from({ length: 4 }).map((_, i) => (
+    <div className="grid gap-2 lg:gap-3 w-full grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="bg-[#26211C] rounded-2xl border border-[rgba(237,232,224,0.08)] p-4 space-y-3"
+          className="bg-[#26211C] rounded-xl border border-[rgba(237,232,224,0.08)] p-3 sm:p-4 space-y-2"
         >
           {/* Metric label stub */}
           <Skeleton className="h-3 bg-[#17130f] w-1/3 rounded" />

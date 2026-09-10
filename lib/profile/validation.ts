@@ -8,6 +8,7 @@ export function validateUserProfileFields(fields: {
   shortDescription: string;
   bankAccount?: string;
   fpsId?: string;
+  fpsName?: string;
 }): UserProfileFormErrors {
   const errors: UserProfileFormErrors = {};
   const displayName = fields.displayName.trim();
@@ -15,6 +16,7 @@ export function validateUserProfileFields(fields: {
   const shortDescription = fields.shortDescription.trim();
   const bankAccount = (fields.bankAccount ?? "").trim();
   const fpsId = (fields.fpsId ?? "").trim();
+  const fpsName = (fields.fpsName ?? "").trim();
 
   if (!displayName) {
     errors.displayName = "請輸入顯示名稱";
@@ -37,5 +39,47 @@ export function validateUserProfileFields(fields: {
     errors.fpsId = "轉數快 ID / 電話 / 電郵長度不可超過 100 字元";
   }
 
+  if (fpsName && fpsName.length > 100) {
+    errors.fpsName = "轉數快收款人姓名長度不可超過 100 字元";
+  }
+
   return errors;
+}
+
+export function validateFpsName(fpsName: string): string | null {
+  const trimmed = fpsName.trim();
+  if (!trimmed) {
+    return "請輸入轉數快收款人姓名";
+  }
+  if (trimmed.length > 100) {
+    return "轉數快收款人姓名長度不可超過 100 字元";
+  }
+  return null;
+}
+
+export function validateFpsPayoutDetails(
+  fpsId: string,
+  fpsName: string,
+): { fpsId?: string; fpsName?: string } {
+  const errors: { fpsId?: string; fpsName?: string } = {};
+  const fpsIdError = validateFpsId(fpsId);
+  const fpsNameError = validateFpsName(fpsName);
+  if (fpsIdError) {
+    errors.fpsId = fpsIdError;
+  }
+  if (fpsNameError) {
+    errors.fpsName = fpsNameError;
+  }
+  return errors;
+}
+
+export function validateFpsId(fpsId: string): string | null {
+  const trimmed = fpsId.trim();
+  if (!trimmed) {
+    return "請輸入轉數快 ID / 電話 / 電郵";
+  }
+  if (trimmed.length > 100) {
+    return "轉數快 ID / 電話 / 電郵長度不可超過 100 字元";
+  }
+  return null;
 }

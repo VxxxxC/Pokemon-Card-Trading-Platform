@@ -12,10 +12,11 @@ import { getUserWishlistFavoredKeys } from "@/app/actions/wishlist";
 import { Pagination } from "@/app/components/ui/Pagination";
 import { MarketplaceCard } from "@/app/components/marketplace/MarketplaceCard";
 import { MarketplaceEmptyState } from "@/app/components/marketplace/MarketplaceEmptyState";
+import { MerchantPromoBanner } from "@/app/components/marketplace/MerchantPromoBanner";
 import { AccordionFilters } from "@/app/components/marketplace/filters/AccordionFilters";
 import { SmartSearch } from "@/app/components/marketplace/filters/SmartSearch";
-import { MarketplaceQuickCategoryPills } from "@/app/components/marketplace/MarketplaceQuickCategoryPills";
 import { SlideOver } from "@/app/components/ui/SlideOver";
+import { SlidersHorizontal, RotateCcw, Search } from "lucide-react";
 import { useMarketStore, type SortKey } from "@/app/store/useMarketStore";
 import {
   useMarketplaceSearch,
@@ -30,13 +31,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import {
   isMarketplaceClientPerfLogEnabled,
   marketplaceClientPerfLog,
 } from "@/app/lib/marketplace/perf-log-client";
 import { MARKETPLACE_GRID_PAGE_SIZE } from "@/lib/marketplace/constants";
 import { formatListingGrade } from "@/lib/marketplace/listing-display";
+import { SECTION_TITLE_CLASS } from "@/lib/ui/section-title-ui";
 
 const MOBILE_VIEWPORT_QUERY = "(max-width: 1279px)";
 
@@ -85,6 +86,10 @@ function toMarketplaceListing(
     sellerId: product.sellerId,
     sellerPersona: product.sellerPersona,
     detailHref: `/marketplace/product/${product.productId}`,
+    baseCourierShippingFee: product.baseCourierShippingFee,
+    listingExtraShippingFee: product.listingExtraShippingFee,
+    courierShippingTotal: product.courierShippingTotal,
+    deliverySummary: product.deliverySummary,
   };
 }
 
@@ -113,6 +118,17 @@ export function MarketplacePageClient({
   const urlQuery = searchParams.get("q");
   const urlRarity = searchParams.get("rarity");
   const urlKind = searchParams.get("kind");
+  const urlSource = searchParams.get("source");
+  const urlFilter = searchParams.get("filter");
+
+  const urlSellerSource =
+    urlSource === "merchant" || urlFilter === "merchant"
+      ? "MERCHANT"
+      : urlSource === "member" ||
+          urlSource === "c2c" ||
+          urlFilter === "c2c"
+        ? "MEMBER"
+        : null;
 
   const query = useMarketStore((state) => state.query);
   const setQuery = useMarketStore((state) => state.setQuery);
@@ -273,7 +289,7 @@ export function MarketplacePageClient({
   const lastSyncedParamsKey = useRef("");
 
   useEffect(() => {
-    const currentParamsKey = `${urlQuery}-${urlRarity}-${urlKind}`;
+    const currentParamsKey = `${urlQuery}-${urlRarity}-${urlKind}-${urlSellerSource}`;
     if (lastSyncedParamsKey.current === currentParamsKey) return;
     if (urlQuery !== null) setQuery(urlQuery);
     if (urlRarity !== null) {
@@ -288,16 +304,22 @@ export function MarketplacePageClient({
     if (urlKind === "sealed_product" && !activeProductKinds.includes("sealed_product")) {
       toggleProductKind("sealed_product");
     }
+    if (urlSellerSource && !activeTypes.includes(urlSellerSource)) {
+      toggleType(urlSellerSource);
+    }
     lastSyncedParamsKey.current = currentParamsKey;
   }, [
     urlQuery,
     urlRarity,
     urlKind,
+    urlSellerSource,
     setQuery,
     toggleRarity,
     toggleProductKind,
+    toggleType,
     activeRarities,
     activeProductKinds,
+    activeTypes,
   ]);
 
   useEffect(() => {
@@ -337,7 +359,7 @@ export function MarketplacePageClient({
       ? "暫無符合條件的現貨標的"
       : meta.rangeStart > 0
         ? `顯示第 ${meta.rangeStart}–${meta.rangeEnd} 件，共 ${meta.total} 件現貨`
-        : `🚀 ${meta.total} 件全網聚合現貨標的在庫`;
+        : `共 ${meta.total} 件現貨`;
 
   const hasActiveFilters =
     query !== "" ||
@@ -352,13 +374,13 @@ export function MarketplacePageClient({
   const displayError = error ?? bootstrapError ?? null;
 
   return (
-    <main className="flex-1 max-w-[1360px] mx-auto w-full px-4 lg:px-8 py-6 pb-28 lg:pb-12 animate-fadeIn">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <main className="flex-1 max-w-[1360px] mx-auto w-full px-4 lg:px-8 py-4 lg:py-6 pb-28 lg:pb-12 animate-fadeIn">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3 lg:mb-4">
         <div>
-          <h1 className="font-sans font-black text-[24px] lg:text-[28px] text-[#eae1da] tracking-tight">
+          <h1 className="font-sans font-bold text-[20px] lg:text-[26px] text-[#eae1da] tracking-tight">
             大盤市場
           </h1>
-          <p className="font-mono text-[11.5px] text-[#d4c4b7] mt-0.5">
+          <p className="font-mono text-[10px] text-[#8A8680] mt-0.5">
             {resultsSummary}
           </p>
         </div>
@@ -400,49 +422,20 @@ export function MarketplacePageClient({
 
       <div
         ref={searchContainerRef}
-        className="relative mb-6 flex gap-2 items-center"
+        className="relative mb-3 lg:mb-4 flex gap-2 items-center"
       >
         <button
           type="button"
           onClick={() => setIsMobileFilterOpen(!isMobileFilterOpen)}
-          className="lg:hidden h-12 px-4 rounded-[10px] font-sans font-bold text-[12.5px] border border-brand/20 bg-[#26211C] text-[#eae1da] hover:border-brand/40 hover:bg-[rgba(212,165,116,0.06)] transition-all flex items-center gap-2 shrink-0 select-none focus:outline-none"
+          className="lg:hidden h-10 px-3 rounded-lg font-sans font-bold text-[12px] border border-white/[0.06] bg-[#26211C] text-[#eae1da] hover:border-brand/30 transition-all flex items-center gap-2 shrink-0 select-none focus:outline-none"
           title="開啟或關閉行動篩選面板"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="4" y1="21" x2="4" y2="14" />
-            <line x1="4" y1="10" x2="4" y2="3" />
-            <line x1="12" y1="21" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12" y2="3" />
-            <line x1="20" y1="21" x2="20" y2="16" />
-            <line x1="20" y1="12" x2="20" y2="3" />
-            <line x1="1" y1="14" x2="7" y2="14" />
-            <line x1="9" y1="8" x2="15" y2="8" />
-            <line x1="17" y1="16" x2="23" y2="16" />
-          </svg>
+          <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden />
         </button>
 
         <div className="relative flex-1">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#d4c4b7"
-              strokeWidth="2.5"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-[#d4c4b7]" aria-hidden />
           </div>
           <input
             type="search"
@@ -452,8 +445,8 @@ export function MarketplacePageClient({
               setQuery(e.target.value);
               setIsSearchFocused(true);
             }}
-            placeholder="搜尋官方卡牌名稱、編號..."
-            className="w-full h-12 pl-11 pr-4 bg-[#26211C] border border-white/5 rounded-[10px] text-[13.5px] text-[#eae1da] focus:outline-none"
+            placeholder="搜尋卡牌名稱、編號…"
+            className="w-full h-10 pl-10 pr-3 bg-[#26211C] border border-white/[0.06] rounded-lg text-[13px] text-[#eae1da] placeholder:text-[#8A8680]/70 focus:outline-none focus:border-brand/30"
           />
           <SmartSearch
             query={query}
@@ -470,97 +463,58 @@ export function MarketplacePageClient({
           type="button"
           onClick={handleResetAllFilters}
           disabled={!hasActiveFilters}
-          className={`h-12 px-4 rounded-[10px] font-sans font-bold text-[12.5px] border transition-all flex items-center gap-1.5 shrink-0 select-none focus:outline-none ${
+          className={`h-10 px-3 rounded-lg font-sans font-bold text-[12px] border transition-all flex items-center gap-1.5 shrink-0 select-none focus:outline-none ${
             hasActiveFilters
               ? "border-brand/40 text-brand bg-[rgba(212,165,116,0.06)] hover:border-brand hover:bg-[rgba(212,165,116,0.1)] cursor-pointer active:scale-[0.97]"
               : "border-white/5 text-text-disabled bg-[#26211C]/40 opacity-40 cursor-not-allowed"
           }`}
           title="清除所有搜尋關鍵字與複選矩陣"
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-          </svg>
+          <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden />
         </button>
       </div>
-
-      <MarketplaceQuickCategoryPills />
 
       <SlideOver
         isOpen={isMobileFilterOpen}
         onClose={() => setIsMobileFilterOpen(false)}
-        title="📊 篩選"
+        title="篩選"
         subtitle="ADVANCED FILTER"
+        icon={SlidersHorizontal}
       >
-        <div className="mb-6 rounded-xl border border-white/8 bg-[#26211C] p-5">
-          <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
+        <div className="rounded-xl border border-white/[0.06] bg-[#26211C] p-3">
+          <h3 className={SECTION_TITLE_CLASS}>
             商品排序
           </h3>
-          <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-            SORT PRODUCTS
-          </p>
-          <Select
-            value={sortKey}
-            onValueChange={(value) => setSortKey(value as SortKey)}
-          >
-            <SelectTrigger className="w-full h-11 bg-[#17130f] border border-white/5 rounded-[8px] text-[#eae1da] font-sans text-[12.5px] hover:bg-[#322a24] hover:border-white/10 transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
-              <SelectValue placeholder="選擇排序規則" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
-              <SelectItem
-                value="最新"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                上架時間：最新
-              </SelectItem>
-              <SelectItem
-                value="價格：由低到高"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                價格：由低到高
-              </SelectItem>
-              <SelectItem
-                value="價格：由高到低"
-                className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
-              >
-                價格：由高到低
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="mb-6 rounded-xl border border-white/8 bg-[#26211C] p-5">
-          <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
-            市場現貨價格區間 (HK$)
-          </h3>
-          <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-            PRICE RANGE FILTER
-          </p>
-          <div className="flex items-center justify-between mb-4">
-            <span className="font-mono text-[13px] text-brand font-bold">
-              HK$ {sliderPriceRange[0].toLocaleString()}
-            </span>
-            <span className="font-mono text-[11px] text-[#8A8680]">—</span>
-            <span className="font-mono text-[13px] text-brand font-bold">
-              HK$ {sliderPriceRange[1].toLocaleString()}
-            </span>
+          <div className="mt-2">
+            <Select
+              value={sortKey}
+              onValueChange={(value) => setSortKey(value as SortKey)}
+            >
+              <SelectTrigger className="w-full h-9 bg-[#17130f] border border-white/[0.06] rounded-lg text-[#eae1da] font-sans text-[12px] hover:bg-[#322a24] transition-colors focus-visible:ring-0 focus-visible:border-brand/40">
+                <SelectValue placeholder="選擇排序規則" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#26211C] border border-white/10 rounded-lg text-[#eae1da] font-sans text-[12.5px] shadow-2xl">
+                <SelectItem
+                  value="最新"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  上架時間：最新
+                </SelectItem>
+                <SelectItem
+                  value="價格：由低到高"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  價格：由低到高
+                </SelectItem>
+                <SelectItem
+                  value="價格：由高到低"
+                  className="focus:bg-[#322a24] focus:text-brand cursor-pointer transition-colors"
+                >
+                  價格：由高到低
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Slider
-            value={sliderPriceRange}
-            onValueChange={(val) => setPriceRange(val as [number, number])}
-            min={absoluteMinPrice}
-            max={absoluteMaxPrice}
-            step={50}
-            className="w-full"
-          />
         </div>
         <AccordionFilters
           activeRarities={activeRarities}
@@ -574,36 +528,16 @@ export function MarketplacePageClient({
           hideTypeSection={false}
           rarities={rarities}
           disableRarityFetch
+          compact
+          priceRange={sliderPriceRange}
+          onPriceRangeChange={(val) => setPriceRange(val)}
+          priceMin={absoluteMinPrice}
+          priceMax={absoluteMaxPrice}
         />
       </SlideOver>
 
-      <div className="lg:grid lg:grid-cols-[260px_1fr] lg:gap-8 items-start">
-        <aside className="hidden lg:block lg:sticky lg:top-[5.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto space-y-4 scrollbar-none">
-          <div className="rounded-xl border border-white/8 bg-[#26211C] p-4">
-            <h3 className="font-sans font-bold text-[13px] text-[#eae1da] mb-1.5">
-              市場現貨價格區間 (HK$)
-            </h3>
-            <p className="font-mono text-[10.5px] text-[#8A8680] mb-4 uppercase tracking-wider">
-              PRICE RANGE FILTER
-            </p>
-            <div className="flex items-center justify-between mb-4">
-              <span className="font-mono text-[13px] text-brand font-bold">
-                HK$ {sliderPriceRange[0].toLocaleString()}
-              </span>
-              <span className="font-mono text-[11px] text-[#8A8680]">—</span>
-              <span className="font-mono text-[13px] text-brand font-bold">
-                HK$ {sliderPriceRange[1].toLocaleString()}
-              </span>
-            </div>
-            <Slider
-              value={sliderPriceRange}
-              onValueChange={(val) => setPriceRange(val as [number, number])}
-              min={absoluteMinPrice}
-              max={absoluteMaxPrice}
-              step={50}
-              className="w-full"
-            />
-          </div>
+      <div className="lg:grid lg:grid-cols-[288px_1fr] lg:gap-6 items-start">
+        <aside className="hidden lg:block lg:sticky lg:top-[5.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-none">
           <AccordionFilters
             activeRarities={activeRarities}
             onRarityToggle={toggleRarity}
@@ -616,6 +550,11 @@ export function MarketplacePageClient({
             hideTypeSection={false}
             rarities={rarities}
             disableRarityFetch
+            compact
+            priceRange={sliderPriceRange}
+            onPriceRangeChange={(val) => setPriceRange(val)}
+            priceMin={absoluteMinPrice}
+            priceMax={absoluteMaxPrice}
           />
         </aside>
 
@@ -627,17 +566,22 @@ export function MarketplacePageClient({
           )}
 
           {isLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5">
-              {Array.from({ length: 6 }).map((_, index) => (
+            <div className="grid grid-cols-3 gap-2 md:gap-3 lg:grid-cols-4 lg:gap-4 items-stretch">
+              {Array.from({ length: 8 }).map((_, index) => (
                 <div
                   key={`marketplace-skeleton-${index}`}
-                  className="bg-[#26211C] rounded-2xl border border-white/5 overflow-hidden animate-pulse"
+                  className="bg-[#26211C] rounded-xl border border-white/[0.06] overflow-hidden animate-pulse"
                 >
                   <div className="w-full aspect-[3/4] bg-white/5" />
-                  <div className="p-4 space-y-3">
-                    <div className="h-4 w-3/4 rounded bg-white/5" />
-                    <div className="h-3 w-1/2 rounded bg-white/5" />
-                    <div className="h-5 w-1/3 rounded bg-white/5" />
+                  <div className="p-2 space-y-1.5">
+                    <div className="h-3 w-3/4 rounded bg-white/5" />
+                    <div className="h-2.5 w-1/2 rounded bg-white/5" />
+                    <div className="flex justify-between gap-1">
+                      <div className="h-4 w-12 rounded bg-white/5" />
+                      <div className="h-4 w-14 rounded bg-white/5" />
+                    </div>
+                    <div className="h-3 w-2/3 rounded bg-white/5" />
+                    <div className="h-8 w-full rounded-lg bg-white/5 mt-1" />
                   </div>
                 </div>
               ))}
@@ -656,59 +600,21 @@ export function MarketplacePageClient({
               </div>
             ) : null}
           <div
-            className={`grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-5 transition-opacity duration-200 ${
+            className={`grid grid-cols-3 gap-2 md:gap-3 lg:grid-cols-4 lg:gap-4 transition-opacity duration-200 items-stretch ${
               isRefreshing ? "opacity-60" : "opacity-100"
             }`}
           >
-            {paginatedListings.flatMap((item, idx) => {
-              const card = (
-                <MarketplaceCard
-                  key={item.id}
-                  listing={item}
-                  currentUserId={currentUserId}
-                  favoredKeys={favoredKeys}
-                  imagePriority={idx < 4}
-                />
-              );
-
-              if ((idx + 1) % 8 !== 0) return [card];
-              return [
-                card,
-                <div
-                  key={`merchant-promo-${item.id}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => router.push("/auth?role=merchant")}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ")
-                      router.push("/auth?role=merchant");
-                  }}
-                  className="bg-gradient-to-br from-[#d4a574] via-[#eae1da] to-[#b88751] text-[#17130f] border border-[#d4a574]/40 rounded-2xl p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(212,165,116,0.18)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-300 select-none cursor-pointer relative overflow-hidden group min-h-[220px]"
-                >
-                  <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:translate-x-full transition-transform duration-1000 pointer-events-none" />
-
-                  <div className="relative flex items-center justify-between">
-                    <span className="font-sans font-black text-[10px] tracking-widest uppercase text-[#17130f]/80">
-                      🏪 申請註冊成為認證商戶
-                    </span>
-                  </div>
-
-                  <div className="relative flex-1 flex flex-col justify-center gap-2 py-4">
-                    <h3 className="font-sans font-black text-[17px] leading-snug text-[#17130f] tracking-tight">
-                      解鎖專業商家席位
-                    </h3>
-                    <p className="font-sans text-[11px] text-[#17130f]/65 leading-relaxed">
-                      享受專業商戶交易體驗，秒變千筆成交頂級牌組道館。
-                    </p>
-                  </div>
-
-                  <div className="relative w-full h-9 bg-[#17130f] text-brand font-sans text-[12.5px] font-black rounded-xl flex items-center justify-center gap-1.5">
-                    申請商戶入駐 🚀
-                  </div>
-                </div>,
-              ];
-            })}
+            {paginatedListings.map((item, idx) => (
+              <MarketplaceCard
+                key={item.id}
+                listing={item}
+                currentUserId={currentUserId}
+                favoredKeys={favoredKeys}
+                imagePriority={idx < 4}
+              />
+            ))}
           </div>
+          <MerchantPromoBanner className="mt-4" />
           </div>
           )}
 

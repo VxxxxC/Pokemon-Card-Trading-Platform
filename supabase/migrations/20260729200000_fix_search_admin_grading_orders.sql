@@ -1,0 +1,173 @@
+-- Fix search_admin_grading_orders: CTEs are scoped to a single SQL statement in PL/pgSQL.
+-- Combine count + paginated rows into one WITH ... SELECT ... INTO.
+
+CREATE OR REPLACE FUNCTION public.search_admin_grading_orders(
+    p_tab TEXT,
+    p_order_kind TEXT DEFAULT NULL,
+    p_keyword TEXT DEFAULT NULL,
+    p_page INTEGER DEFAULT 1,
+    p_page_size INTEGER DEFAULT 20
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_admin_id UUID;
+    v_offset INTEGER;
+    v_limit INTEGER;
+    v_keyword TEXT;
+    v_rows JSONB;
+    v_total BIGINT;
+BEGIN
+    v_admin_id := public._grading_require_admin();
+
+    v_limit := LEAST(GREATEST(COALESCE(p_page_size, 20), 1), 50);
+    v_offset := GREATEST(COALESCE(p_page, 1) - 1, 0) * v_limit;
+    v_keyword := NULLIF(trim(COALESCE(p_keyword, '')), '');
+
+    WITH unified AS (
+        SELECT
+            'member'::TEXT AS order_kind,
+            mo.id AS order_id,
+            mo.order_number,
+            mo.buyer_id,
+            mo.seller_id AS counterparty_seller_id,
+            NULL::UUID AS merchant_id,
+            mo.listing_id,
+            COALESCE(mo.item_subtotal, mo.final_price) AS item_subtotal,
+            0::NUMERIC AS shipping_fee,
+            mo.auth_fee,
+            mo.total_amount,
+            mo.inbound_tracking_no,
+            mo.outbound_tracking_no,
+            mo.auth_result,
+            mo.refund_status,
+            mo.refund_amount,
+            mo.escrow_status::TEXT AS escrow_status,
+            mo.platform_received_at,
+            mo.auth_graded_at,
+            mo.created_at,
+            mo.updated_at,
+            pb.display_name AS buyer_display_name,
+            pb.username AS buyer_username,
+            ps.display_name AS seller_display_name,
+            ps.username AS seller_username,
+            NULL::TEXT AS shop_name,
+            pc.name_zh AS product_name_zh,
+            pc.name_ja AS product_name_ja,
+            pc.name_en AS product_name_en,
+            l.grading_company,
+            l.grading_score
+        FROM public.member_orders mo
+        JOIN public.profiles pb ON pb.id = mo.buyer_id
+        JOIN public.profiles ps ON ps.id = mo.seller_id
+        JOIN public.listings l ON l.id = mo.listing_id
+        JOIN public.product_catalog pc ON pc.id = l.product_id
+        WHERE mo.use_authentication = true
+
+        UNION ALL
+
+        SELECT
+            'merchant'::TEXT AS order_kind,
+            mo.id AS order_id,
+            mo.order_number,
+            mo.buyer_id,
+            NULL::UUID AS counterparty_seller_id,
+            mo.merchant_id,
+            mo.listing_id,
+            COALESCE(mo.item_subtotal, mo.final_price) AS item_subtotal,
+            COALESCE(mo.shipping_fee, 0) AS shipping_fee,
+            mo.auth_fee,
+            mo.total_amount,
+            mo.inbound_tracking_no,
+            mo.outbound_tracking_no,
+            mo.auth_result,
+            mo.refund_status,
+            mo.refund_amount,
+            mo.escrow_status::TEXT AS escrow_status,
+            mo.platform_received_at,
+            mo.auth_graded_at,
+            mo.created_at,
+            mo.updated_at,
+            pb.display_name AS buyer_display_name,
+            pb.username AS buyer_username,
+            NULL::TEXT AS seller_display_name,
+            NULL::TEXT AS seller_username,
+            ms.shop_name,
+            pc.name_zh AS product_name_zh,
+            pc.name_ja AS product_name_ja,
+            pc.name_en AS product_name_en,
+            l.grading_company,
+            l.grading_score
+        FROM public.merchant_orders mo
+        JOIN public.profiles pb ON pb.id = mo.buyer_id
+        JOIN public.listings l ON l.id = mo.listing_id
+        JOIN public.product_catalog pc ON pc.id = l.product_id
+        LEFT JOIN public.merchant_shops ms ON ms.merchant_id = mo.merchant_id
+        WHERE mo.requires_authentication = true
+    ),
+    filtered AS (
+        SELECT *
+        FROM unified u
+        WHERE (
+            p_order_kind IS NULL
+            OR btrim(p_order_kind) = ''
+            OR u.order_kind = p_order_kind
+        )
+        AND (
+            v_keyword IS NULL
+            OR u.order_number ILIKE '%' || v_keyword || '%'
+            OR u.buyer_display_name ILIKE '%' || v_keyword || '%'
+            OR u.buyer_username ILIKE '%' || v_keyword || '%'
+            OR COALESCE(u.seller_display_name, '') ILIKE '%' || v_keyword || '%'
+            OR COALESCE(u.seller_username, '') ILIKE '%' || v_keyword || '%'
+            OR COALESCE(u.shop_name, '') ILIKE '%' || v_keyword || '%'
+            OR COALESCE(u.inbound_tracking_no, '') ILIKE '%' || v_keyword || '%'
+            OR COALESCE(u.outbound_tracking_no, '') ILIKE '%' || v_keyword || '%'
+        )
+        AND (
+            (p_tab = 'awaiting_intake' AND (
+                (u.order_kind = 'member' AND u.escrow_status = 'custody' AND u.inbound_tracking_no IS NOT NULL)
+                OR (u.order_kind = 'merchant' AND u.escrow_status = 'payment_held' AND u.inbound_tracking_no IS NOT NULL)
+            ))
+            OR (p_tab = 'grading' AND (
+                (u.order_kind = 'member' AND u.escrow_status = 'grading')
+                OR (u.order_kind = 'merchant' AND u.escrow_status = 'authenticating')
+            ))
+            OR (p_tab = 'awaiting_outbound' AND (
+                (u.order_kind = 'member' AND u.escrow_status = 'shipped' AND u.auth_result = 'passed')
+                OR (u.order_kind = 'merchant' AND u.escrow_status = 'authenticated' AND u.auth_result = 'passed')
+            ))
+            OR (p_tab = 'closed' AND (
+                (u.order_kind = 'member' AND u.escrow_status IN ('released', 'cancelled'))
+                OR (u.order_kind = 'merchant' AND u.escrow_status IN ('completed_and_transferred', 'refunded'))
+                OR u.refund_status = 'refunded'
+            ))
+        )
+    )
+    SELECT
+        (SELECT COUNT(*)::BIGINT FROM filtered),
+        COALESCE((
+            SELECT jsonb_agg(to_jsonb(f) ORDER BY f.updated_at DESC NULLS LAST, f.created_at DESC)
+            FROM (
+                SELECT * FROM filtered
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT v_limit OFFSET v_offset
+            ) f
+        ), '[]'::JSONB)
+    INTO v_total, v_rows;
+
+    RETURN jsonb_build_object(
+        'rows', v_rows,
+        'total', v_total,
+        'page', GREATEST(COALESCE(p_page, 1), 1),
+        'page_size', v_limit
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.search_admin_grading_orders(TEXT, TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.search_admin_grading_orders(TEXT, TEXT, TEXT, INTEGER, INTEGER)
+    TO authenticated, service_role;

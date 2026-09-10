@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateHomeListingsCache } from "@/lib/home/revalidate-home-listings";
 import {
   isCardCatalogType,
   isSealedCatalogType,
+  isSealedProductGrade,
+  normalizeSealedProductScore,
   parseSealState,
   sealedProductGradingFields,
   defaultSealedProductScore,
@@ -13,6 +16,12 @@ import {
   getGradingOption,
   gradingOptionToFields,
 } from "@/lib/grading/options";
+import { isMerchantListingAllowed } from "@/lib/kyc/merchant-gates";
+import {
+  parseShippingFeeInput,
+  validateListingExtraShippingFee,
+} from "@/lib/merchant/shipping-fee";
+import { fetchReservedListingIds } from "@/lib/listings/inventory-reservation";
 import { mapListingInsertError } from "@/lib/listings/errors";
 import {
   parseImageUploadsFromFormData,
@@ -38,9 +47,11 @@ import {
   isBunnyStorageConfigured,
   uploadListingImageToBunny,
 } from "@/lib/storage/bunny";
+import { enqueueOfferExpiredEmailsForListing } from "@/lib/notifications/offer-emails";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import type { Tables, TablesInsert } from "@/types/supabase";
 
 type ListingRow = Pick<
@@ -61,6 +72,40 @@ export type CreateCardListingResult =
 export type PreUploadedListingImage = ListingImage & {
   objectKey: string;
 };
+
+async function assertListingModerationAllowed(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  persona: Tables<"listings">["seller_persona"],
+): Promise<string | null> {
+  type ListingModerationRpcClient = {
+    rpc(
+      fn: "moderation_check_listing_allowed",
+      args: {
+        p_user_id: string;
+        p_persona: Tables<"listings">["seller_persona"];
+      },
+    ): Promise<{ data: boolean | null; error: { message: string } | null }>;
+  };
+
+  const { data, error } = await (
+    supabase as unknown as ListingModerationRpcClient
+  ).rpc("moderation_check_listing_allowed", {
+    p_user_id: userId,
+    p_persona: persona,
+  });
+
+  if (error) {
+    console.error("[assertListingModerationAllowed]", error.message);
+    return "無法驗證帳戶狀態，請稍後再試";
+  }
+
+  if (data === false) {
+    return "帳戶已被限制上架";
+  }
+
+  return null;
+}
 
 function parsePreUploadedImages(raw: string): PreUploadedListingImage[] | null {
   try {
@@ -127,6 +172,27 @@ function resolveListingSellerPersona(input: {
   return { persona };
 }
 
+function resolveExtraShippingFeeForListing(
+  sellerPersona: ListingSellerPersona | undefined,
+  rawValue: unknown,
+): { ok: true; amount: number } | { ok: false; error: string } {
+  if (sellerPersona !== "merchant") {
+    return { ok: true, amount: 0 };
+  }
+
+  const parsed = parseShippingFeeInput(rawValue);
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  const feeError = validateListingExtraShippingFee(parsed.amount);
+  if (feeError) {
+    return { ok: false, error: feeError };
+  }
+
+  return { ok: true, amount: parsed.amount };
+}
+
 function parseCreateCardListingForm(formData: FormData): {
   fields: {
     productId: string;
@@ -136,10 +202,12 @@ function parseCreateCardListingForm(formData: FormData): {
     useAuthentication: boolean;
     sourceCollectionId?: string;
     sellerPersona?: ListingSellerPersona;
+    extraShippingFee: number;
   };
   uploads: ParsedImageUpload[];
   preUploaded: PreUploadedListingImage[] | null;
   rawImageEntryCount: number;
+  extraShippingFeeError: string | null;
 } {
   const productId = String(formData.get("productId") ?? "").trim();
   const gradingOptionId = String(formData.get("gradingOptionId") ?? "").trim();
@@ -160,6 +228,10 @@ function parseCreateCardListingForm(formData: FormData): {
   const sourceCollectionId = sourceCollectionIdRaw || undefined;
   const sellerPersonaRaw = String(formData.get("sellerPersona") ?? "").trim();
   const sellerPersona = parseSellerPersonaField(sellerPersonaRaw);
+  const extraShippingParsed = resolveExtraShippingFeeForListing(
+    sellerPersona,
+    formData.get("extraShippingFee"),
+  );
 
   const rawImageEntries = formData.getAll("images");
   const uploads = parseImageUploadsFromFormData(formData);
@@ -177,10 +249,14 @@ function parseCreateCardListingForm(formData: FormData): {
       useAuthentication,
       sourceCollectionId,
       sellerPersona,
+      extraShippingFee: extraShippingParsed.ok ? extraShippingParsed.amount : 0,
     },
     uploads,
     preUploaded,
     rawImageEntryCount: rawImageEntries.length,
+    extraShippingFeeError: extraShippingParsed.ok
+      ? null
+      : extraShippingParsed.error,
   };
 }
 
@@ -189,7 +265,12 @@ function validateServerListingSubmit(
   uploads: ParsedImageUpload[],
   preUploaded: PreUploadedListingImage[] | null,
   rawImageEntryCount: number,
+  extraShippingFeeError?: string | null,
 ): string | null {
+  if (extraShippingFeeError) {
+    return extraShippingFeeError;
+  }
+
   const fieldError = validateCreateCardListingFields(fields);
   if (fieldError) return fieldError;
 
@@ -252,14 +333,11 @@ export async function rollbackListingImages(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入" };
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return { success: false, error: auth.error };
     }
+    const { user } = auth;
 
     const allowedKeys = objectKeys.filter((key) =>
       isUserListingObjectKey(user.id, key),
@@ -284,8 +362,12 @@ function parseUpdateCardListingForm(formData: FormData): {
     price: number;
     sellerDescription?: string;
     isActive: boolean;
+    useAuthentication: boolean;
+    sellerPersona?: ListingSellerPersona;
+    extraShippingFee: number;
   };
   preUploaded: PreUploadedListingImage[] | null;
+  extraShippingFeeError: string | null;
 } {
   const listingId = String(formData.get("listingId") ?? "").trim();
   const gradingOptionId = String(formData.get("gradingOptionId") ?? "").trim();
@@ -300,6 +382,18 @@ function parseUpdateCardListingForm(formData: FormData): {
     isActiveRaw === null
       ? true
       : isActiveRaw === "true" || isActiveRaw === "on";
+  const useAuthenticationRaw = formData.get("useAuthentication");
+  const useAuthentication =
+    useAuthenticationRaw === "true" || useAuthenticationRaw === "on";
+  const sellerPersonaRaw = String(formData.get("sellerPersona") ?? "").trim();
+  const sellerPersona =
+    sellerPersonaRaw === "merchant" || sellerPersonaRaw === "member"
+      ? sellerPersonaRaw
+      : undefined;
+  const extraShippingParsed = resolveExtraShippingFeeForListing(
+    sellerPersona,
+    formData.get("extraShippingFee"),
+  );
   const uploadedImagesRaw = String(formData.get("uploadedImages") ?? "").trim();
   const preUploaded = uploadedImagesRaw
     ? parsePreUploadedImages(uploadedImagesRaw)
@@ -312,8 +406,14 @@ function parseUpdateCardListingForm(formData: FormData): {
       price,
       sellerDescription: sellerDescription || undefined,
       isActive,
+      useAuthentication,
+      sellerPersona,
+      extraShippingFee: extraShippingParsed.ok ? extraShippingParsed.amount : 0,
     },
     preUploaded,
+    extraShippingFeeError: extraShippingParsed.ok
+      ? null
+      : extraShippingParsed.error,
   };
 }
 
@@ -348,7 +448,12 @@ export type UpdateCardListingResult = CreateCardListingResult;
 export async function updateCardListing(
   formData: FormData,
 ): Promise<UpdateCardListingResult> {
-  const { fields, preUploaded } = parseUpdateCardListingForm(formData);
+  const { fields, preUploaded, extraShippingFeeError } =
+    parseUpdateCardListingForm(formData);
+
+  if (extraShippingFeeError) {
+    return { success: false, error: extraShippingFeeError };
+  }
 
   const fieldError = validateUpdateCardListingFields({
     listingId: fields.listingId,
@@ -374,26 +479,17 @@ export async function updateCardListing(
     return fail("上載的圖片資料無效，請重新上載相片");
   }
 
-  const imageCount = preUploaded?.length ?? 0;
-  const countError = validateListingImageCount(imageCount);
-  if (countError) {
-    return fail(countError);
-  }
-
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再更新商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: existingListing, error: fetchError } = await supabase
       .from("listings")
       .select(
-        "id, seller_id, status, images, grading_company, grading_score, use_authentication",
+        "id, seller_id, status, images, grading_company, grading_score, use_authentication, seller_persona",
       )
       .eq("id", fields.listingId)
       .maybeSingle<
@@ -406,6 +502,7 @@ export async function updateCardListing(
           | "grading_company"
           | "grading_score"
           | "use_authentication"
+          | "seller_persona"
         >
       >();
 
@@ -413,21 +510,76 @@ export async function updateCardListing(
       return fail("找不到要更新的商品");
     }
 
+    const imageCount = preUploaded?.length ?? 0;
+    const isSealedListing = isSealedProductGrade(
+      existingListing.grading_company,
+      existingListing.grading_score,
+    );
+    const countError = isSealedListing
+      ? validateSealedListingImageCount(imageCount)
+      : validateListingImageCount(imageCount);
+    if (countError) {
+      return fail(countError);
+    }
+
     if (existingListing.seller_id !== user.id) {
       return fail("沒有權限更新此商品");
+    }
+
+    const moderationError = await assertListingModerationAllowed(
+      supabase,
+      user.id,
+      existingListing.seller_persona,
+    );
+    if (moderationError) {
+      return fail(moderationError);
     }
 
     if (existingListing.status === "sold") {
       return fail("已售出的商品無法編輯");
     }
 
+    const reservedListingIds = await fetchReservedListingIds(
+      supabase,
+      user.id,
+      [fields.listingId],
+    );
+    if (reservedListingIds.has(fields.listingId)) {
+      return fail("此商品有進行中訂單，暫時無法編輯");
+    }
+
     if (!isBunnyStorageConfigured()) {
       return fail("圖片儲存服務尚未設定，請稍後再試");
     }
 
-    const grading = gradingOptionToFields(
-      getGradingOption(fields.gradingOptionId),
-    );
+    let gradingCompany: string;
+    let gradingScore: string | null;
+    let useAuthentication: boolean;
+
+    if (isSealedListing) {
+      const sealFromField = fields.gradingOptionId.startsWith("sealed:")
+        ? parseSealState(fields.gradingOptionId.slice("sealed:".length))
+        : null;
+      const sealedFields = sealedProductGradingFields(
+        sealFromField ??
+          normalizeSealedProductScore(
+            existingListing.grading_company,
+            existingListing.grading_score,
+          ),
+      );
+      gradingCompany = sealedFields.gradingCompany;
+      gradingScore = sealedFields.gradingScore;
+      useAuthentication = false;
+    } else {
+      const grading = gradingOptionToFields(
+        getGradingOption(fields.gradingOptionId),
+      );
+      gradingCompany = grading.grader;
+      gradingScore =
+        grading.grader === "RAW" ? grading.condition : grading.gradeScore;
+      useAuthentication =
+        grading.grader === "RAW" ? fields.useAuthentication : false;
+    }
 
     const images: ListingImage[] = preUploaded!.map(
       ({ url, order, remark }) => ({
@@ -447,21 +599,22 @@ export async function updateCardListing(
     );
     const replacedKeys = previousKeys.filter((key) => !nextKeys.has(key));
 
+    const sellerPersona = existingListing.seller_persona;
+    const extraShippingFee =
+      sellerPersona === "merchant" ? fields.extraShippingFee : 0;
+
     const admin = createAdminClient();
     const { data: listing, error: updateError } = await admin
       .from("listings")
       .update({
         price: fields.price,
-        grading_company: grading.grader,
-        grading_score:
-          grading.grader === "RAW" ? grading.condition : grading.gradeScore,
+        grading_company: gradingCompany,
+        grading_score: gradingScore,
         images,
         seller_description: fields.sellerDescription ?? null,
         status: fields.isActive ? "active" : "inactive",
-        use_authentication:
-          grading.grader === "RAW"
-            ? existingListing.use_authentication
-            : false,
+        use_authentication: useAuthentication,
+        extra_shipping_fee: extraShippingFee,
       })
       .eq("id", fields.listingId)
       .eq("seller_id", user.id)
@@ -482,7 +635,15 @@ export async function updateCardListing(
       await deleteListingImagesFromBunny(replacedKeys);
     }
 
+    if (existingListing.status === "active" && !fields.isActive) {
+      await enqueueOfferExpiredEmailsForListing({
+        listingId: fields.listingId,
+        reason: "listing_inactive",
+      });
+    }
+
     revalidatePath("/marketplace");
+    revalidateHomeListingsCache();
     revalidatePath("/profile/user/inventory");
     revalidatePath("/profile/merchant/inventory");
 
@@ -508,7 +669,7 @@ export async function updateCardListing(
 export async function createCardListing(
   formData: FormData,
 ): Promise<CreateCardListingResult> {
-  const { fields, uploads, preUploaded, rawImageEntryCount } =
+  const { fields, uploads, preUploaded, rawImageEntryCount, extraShippingFeeError } =
     parseCreateCardListingForm(formData);
 
   const uploadedObjectKeys: string[] = preUploaded
@@ -529,6 +690,7 @@ export async function createCardListing(
     uploads,
     preUploaded,
     rawImageEntryCount,
+    extraShippingFeeError,
   );
 
   if (validationError) {
@@ -536,14 +698,11 @@ export async function createCardListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再上架商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -566,15 +725,41 @@ export async function createCardListing(
       return fail(personaError);
     }
 
+    const moderationError = await assertListingModerationAllowed(
+      supabase,
+      user.id,
+      sellerPersona,
+    );
+    if (moderationError) {
+      return fail(moderationError);
+    }
+
     if (sellerPersona === "merchant" && profile.role !== "admin") {
-      const { data: shopRow, error: shopError } = await supabase
-        .from("merchant_shops")
-        .select("merchant_id")
-        .eq("merchant_id", user.id)
-        .maybeSingle<Pick<Tables<"merchant_shops">, "merchant_id">>();
+      const [{ data: shopRow, error: shopError }, { data: kycRow, error: kycError }] =
+        await Promise.all([
+          supabase
+            .from("merchant_shops")
+            .select("merchant_id")
+            .eq("merchant_id", user.id)
+            .maybeSingle<Pick<Tables<"merchant_shops">, "merchant_id">>(),
+          supabase
+            .from("kyc_records")
+            .select("kyc_status")
+            .eq("merchant_id", user.id)
+            .maybeSingle<Pick<Tables<"kyc_records">, "kyc_status">>(),
+        ]);
 
       if (shopError || !shopRow) {
         return fail("商戶店舖資料尚未就緒，無法建立商戶商品");
+      }
+
+      if (kycError) {
+        console.error("[createListing] kyc_records", kycError.message);
+        return fail("無法驗證商戶認證狀態，請稍後再試");
+      }
+
+      if (!isMerchantListingAllowed(kycRow?.kyc_status)) {
+        return fail("商戶認證審核中，暫不可上架商品");
       }
     }
 
@@ -632,6 +817,8 @@ export async function createCardListing(
       status: "active",
       seller_persona: sellerPersona,
       use_authentication: fields.useAuthentication,
+      extra_shipping_fee:
+        sellerPersona === "merchant" ? fields.extraShippingFee : 0,
     };
 
     if (fields.sourceCollectionId) {
@@ -667,6 +854,7 @@ export async function createCardListing(
     }
 
     revalidatePath("/marketplace");
+    revalidateHomeListingsCache();
     revalidatePath("/profile/user/collection");
     revalidatePath("/profile/user/inventory");
     revalidatePath("/profile/merchant/inventory");
@@ -698,10 +886,12 @@ function parseCreateSealedListingForm(formData: FormData): {
     sellerDescription?: string;
     sourceCollectionId?: string;
     sellerPersona?: ListingSellerPersona;
+    extraShippingFee: number;
   };
   uploads: ParsedImageUpload[];
   preUploaded: PreUploadedListingImage[] | null;
   rawImageEntryCount: number;
+  extraShippingFeeError: string | null;
 } {
   const productId = String(formData.get("productId") ?? "").trim();
   const price = Number(formData.get("price"));
@@ -719,6 +909,10 @@ function parseCreateSealedListingForm(formData: FormData): {
   const sourceCollectionId = sourceCollectionIdRaw || undefined;
   const sellerPersonaRaw = String(formData.get("sellerPersona") ?? "").trim();
   const sellerPersona = parseSellerPersonaField(sellerPersonaRaw);
+  const extraShippingParsed = resolveExtraShippingFeeForListing(
+    sellerPersona,
+    formData.get("extraShippingFee"),
+  );
 
   const rawImageEntries = formData.getAll("images");
   const uploads = parseImageUploadsFromFormData(formData);
@@ -735,10 +929,14 @@ function parseCreateSealedListingForm(formData: FormData): {
       sellerDescription: sellerDescription || undefined,
       sourceCollectionId,
       sellerPersona,
+      extraShippingFee: extraShippingParsed.ok ? extraShippingParsed.amount : 0,
     },
     uploads,
     preUploaded,
     rawImageEntryCount: rawImageEntries.length,
+    extraShippingFeeError: extraShippingParsed.ok
+      ? null
+      : extraShippingParsed.error,
   };
 }
 
@@ -747,7 +945,12 @@ function validateServerSealedListingSubmit(
   uploads: ParsedImageUpload[],
   preUploaded: PreUploadedListingImage[] | null,
   rawImageEntryCount: number,
+  extraShippingFeeError?: string | null,
 ): string | null {
+  if (extraShippingFeeError) {
+    return extraShippingFeeError;
+  }
+
   const fieldError = validateCreateSealedListingFields(fields);
   if (fieldError) return fieldError;
 
@@ -783,7 +986,7 @@ function validateServerSealedListingSubmit(
 export async function createSealedListing(
   formData: FormData,
 ): Promise<CreateCardListingResult> {
-  const { fields, uploads, preUploaded, rawImageEntryCount } =
+  const { fields, uploads, preUploaded, rawImageEntryCount, extraShippingFeeError } =
     parseCreateSealedListingForm(formData);
 
   const uploadedObjectKeys: string[] = preUploaded
@@ -804,6 +1007,7 @@ export async function createSealedListing(
     uploads,
     preUploaded,
     rawImageEntryCount,
+    extraShippingFeeError,
   );
 
   if (validationError) {
@@ -811,14 +1015,11 @@ export async function createSealedListing(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return fail("請先登入後再上架商品");
+    const auth = await requireActiveAuthUser();
+    if (!auth.ok) {
+      return fail(auth.error);
     }
+    const { user, supabase } = auth;
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -841,15 +1042,41 @@ export async function createSealedListing(
       return fail(personaError);
     }
 
+    const moderationError = await assertListingModerationAllowed(
+      supabase,
+      user.id,
+      sellerPersona,
+    );
+    if (moderationError) {
+      return fail(moderationError);
+    }
+
     if (sellerPersona === "merchant" && profile.role !== "admin") {
-      const { data: shopRow, error: shopError } = await supabase
-        .from("merchant_shops")
-        .select("merchant_id")
-        .eq("merchant_id", user.id)
-        .maybeSingle<Pick<Tables<"merchant_shops">, "merchant_id">>();
+      const [{ data: shopRow, error: shopError }, { data: kycRow, error: kycError }] =
+        await Promise.all([
+          supabase
+            .from("merchant_shops")
+            .select("merchant_id")
+            .eq("merchant_id", user.id)
+            .maybeSingle<Pick<Tables<"merchant_shops">, "merchant_id">>(),
+          supabase
+            .from("kyc_records")
+            .select("kyc_status")
+            .eq("merchant_id", user.id)
+            .maybeSingle<Pick<Tables<"kyc_records">, "kyc_status">>(),
+        ]);
 
       if (shopError || !shopRow) {
         return fail("商戶店舖資料尚未就緒，無法建立商戶商品");
+      }
+
+      if (kycError) {
+        console.error("[createListing] kyc_records", kycError.message);
+        return fail("無法驗證商戶認證狀態，請稍後再試");
+      }
+
+      if (!isMerchantListingAllowed(kycRow?.kyc_status)) {
+        return fail("商戶認證審核中，暫不可上架商品");
       }
     }
 
@@ -903,6 +1130,8 @@ export async function createSealedListing(
       status: "active",
       seller_persona: sellerPersona,
       use_authentication: false,
+      extra_shipping_fee:
+        sellerPersona === "merchant" ? fields.extraShippingFee : 0,
     };
 
     if (fields.sourceCollectionId) {
@@ -938,6 +1167,7 @@ export async function createSealedListing(
     }
 
     revalidatePath("/marketplace");
+    revalidateHomeListingsCache();
     revalidatePath("/profile/user/collection");
     revalidatePath("/profile/user/inventory");
     revalidatePath("/profile/merchant/inventory");

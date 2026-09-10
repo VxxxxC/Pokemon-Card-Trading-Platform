@@ -11,7 +11,7 @@ export function ProductDetailSkeleton() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 lg:gap-8 items-start">
           <section className="lg:col-span-5 mb-6 lg:mb-0">
-            <div className="w-full aspect-[4/3] bg-[#26211C] rounded-2xl border border-[rgba(237,232,224,0.08)] animate-pulse" />
+            <div className="w-full max-w-[200px] sm:max-w-[220px] mx-auto lg:max-w-[240px] aspect-5/7 max-h-[min(38vh,300px)] rounded-lg bg-[#17130f] animate-pulse" />
           </section>
 
           <section className="lg:col-span-7 space-y-6">

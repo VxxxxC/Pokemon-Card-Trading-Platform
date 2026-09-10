@@ -9,7 +9,13 @@ import {
   type DbOfferSnippet,
 } from "@/app/lib/chat/mapDbChats";
 import { isDbChatRoomId, CHAT_THREAD_PAGE_SIZE } from "@/app/lib/chat/constants";
-import type { ChatRoom } from "@/app/store/useHkCardVaultStore";
+import {
+  isProfileUuid,
+  normalizeChatPartnerPersona,
+  type ChatPartnerPersona,
+} from "@/app/lib/chat/partnerRoomKey";
+import type { ChatRoom, Message } from "@/app/store/useHkCardVaultStore";
+import { requireActiveAuthUser } from "@/lib/auth/mutation-guard";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/supabase";
@@ -39,6 +45,16 @@ export type SendMessageResult =
   | { success: true; data: SendMessagePayload }
   | { success: false; error: string };
 
+export type EnsureChatRoomInput = {
+  partnerId: string;
+  partnerPersona?: ChatPartnerPersona;
+  viewerPersona?: ChatPartnerPersona;
+};
+
+export type EnsureChatRoomResult =
+  | { success: true; data: ChatRoom }
+  | { success: false; error: string };
+
 export type GetUserChatInboxResult =
   | { success: true; data: ChatRoom[] }
   | { success: false; error: string };
@@ -49,6 +65,10 @@ export type GetChatRoomThreadResult =
 
 export type LoadOlderChatRoomMessagesResult =
   | { success: true; data: ChatRoom; hasMore: boolean }
+  | { success: false; error: string };
+
+export type GetChatRoomMessagesSinceResult =
+  | { success: true; data: { messages: Message[] } }
   | { success: false; error: string };
 
 type InboxRpcPayload = {
@@ -341,6 +361,35 @@ async function fetchMessagesForRoom(
   };
 }
 
+const CHAT_DELTA_SYNC_LIMIT = 100;
+
+async function fetchMessagesSince(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  roomId: string,
+  sinceCreatedAt: string,
+): Promise<{ messages: DbChatMessageRow[]; error: string | null }> {
+  const trimmedSince = sinceCreatedAt.trim();
+  if (!trimmedSince) {
+    return { messages: [], error: "無效的同步時間" };
+  }
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select(
+      "id, room_id, content, created_at, sender_id, offer_id, member_order_id, merchant_order_id, is_system_warning",
+    )
+    .eq("room_id", roomId)
+    .gt("created_at", trimmedSince)
+    .order("created_at", { ascending: true })
+    .limit(CHAT_DELTA_SYNC_LIMIT);
+
+  if (error) {
+    return { messages: [], error: error.message };
+  }
+
+  return { messages: (data ?? []) as DbChatMessageRow[], error: null };
+}
+
 async function fetchOffersForMessageRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   messageRows: DbChatMessageRow[],
@@ -367,7 +416,9 @@ async function fetchOffersForMessageRows(
           status,
           modified_count,
           use_authentication,
+          listing_id,
           listings!offers_listing_id_fkey (
+            id,
             product_id,
             images,
             product_catalog!listings_product_id_fkey (
@@ -582,6 +633,94 @@ function parseRpcSendChatMessagePayload(
   };
 }
 
+function parseEnsureChatRoomPayload(data: unknown): DbChatRoomBaseRow | null {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const payload = data as Record<string, unknown>;
+  if (typeof payload.id !== "string" || !isDbChatRoomId(payload.id)) {
+    return null;
+  }
+
+  return payload as DbChatRoomBaseRow;
+}
+
+export async function ensureChatRoom(
+  input: EnsureChatRoomInput,
+): Promise<EnsureChatRoomResult> {
+  const partnerId = input.partnerId?.trim() ?? "";
+  const partnerPersona = normalizeChatPartnerPersona(input.partnerPersona);
+  const viewerPersona = normalizeChatPartnerPersona(input.viewerPersona);
+
+  if (!partnerId) {
+    return { success: false, error: "無效的對話對象" };
+  }
+
+  if (!isProfileUuid(partnerId)) {
+    return {
+      success: false,
+      error: "請使用用戶 ID 開啟對話，或用戶名搜尋功能尚未支援直接發送",
+    };
+  }
+
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "服務尚未設定" };
+  }
+
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, error: "請先登入後再開啟對話" };
+    }
+
+    const { data, error } = await (
+      supabase as unknown as {
+        rpc: (
+          fn: "rpc_ensure_chat_room",
+          args: {
+            p_partner_id: string;
+            p_partner_persona: ChatPartnerPersona;
+            p_viewer_persona: ChatPartnerPersona;
+          },
+        ) => Promise<{
+          data: unknown;
+          error: { message: string } | null;
+        }>;
+      }
+    ).rpc("rpc_ensure_chat_room", {
+      p_partner_id: partnerId,
+      p_partner_persona: partnerPersona,
+      p_viewer_persona: viewerPersona,
+    });
+
+    if (error) {
+      console.error("[ensureChatRoom] rpc", error.message);
+      return { success: false, error: error.message };
+    }
+
+    const parsedRoom = parseEnsureChatRoomPayload(data);
+    if (!parsedRoom) {
+      console.error("[ensureChatRoom] invalid rpc payload", data);
+      return { success: false, error: "建立對話回傳資料格式異常" };
+    }
+
+    const [room] = assembleDbChatLobbyRooms([parsedRoom], [], user.id);
+    if (!room) {
+      return { success: false, error: "建立對話失敗" };
+    }
+
+    return { success: true, data: room };
+  } catch (error) {
+    console.error("[ensureChatRoom]", error);
+    return { success: false, error: "建立對話時發生錯誤" };
+  }
+}
+
 export async function sendMessage(
   roomId: string,
   body: string,
@@ -609,14 +748,11 @@ export async function sendMessage(
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "請先登入後再發送訊息" };
+    const guard = await requireActiveAuthUser();
+    if (!guard.ok) {
+      return { success: false, error: guard.error };
     }
+    const { user, supabase } = guard;
 
     const rpcArgs: RpcSendChatMessageArgs = {
       p_room_id: trimmedRoomId,
@@ -788,6 +924,113 @@ export async function getChatRoomThread(
   } catch (error) {
     console.error("[getChatRoomThread]", error);
     return { success: false, error: "載入對話時發生錯誤" };
+  }
+}
+
+export async function getChatRoomMessagesSince(
+  roomId: string,
+  sinceCreatedAt: string,
+): Promise<GetChatRoomMessagesSinceResult> {
+  const trimmedRoomId = roomId.trim();
+  const trimmedSince = sinceCreatedAt.trim();
+
+  if (!trimmedRoomId || !isDbChatRoomId(trimmedRoomId)) {
+    return { success: false, error: "請選擇有效的聊天室" };
+  }
+
+  if (!trimmedSince) {
+    return { success: false, error: "無效的同步時間" };
+  }
+
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "服務尚未設定" };
+  }
+
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, error: "請先登入" };
+    }
+
+    const { data: room, error: roomError } = await supabase
+      .from("chat_rooms")
+      .select(
+        `
+          id,
+          buyer_id,
+          buyer_persona,
+          seller_id,
+          seller_persona,
+          created_at,
+          updated_at,
+          buyer:profiles!fk_chat_rooms_buyer (
+            id,
+            display_name,
+            role,
+            avatar_path
+          ),
+          seller:profiles!fk_chat_rooms_seller_id (
+            id,
+            display_name,
+            role,
+            avatar_path
+          )
+        `,
+      )
+      .eq("id", trimmedRoomId)
+      .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (roomError) {
+      console.error("[getChatRoomMessagesSince]", roomError.message);
+      return { success: false, error: "無法載入對話" };
+    }
+
+    if (!room) {
+      return { success: false, error: "找不到聊天室或無權限" };
+    }
+
+    const { messages, error: messagesError } = await fetchMessagesSince(
+      supabase,
+      trimmedRoomId,
+      trimmedSince,
+    );
+
+    if (messagesError) {
+      console.error("[getChatRoomMessagesSince]", messagesError);
+      return { success: false, error: "無法載入新訊息" };
+    }
+
+    if (messages.length === 0) {
+      return { success: true, data: { messages: [] } };
+    }
+
+    const { offers, error: offersError } = await fetchOffersForMessageRows(
+      supabase,
+      messages,
+    );
+
+    if (offersError) {
+      console.error("[getChatRoomMessagesSince]", offersError);
+      return { success: false, error: "無法載入出價資料" };
+    }
+
+    const offersById = new Map(offers.map((offer) => [offer.id, offer]));
+    const threadRoom = assembleDbChatThreadRoom(
+      room as DbChatRoomBaseRow,
+      messages,
+      offersById,
+      user.id,
+    );
+
+    return { success: true, data: { messages: threadRoom.messages } };
+  } catch (error) {
+    console.error("[getChatRoomMessagesSince]", error);
+    return { success: false, error: "載入新訊息時發生錯誤" };
   }
 }
 

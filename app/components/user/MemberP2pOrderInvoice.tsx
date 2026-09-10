@@ -15,7 +15,7 @@ export function MemberP2pOrderInvoice({
     <div className="p-5 bg-[#26211C] border border-[rgba(237,232,224,0.08)] rounded-2xl space-y-4 shadow-md animate-fadeIn">
       <div className="flex items-center justify-between pb-2">
         <h3 className="font-sans font-extrabold text-[14.5px] text-[#eae1da]">
-          🧾 交易資產最終交收電子收據
+          交易資產最終交收電子收據
         </h3>
         <span
           className={cn(

@@ -31,7 +31,7 @@ export function getProfileHomePath(
 ): string {
   switch (role) {
     case "ADMIN":
-      return "/admin";
+      return "/admin/dashboard";
     case "GUEST":
       return "/auth";
     case "USER":
@@ -66,7 +66,7 @@ export function getRoleDefaultLandingPath(role: AuthRole): string {
     case "MERCHANT":
       return "/profile/merchant";
     case "ADMIN":
-      return "/admin";
+      return "/admin/dashboard";
     case "GUEST":
       return "/auth";
   }
@@ -85,11 +85,70 @@ export function getRoleSettingsPath(role: AuthRole): string {
   }
 }
 
+function isMemberDashboardPath(pathname: string): boolean {
+  return (
+    pathname === "/profile/user" || pathname.startsWith("/profile/user/")
+  );
+}
+
+function isMerchantDashboardPath(pathname: string): boolean {
+  return (
+    pathname === "/profile/merchant" ||
+    pathname.startsWith("/profile/merchant/")
+  );
+}
+
+function isAdminOrderDetailPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/profile/user/orderDetail/") ||
+    pathname.startsWith("/profile/merchant/orderDetail/")
+  );
+}
+
+/** Public storefront profile (`/profile/{userId}`), not member/merchant dashboards. */
+export function isPublicProfilePath(pathname: string): boolean {
+  if (!pathname.startsWith("/profile/")) {
+    return false;
+  }
+
+  if (isMemberDashboardPath(pathname) || isMerchantDashboardPath(pathname)) {
+    return false;
+  }
+
+  const rest = pathname.slice("/profile/".length);
+  const firstSegment = rest.split("/")[0];
+  return firstSegment.length > 0;
+}
+
+function isAdminAllowedPath(pathname: string): boolean {
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return true;
+  }
+
+  if (pathname === "/auth" || pathname.startsWith("/auth/")) {
+    return true;
+  }
+
+  if (pathname.startsWith("/api/")) {
+    return true;
+  }
+
+  if (isAdminOrderDetailPath(pathname) || isPublicProfilePath(pathname)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function isPathAllowedForRole(role: AuthRole, pathname: string): boolean {
+  if (role === "ADMIN") {
+    return isAdminAllowedPath(pathname);
+  }
+
   const requiresAuth =
     pathname === "/profile" ||
-    pathname.startsWith("/profile/user") ||
-    pathname.startsWith("/profile/merchant") ||
+    isMemberDashboardPath(pathname) ||
+    isMerchantDashboardPath(pathname) ||
     pathname.startsWith("/admin");
 
   if (role === "GUEST") {
@@ -97,15 +156,15 @@ export function isPathAllowedForRole(role: AuthRole, pathname: string): boolean 
   }
 
   if (pathname.startsWith("/admin")) {
-    return role === "ADMIN";
+    return false;
   }
 
-  if (pathname.startsWith("/profile/merchant")) {
-    return role === "MERCHANT" || role === "ADMIN";
+  if (isMerchantDashboardPath(pathname)) {
+    return role === "MERCHANT";
   }
 
-  if (pathname === "/profile" || pathname.startsWith("/profile/user")) {
-    return role === "USER" || role === "MERCHANT" || role === "ADMIN";
+  if (pathname === "/profile" || isMemberDashboardPath(pathname)) {
+    return role === "USER" || role === "MERCHANT";
   }
 
   return true;

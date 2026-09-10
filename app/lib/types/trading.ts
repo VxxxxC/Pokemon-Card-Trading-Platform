@@ -20,6 +20,7 @@ export interface SaleOrder {
   grade: string;
   amount: number;
   status: OrderStatus;
+  statusLabelOverride?: string;    // 🆕 託管步進器以外的細分狀態文案（例：待買家付款）
   createdAt: string;
   trackingNo?: string;
   orderType: 'B2C' | 'C2C';         // B2C processes bypass standard initial escrow step indexes; C2C holds rigid peer custody checks

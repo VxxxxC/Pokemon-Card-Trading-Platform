@@ -1,15 +1,7 @@
 "use client";
 
-/**
- * Pagination — 全站統一奢華分頁控制器（提純選配按鈕版）
- * Uses shadcn/ui Pagination primitives wrapped in luxury dark-golden design tokens.
- * Purely client-side (onClick + state) — NO window.location.href or anchor navigation.
- *
- * Renamed from MarketPagination → Pagination (global registry unification).
- * New: `enableScroll` boolean property gate controls window/container scroll side-effects.
- */
-
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Pagination as PaginationPrimitive,
   PaginationContent,
@@ -33,6 +25,8 @@ interface PaginationProps {
    *  Defaults to `true`. Pass `false` to bypass ALL scroll side-effects — pure
    *  in-place client-side data state slicing with zero viewport displacement. */
   enableScroll?: boolean;
+  /** Hide the summary line above page controls (use when totals are shown elsewhere). */
+  showInfoStrip?: boolean;
   className?: string;
   scrollToViewId?: string;
   scrollBlock?: ScrollLogicalPosition;
@@ -42,12 +36,24 @@ interface PaginationProps {
 function buildPageWindow(
   current: number,
   total: number,
+  maxVisible = 7,
 ): (number | "ellipsis")[] {
-  if (total <= 7) {
+  if (total <= maxVisible) {
     return Array.from({ length: total }, (_, i) => i + 1);
   }
 
   const pages: (number | "ellipsis")[] = [];
+
+  if (maxVisible <= 5) {
+    if (current <= 2) {
+      pages.push(1, 2, 3, "ellipsis", total);
+    } else if (current >= total - 1) {
+      pages.push(1, "ellipsis", total - 2, total - 1, total);
+    } else {
+      pages.push(1, "ellipsis", current, "ellipsis", total);
+    }
+    return pages;
+  }
 
   if (current <= 4) {
     pages.push(1, 2, 3, 4, 5, "ellipsis", total);
@@ -76,6 +82,22 @@ function buildPageWindow(
   return pages;
 }
 
+const MOBILE_PAGINATION_QUERY = "(max-width: 639px)";
+
+function subscribeMobilePagination(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia(MOBILE_PAGINATION_QUERY);
+  mediaQuery.addEventListener("change", onStoreChange);
+  return () => mediaQuery.removeEventListener("change", onStoreChange);
+}
+
+function getMobilePaginationSnapshot() {
+  return window.matchMedia(MOBILE_PAGINATION_QUERY).matches;
+}
+
+function getMobilePaginationServerSnapshot() {
+  return true;
+}
+
 export function Pagination({
   currentPage,
   totalPages,
@@ -85,14 +107,25 @@ export function Pagination({
   itemsPerPage,
   hideControls = false,
   enableScroll = true, // 🟢 預設開啟：保持全站原有平滑回頂行為不變
+  showInfoStrip = true,
   className,
   scrollToViewId,
   scrollBlock = "nearest",
 }: PaginationProps) {
+  const isMobilePagination = useSyncExternalStore(
+    subscribeMobilePagination,
+    getMobilePaginationSnapshot,
+    getMobilePaginationServerSnapshot,
+  );
+
   // Do not render when there's nothing to paginate
   if (totalPages <= 1) return null;
 
-  const pages = buildPageWindow(currentPage, totalPages);
+  const pages = buildPageWindow(
+    currentPage,
+    totalPages,
+    isMobilePagination ? 5 : 7,
+  );
 
   // Compute the visible slice range for the info strip
   const rangeStart =
@@ -128,41 +161,42 @@ export function Pagination({
   };
 
   return (
-    <div className={`flex flex-col items-center gap-3 pt-4 ${className ?? ""}`}>
-      {/* Info strip */}
-      {rangeStart != null && rangeEnd != null && totalItems != null && (
-        <p className="font-mono text-[10.5px] text-[#8A8680] tracking-wider uppercase select-none">
-          顯示第 <span className="text-brand font-bold">{rangeStart}</span> –{" "}
-          <span className="text-brand font-bold">{rangeEnd}</span> / 共{" "}
-          <span className="text-[#d4c4b7]">{totalItems}</span> {itemLabel} ·{" "}
-          <span className="text-[#d4c4b7]">
-            第 {currentPage} / {totalPages} 頁
-          </span>
+    <div
+      className={`flex w-full max-w-full flex-col items-center gap-2 overflow-hidden pt-3 ${className ?? ""}`}
+    >
+      {showInfoStrip &&
+        rangeStart != null &&
+        rangeEnd != null &&
+        totalItems != null && (
+        <p className="font-mono text-[10px] text-text-disabled select-none text-center">
+          顯示第 <span className="text-brand font-bold">{rangeStart}</span>–
+          <span className="text-brand font-bold">{rangeEnd}</span>
+          <span className="text-text-disabled/70"> / {totalItems} {itemLabel}</span>
         </p>
       )}
 
-      <PaginationPrimitive>
-        <PaginationContent className="gap-1">
-          {/* ← Prev (🟢 根據開關動態隱藏) */}
+      <div className="w-full max-w-full overflow-x-auto scrollbar-none">
+        <PaginationPrimitive className="mx-auto w-max max-w-full">
+          <PaginationContent className="flex-nowrap justify-center gap-1">
           {!hideControls && (
             <PaginationItem>
               <button
                 type="button"
                 onClick={() => handlePageAction(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
-                className="flex items-center gap-1 h-8 px-3 rounded-[6px] font-sans font-semibold text-[11.5px] border border-white/5 bg-[#26211C] text-[#d4c4b7] hover:bg-[#322a24] hover:border-white/10 hover:text-[#eae1da] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] select-none focus:outline-none"
+                className="flex items-center justify-center gap-1 h-8 min-w-8 px-2 sm:px-3 shrink-0 whitespace-nowrap rounded-md font-sans font-semibold text-[11px] border border-[rgba(237,232,224,0.08)] bg-bg-card text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/40"
                 aria-label="上一頁"
               >
-                ‹ 上一頁
+                <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="hidden sm:inline">上一頁</span>
               </button>
             </PaginationItem>
           )}
 
-          {/* Page number buttons */}
           {pages.map((page, idx) =>
             page === "ellipsis" ? (
               <PaginationItem key={`ell-${idx}`}>
-                <PaginationEllipsis className="text-[#8A8680] w-8 h-8" />
+                <PaginationEllipsis className="text-text-disabled w-7 h-8 sm:w-8" />
               </PaginationItem>
             ) : (
               <PaginationItem key={page}>
@@ -170,10 +204,10 @@ export function Pagination({
                   type="button"
                   onClick={() => handlePageAction(page)}
                   aria-current={currentPage === page ? "page" : undefined}
-                  className={`w-8 h-8 rounded-[6px] font-mono text-[12px] font-bold border transition-all select-none focus:outline-none active:scale-[0.95] ${
+                  className={`w-7 h-8 sm:w-8 rounded-md font-mono text-[11px] sm:text-[12px] font-bold border transition-all select-none focus:outline-none active:scale-[0.95] ${
                     currentPage === page
-                      ? "bg-brand text-[#1A1612] border-brand shadow-sm shadow-brand/20"
-                      : "bg-[#26211C] text-[#d4c4b7] border-white/5 hover:bg-[#322a24] hover:border-brand/30 hover:text-[#eae1da]"
+                      ? "bg-brand text-[#1A1612] border-brand"
+                      : "bg-bg-card text-text-secondary border-[rgba(237,232,224,0.08)] hover:bg-bg-elevated hover:border-brand/30 hover:text-text-primary"
                   }`}
                 >
                   {page}
@@ -182,7 +216,6 @@ export function Pagination({
             ),
           )}
 
-          {/* Next → (🟢 根據開關動態隱藏) */}
           {!hideControls && (
             <PaginationItem>
               <button
@@ -191,15 +224,17 @@ export function Pagination({
                   handlePageAction(Math.min(totalPages, currentPage + 1))
                 }
                 disabled={currentPage === totalPages}
-                className="flex items-center gap-1 h-8 px-3 rounded-[6px] font-sans font-semibold text-[11.5px] border border-white/5 bg-[#26211C] text-[#d4c4b7] hover:bg-[#322a24] hover:border-white/10 hover:text-[#eae1da] transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] select-none focus:outline-none"
+                className="flex items-center justify-center gap-1 h-8 min-w-8 px-2 sm:px-3 shrink-0 whitespace-nowrap rounded-md font-sans font-semibold text-[11px] border border-[rgba(237,232,224,0.08)] bg-bg-card text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/40"
                 aria-label="下一頁"
               >
-                下一頁 ›
+                <span className="hidden sm:inline">下一頁</span>
+                <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
               </button>
             </PaginationItem>
           )}
         </PaginationContent>
       </PaginationPrimitive>
+      </div>
     </div>
   );
 }

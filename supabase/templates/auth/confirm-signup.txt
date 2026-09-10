@@ -1,0 +1,22 @@
+{{ if eq .Data.onboarding_intent "merchant_apply" }}
+歡迎申請 Cardvault HK 認證商戶
+
+感謝你申請成為認證商戶！請先確認電郵地址以啟用帳戶。
+確認後將帶你前往入駐申請頁，提交公司資料及 KYC 文件。
+通過審核後即可開設商戶櫥窗、連接 Stripe 收款，並管理 B2C 訂單與撥款。
+
+確認電郵並繼續入駐: {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup&next=/profile/user/merchant-apply
+
+Cardvault HK
+如非本人申請，請忽略此郵件。
+{{ else }}
+歡迎加入 Cardvault HK
+
+感謝註冊！請確認你的電郵地址以啟用帳戶。
+確認後即可開始瀏覽、議價與交易。
+
+確認電郵: {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup&next=/profile/user
+
+Cardvault HK
+如非本人註冊，請忽略此郵件。
+{{ end }}

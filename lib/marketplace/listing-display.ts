@@ -13,10 +13,11 @@ export function formatListingGrade(
   }
 
   const normalized = company.toUpperCase().trim();
+  const trimmedScore = score?.trim() ?? "";
   if (normalized === "RAW" || normalized === "RAW CARD") {
-    return { authority: "Raw Card", score: score ?? "" };
+    return { authority: "Raw Card", score: trimmedScore };
   }
-  return { authority: company, score: score ?? "" };
+  return { authority: company, score: trimmedScore };
 }
 
 export function formatTradeGradeLabel(

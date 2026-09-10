@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 import { submitUserReport } from "@/app/actions/reports";
 import {
@@ -249,10 +250,19 @@ export function ProfileHeaderWithChat({ member }: ProfileHeaderProps) {
                 🚩 舉報用戶
               </AlertDialogTrigger>
 
-              <AlertDialogContent className="bg-[#26211C] text-[#eae1da] border border-white/10 ring-0 shadow-[0_12px_40px_rgba(239,68,68,0.15)] rounded-2xl max-w-sm p-6 animate-scaleUp">
-                <AlertDialogHeader className="text-left place-items-start gap-1">
-                  <AlertDialogTitle className="text-[16px] font-black text-[#eae1da] flex items-center gap-2">
-                    🚩 舉報該商戶用戶
+              <AlertDialogContent className="max-w-sm gap-0 rounded-2xl border border-[rgba(237,232,224,0.08)] bg-[#26211C] p-5 text-[#eae1da] ring-0 shadow-[0_16px_48px_rgba(0,0,0,0.45)] animate-scaleUp max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto sm:p-6">
+                <AlertDialogCancel
+                  variant="ghost"
+                  size="icon"
+                  aria-label="關閉"
+                  className="absolute right-3 top-3 z-10 size-8 shrink-0 rounded-lg border border-white/10 bg-[#17130f] text-[#8A8680] hover:bg-[#1A1612] hover:text-[#eae1da]"
+                >
+                  <X className="size-4" aria-hidden />
+                </AlertDialogCancel>
+
+                <AlertDialogHeader className="text-left place-items-start gap-1 pb-3 pr-8">
+                  <AlertDialogTitle className="text-[15px] font-black text-[#eae1da]">
+                    舉報該商戶用戶
                   </AlertDialogTitle>
                   <AlertDialogDescription className="text-[11px] font-mono leading-normal text-[#8A8680] uppercase tracking-wider">
                     Merchant Compliance Audit Protocol
@@ -306,7 +316,7 @@ export function ProfileHeaderWithChat({ member }: ProfileHeaderProps) {
                       htmlFor="profile-report-details"
                       className="block font-mono text-[11px] text-[#d4c4b7] uppercase tracking-wide"
                     >
-                      舉報或投訴之詳細事實敘述
+                      詳細說明
                     </label>
                     <textarea
                       id="profile-report-details"
@@ -318,32 +328,21 @@ export function ProfileHeaderWithChat({ member }: ProfileHeaderProps) {
                     />
                   </div>
 
-                  <p className="font-sans text-[11px] leading-normal text-[#8A8680]">
-                    ⚠️
-                    聲明：平台嚴格禁止惡意惡作劇或虛假舉報。一經查實虛報，將面臨賬戶風控扣分限制。
+                  <p className="rounded-xl border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-[#c9b8a8]">
+                    <span className="font-semibold text-warning">聲明：</span>
+                    平台嚴格禁止惡意惡作劇或虛假舉報。一經查實虛報，將面臨賬戶風控扣分限制。
                   </p>
                 </div>
 
-                {/* 🟢 終極破局：徹底拋棄會引發橫向碰撞的 <AlertDialogFooter>
-                    直接手造垂直流式佈局原生 HTML <div> 容器，徹底封死 w-full 按鈕溢出 */}
-                <div className="flex flex-col gap-2 pt-1 w-full">
+                <div className="pt-4 w-full">
                   <AlertDialogAction
                     type="button"
                     onClick={handleReportConfirm}
                     disabled={isReportSubmitting}
-                    className="w-full h-11 bg-[#ef4444] hover:bg-[#dc2626] text-white font-sans font-black text-[13.5px] rounded-xl cursor-pointer shadow-[0_4px_20px_rgba(239,68,68,0.18)] active:scale-[0.97] transition-all focus:outline-none"
+                    className="h-11 w-full rounded-xl bg-brand font-sans text-[13px] font-semibold text-[#17130f] transition-colors hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isReportSubmitting ? "提交中…" : "🚀 確認提交安全審查"}
+                    {isReportSubmitting ? "提交中…" : "確認提交"}
                   </AlertDialogAction>
-                  <AlertDialogCancel
-                    onClick={() => {
-                      setReportCategory("");
-                      setReportDetails("");
-                    }}
-                    className="w-full h-10 bg-[#120F0C] hover:bg-[#1A1612] border border-white/[0.03] text-[#736c65] hover:text-[#eae1da] font-sans font-bold text-[12px] rounded-xl cursor-pointer transition-colors focus:outline-none"
-                  >
-                    取消返回
-                  </AlertDialogCancel>
                 </div>
               </AlertDialogContent>
             </AlertDialog>

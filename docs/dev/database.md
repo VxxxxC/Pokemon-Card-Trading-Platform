@@ -20,7 +20,7 @@
 | `app/components/shared/AddAssetModal.tsx` | `GlobalAssetPayload`、`itemType`、`selectedGrader/Score/Condition`、6 槽相片 | `listings` / `user_collections` |
 | `app/components/merchant/NewListingForm.tsx` | `itemType`、`photos:{url,remark}[6]`、級聯分級 | `listings` |
 | `app/store/useHkCardVaultStore.ts` | `Message`、`ChatRoom`、`SpecialTransactionData` | `messages` / `chat_rooms` |
-| `app/checkout/[id]/page.tsx` | `AVAILABLE_COUPONS`、`authFee=150`、`finalTotal` 公式 | `orders` / `coupons` |
+| `app/checkout/[id]/page.tsx` | `[id]` = 訂單 id / `ORD-*`；金額由 `rpc_prepare_merchant_order_payment` 權威計算（優惠券 UI 暫停用） | `merchant_orders` |
 | `app/components/market/WishlistTable.tsx` | `WishlistEntry` from `getWishlistEntries` | `product_watchlists` |
 | `app/components/rewards/CheckInCard.tsx` | `CHECK_IN_STEPS`（7 日積分階梯） | `gamification_stats` / `point_ledger` |
 | `app/store/useUIStore.ts` | `DemoRole = 'GUEST' \| 'USER' \| 'MERCHANT' \| 'ADMIN'` | RLS 角色守衛 |
@@ -47,6 +47,8 @@ CREATE TYPE listing_status AS ENUM ('draft', 'active', 'sold', 'pending');
 
 -- 全額託管訂單狀態機（對齊 app/lib/types/trading.ts OrderStatus）
 CREATE TYPE escrow_status AS ENUM ('payment', 'custody', 'shipped', 'grading', 'released', 'cancelled');
+-- 實作現況：B2C 用 escrow_state（見 §2.4.1），Payment Milestone 1 起首個狀態為
+-- 'pending_payment'（訂單已成立、買家未付款），Stripe 收款成功才轉 'payment_held'。
 
 -- 議價要約狀態（對齊 SpecialTransactionData.initialStatus）
 CREATE TYPE offer_status AS ENUM ('pending', 'accepted', 'rejected', 'countered');
@@ -260,6 +262,33 @@ CREATE INDEX idx_orders_buyer ON public.orders (buyer_id);
 CREATE INDEX idx_orders_seller ON public.orders (seller_id);
 CREATE INDEX idx_orders_status ON public.orders (escrow_status);
 ```
+
+> **實作現況：** 訂單已按賣家身份拆表為 `merchant_orders`（B2C）與 `member_orders`（C2C），
+> 上述 `orders` 為原始設計參考。B2C 金流欄位在 Payment Milestone 1
+> （migration `20260729110000_merchant_order_stripe_payment.sql`）補齊。
+
+#### 2.4.1 `merchant_orders` 金流欄位（Payment Milestone 1）
+
+```sql
+ALTER TABLE public.merchant_orders
+  ADD COLUMN IF NOT EXISTS item_subtotal   NUMERIC,            -- = final_price（成交價）
+  ADD COLUMN IF NOT EXISTS shipping_fee    NUMERIC NOT NULL DEFAULT 0,  -- SF=30 / meetup=0
+  ADD COLUMN IF NOT EXISTS auth_fee        NUMERIC NOT NULL DEFAULT 0,  -- 150 / 0
+  ADD COLUMN IF NOT EXISTS shipping_method TEXT,                -- 'sf' | 'meetup'
+  ADD COLUMN IF NOT EXISTS total_amount    NUMERIC,             -- 實際 Stripe 收款額
+  ADD COLUMN IF NOT EXISTS paid_at         TIMESTAMPTZ;         -- webhook 確認收款時間
+-- stripe_payment_intent_id 已存在；新增 partial index 供 webhook 反查
+CREATE INDEX IF NOT EXISTS idx_merchant_orders_stripe_payment_intent_id
+  ON public.merchant_orders (stripe_payment_intent_id)
+  WHERE stripe_payment_intent_id IS NOT NULL;
+```
+
+`escrow_state` enum 新增 `pending_payment`（`BEFORE 'payment_held'`，migration `20260729100000`）。
+> ⚠️ PostgreSQL 不允許同 transaction 內新增並使用 enum 值 → enum 與使用必須分開 migration。
+
+相關 RPC（詳見 [merchant-checkout/backend.md](./follow-up/merchant-checkout/backend.md)）：
+`rpc_buy_now_merchant_listing`、`rpc_prepare_merchant_order_payment`、
+`rpc_attach_merchant_order_payment_intent`、`rpc_mark_merchant_order_paid`（`service_role` only）。
 
 ### 2.5 `chat_rooms` 與 `messages` — 交易議價聊天艙
 

@@ -8,6 +8,22 @@
 
 ## Changelog
 
+### 2026-08-22 — Check-in rewards consolidation
+
+| Change | Detail |
+|--------|--------|
+| **`20260822130000`** | Archive `STREAK_30`; exclude `check_in_streak` / `check_in_cycle_day` from admin activity list (incl. archived), auto-grant, locked catalog; reject new upserts via `fn_validate_reward_template` |
+| **Admin** | 簽到計劃 tab at `/admin/campaigns?tab=check-in`; reward activity form no longer offers check-in triggers |
+| **Note** | 稱號「簽到達人」仍由 `gamification_stats` streak 驅動，與 STREAK_30 template 無關 |
+
+### 2026-08-22 — Check-in program MVP (DB-backed ladder + completion)
+
+| Change | Detail |
+|--------|--------|
+| **`20260822120000`** | `check_in_program` singleton; `execute_daily_check_in` reads ladder from DB; cycle-7 completion via `CHECK_IN_PROGRAM_COMPLETION` internal template; archive `CHECK_IN_DAY7_BONUS` |
+| **Admin** | `/admin/campaigns?tab=check-in`, `rpc_admin_upsert_check_in_program` |
+| **Member** | `get_check_in_program_for_member`, `CheckInCard` dynamic ladder + paused UI |
+
 ### 2026-07-19 — `check_in_cycle_day` progress projected streak (CheckInCard parity)
 
 | Change | Detail |

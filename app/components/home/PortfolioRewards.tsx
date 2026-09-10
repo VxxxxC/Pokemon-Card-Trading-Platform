@@ -19,7 +19,7 @@ export function PortfolioRewards() {
   if (!isLoggedIn) {
     return (
       <section
-        className="mb-8 rounded-[16px] bg-bg-card border border-[rgba(237,232,224,0.08)] p-6 text-center relative overflow-hidden"
+        className="mb-6 rounded-[16px] bg-bg-card border border-[rgba(237,232,224,0.08)] p-6 text-center relative overflow-hidden"
         aria-labelledby="portfolio-heading"
       >
         <div className="absolute inset-0 bg-[rgba(23,19,15,0.60)] backdrop-blur-sm z-10" />
@@ -47,7 +47,7 @@ export function PortfolioRewards() {
 
   return (
     <section
-      className="mb-8 rounded-[16px] bg-bg-card border border-[rgba(237,232,224,0.08)] p-5"
+      className="mb-6 rounded-[16px] bg-bg-card border border-[rgba(237,232,224,0.08)] p-5"
       aria-labelledby="portfolio-heading"
     >
       <div className="flex items-center justify-between mb-4">

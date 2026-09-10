@@ -1,15 +1,19 @@
 import type {
   InventoryGroupsPage,
+  InventoryStatusFilter,
   InventorySummary,
 } from "@/app/lib/inventory/types";
 import {
   filterInventoryListingsForDisplay,
-  groupListingsByProduct,
   matchesInventorySearch,
+  groupListingsByProduct,
   summarizeInventoryListings,
   type InventoryListingRow,
   type InventoryStatsRow,
 } from "@/lib/listings/build-inventory-groups";
+import {
+  fetchReservedListingIds,
+} from "@/lib/listings/inventory-reservation";
 import {
   inventoryPerfLog,
   inventoryPerfNow,
@@ -25,6 +29,7 @@ export type UserInventoryViewInput = {
   pageSize: number;
   query: string;
   sellerPersona?: "member" | "merchant";
+  statusFilter?: InventoryStatusFilter;
 };
 
 export type UserInventoryView = {
@@ -35,7 +40,7 @@ export type UserInventoryView = {
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
 const CATALOG_LIST_COLUMNS =
-  "id, name_zh, name_en, name_ja, card_number, display_id, set_code, image_url";
+  "id, name_zh, name_en, name_ja, card_number, display_id, set_code, image_url, rarity";
 
 const EMPTY_SUMMARY: InventorySummary = {
   totalListings: 0,
@@ -60,7 +65,7 @@ export async function fetchSellerListings(
   let query = supabase
     .from("listings")
     .select(
-      "id, product_id, price, grading_company, grading_score, images, status, seller_description, created_at",
+      "id, product_id, price, grading_company, grading_score, images, status, seller_description, created_at, use_authentication, extra_shipping_fee",
     )
     .eq("seller_id", userId);
 
@@ -130,11 +135,13 @@ function buildInventoryGroupsPage(
   catalogById: Map<string, CatalogRow>,
   statsByListingId: Map<string, InventoryStatsRow>,
   input: UserInventoryViewInput,
+  reservedListingIds: ReadonlySet<string>,
 ): InventoryGroupsPage {
   let groups = groupListingsByProduct({
     listings,
     catalogById,
     statsByListingId,
+    reservedListingIds,
   });
 
   if (input.query) {
@@ -187,10 +194,12 @@ export async function loadUserInventoryView(
   }
 
   const contextStart = isInventoryPerfLogEnabled() ? inventoryPerfNow() : 0;
-  const { catalogById, statsByListingId } = await loadInventoryContext(
-    supabase,
-    listings,
-  );
+  const listingIds = listings.map((listing) => listing.id);
+  const [context, reservedListingIds] = await Promise.all([
+    loadInventoryContext(supabase, listings),
+    fetchReservedListingIds(supabase, userId, listingIds),
+  ]);
+  const { catalogById, statsByListingId } = context;
 
   if (isInventoryPerfLogEnabled()) {
     inventoryPerfLog(
@@ -198,13 +207,20 @@ export async function loadUserInventoryView(
     );
   }
 
+  const filteredListings = filterInventoryListingsForDisplay(
+    listings,
+    input.statusFilter ?? "active",
+    reservedListingIds,
+  );
+
   return {
-    summary: summarizeInventoryListings(listings),
+    summary: summarizeInventoryListings(listings, reservedListingIds),
     page: buildInventoryGroupsPage(
-      filterInventoryListingsForDisplay(listings),
+      filteredListings,
       catalogById,
       statsByListingId,
       input,
+      reservedListingIds,
     ),
   };
 }

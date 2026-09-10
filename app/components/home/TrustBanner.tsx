@@ -24,33 +24,30 @@ const steps = [
 export function TrustBanner() {
   return (
     <section
-      className="mb-8 rounded-[16px] bg-bg-card border border-[rgba(237,232,224,0.08)] px-5 py-6 lg:px-8"
+      className="border-y border-white/[0.08] py-3 sm:py-3.5"
       aria-labelledby="trust-heading"
     >
       <h2
         id="trust-heading"
-        className="font-sans font-semibold text-[16px] text-text-primary mb-5 text-center"
+        className="font-sans font-semibold text-[11px] sm:text-[13px] text-text-secondary mb-1.5 sm:mb-2 text-center leading-snug"
       >
         鑑定託管・三步即享安心交易
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6">
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-3 lg:gap-5">
         {steps.map((step) => {
           const Icon = step.icon;
           return (
             <div
               key={step.number}
-              className="flex flex-col items-center text-center"
+              className="flex min-w-0 flex-col items-center text-center px-0.5"
             >
-              <div className="w-12 h-12 rounded-full bg-[rgba(212,165,116,0.10)] border border-[rgba(212,165,116,0.15)] flex items-center justify-center mb-3">
-                <Icon />
+              <div className="mb-1 flex size-7 sm:size-9 items-center justify-center rounded-full border border-brand/15 bg-brand/10">
+                <Icon className="size-[14px] sm:size-[18px]" />
               </div>
-              <div className="font-mono text-[11px] text-brand mb-1">
-                步驟 {step.number}
-              </div>
-              <h3 className="font-sans font-semibold text-[14px] text-text-primary mb-1">
+              <h3 className="font-sans font-semibold text-[10px] sm:text-[12px] text-text-primary leading-tight">
                 {step.title}
               </h3>
-              <p className="font-sans text-[12px] text-text-secondary leading-relaxed max-w-[200px]">
+              <p className="hidden sm:block font-sans text-[10px] text-text-disabled leading-snug mt-0.5">
                 {step.description}
               </p>
             </div>
@@ -61,11 +58,10 @@ export function TrustBanner() {
   );
 }
 
-function ShieldIcon() {
+function ShieldIcon({ className }: { className?: string }) {
   return (
     <svg
-      width="22"
-      height="22"
+      className={className}
       viewBox="0 0 24 24"
       fill="none"
       stroke="#d4a574"
@@ -79,11 +75,10 @@ function ShieldIcon() {
   );
 }
 
-function CheckIcon() {
+function CheckIcon({ className }: { className?: string }) {
   return (
     <svg
-      width="22"
-      height="22"
+      className={className}
       viewBox="0 0 24 24"
       fill="none"
       stroke="#d4a574"
@@ -98,11 +93,10 @@ function CheckIcon() {
   );
 }
 
-function TruckIcon() {
+function TruckIcon({ className }: { className?: string }) {
   return (
     <svg
-      width="22"
-      height="22"
+      className={className}
       viewBox="0 0 24 24"
       fill="none"
       stroke="#d4a574"

@@ -1,0 +1,2793 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "F-M-01",
+      "name": "登入／登出",
+      "kind": "page",
+      "component": "app/auth/AuthForm.tsx",
+      "action": "app/actions/auth.ts",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f01-member-auth-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "auth-login",
+          "path": "/auth",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "登入"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "login-email",
+              "role": "textbox",
+              "locator": "input[name=\"email\"]"
+            },
+            {
+              "id": "login-password",
+              "role": "textbox",
+              "locator": "input[name=\"password\"]"
+            },
+            {
+              "id": "login-submit",
+              "role": "button",
+              "locator": "form button[type=\"submit\"]"
+            }
+          ]
+        },
+        {
+          "id": "settings-logout",
+          "path": "/profile/user/settings",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "登出"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "settings-heading",
+              "role": "text",
+              "name": "帳戶設定"
+            },
+            {
+              "id": "logout-button",
+              "role": "button",
+              "name": "登出"
+            },
+            {
+              "id": "profile-section",
+              "role": "text",
+              "name": "個人資料"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-02",
+      "name": "忘記／重設密碼",
+      "kind": "page",
+      "component": "app/auth/forgot-password/ForgotPasswordForm.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f01-member-auth-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "forgot-password",
+          "path": "/auth/forgot-password",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "忘記密碼"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "forgot-heading",
+              "role": "heading",
+              "name": "忘記密碼"
+            },
+            {
+              "id": "email-field",
+              "role": "textbox",
+              "pattern": "電子郵件"
+            },
+            {
+              "id": "send-reset",
+              "role": "button",
+              "name": "發送重設連結"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-03",
+      "name": "停權帳號 → /auth/suspended",
+      "kind": "page",
+      "component": "app/auth/suspended/SuspendedAccountClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f01-member-auth-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "suspended",
+          "path": "/auth/suspended?type=suspend",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "帳戶已暫停"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "suspended-message",
+              "role": "text",
+              "name": "帳戶已暫停"
+            },
+            {
+              "id": "logout-return",
+              "role": "button",
+              "name": "登出並返回登入"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-04",
+      "name": "首頁",
+      "kind": "page",
+      "component": "app/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-b01-home-ticker-currency.spec.ts",
+        "e2e/partner/member/p-b02-home-ticker-live-data.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "home",
+          "path": "/",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "[aria-label=\"最新平台成交\"]"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "price-ticker",
+              "role": "text",
+              "locator": "[aria-label=\"最新平台成交\"]"
+            },
+            {
+              "id": "hero-heading",
+              "role": "heading",
+              "name": "搜尋你的目標卡牌"
+            },
+            {
+              "id": "nav-marketplace",
+              "role": "link",
+              "locator": "header nav a[href=\"/marketplace\"], nav.lg\\:hidden a[href=\"/marketplace\"], footer a[href=\"/marketplace\"]"
+            },
+            {
+              "id": "premium-merchant-section",
+              "role": "heading",
+              "name": "認證商家・鑑定託管保障",
+              "optional": true
+            },
+            {
+              "id": "c2c-arrivals-section",
+              "role": "heading",
+              "name": "最新 C2C 現貨上架",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-05",
+      "name": "市集／賣家 storefront",
+      "kind": "page",
+      "component": "app/marketplace/[id]/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "storefront",
+          "path": "/marketplace/{sellerId}",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "認證商戶"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "certified-merchant",
+              "role": "text",
+              "pattern": "認證商戶"
+            },
+            {
+              "id": "storefront-search",
+              "role": "textbox",
+              "locator": "input[placeholder*=\"搜尋此商戶\"]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-06",
+      "name": "搜尋＋出價／議價",
+      "kind": "page",
+      "component": "app/marketplace/MarketplacePageClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "marketplace-search",
+          "path": "/marketplace",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "大盤市場"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "market-search",
+              "role": "text",
+              "locator": "input[type=\"search\"][placeholder*=\"搜尋卡牌\"]"
+            },
+            {
+              "id": "market-heading",
+              "role": "heading",
+              "pattern": "大盤市場",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-07",
+      "name": "商品詳情＋Buy-now",
+      "kind": "page",
+      "component": "app/marketplace/product/[id]/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-a01-inventory-auth-marketplace.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "product-detail",
+          "path": "/marketplace/product/{productId}",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#live-order-book-panel"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "order-book-panel",
+              "role": "text",
+              "locator": "#live-order-book-panel"
+            },
+            {
+              "id": "order-book-sort",
+              "role": "text",
+              "pattern": "最平售價優先"
+            },
+            {
+              "id": "buy-now-button",
+              "role": "button",
+              "pattern": "立即購買",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-08",
+      "name": "公開 profile＋評價頁",
+      "kind": "page",
+      "component": "app/profile/[id]/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "public-profile",
+          "path": "/profile/{sellerId}",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "完成交易"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "total-trades",
+              "role": "text",
+              "name": "完成交易"
+            },
+            {
+              "id": "active-listings",
+              "role": "text",
+              "pattern": "上架中的商品"
+            },
+            {
+              "id": "report-user",
+              "role": "button",
+              "pattern": "舉報用戶",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "id": "public-ratings",
+          "path": "/profile/{sellerId}/rating",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "全量信用評價歷史"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "ratings-heading",
+              "role": "heading",
+              "name": "全量信用評價歷史"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-09",
+      "name": "會員 dashboard",
+      "kind": "page",
+      "component": "app/profile/user/(dashboard)/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f01-member-auth-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "member-dashboard",
+          "path": "/profile/user",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "成交次數"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "trades-count",
+              "role": "text",
+              "pattern": "成交次數"
+            },
+            {
+              "id": "collection-count",
+              "role": "text",
+              "pattern": "持有卡牌數",
+              "optional": true
+            },
+            {
+              "id": "rewards-link",
+              "role": "link",
+              "pattern": "進入獎勵及任務專區",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-10",
+      "name": "Collection／wishlist",
+      "kind": "page",
+      "component": "app/profile/user/(dashboard)/collection/UserCollectionClient.tsx",
+      "surfaces": [
+        {
+          "id": "collection",
+          "path": "/profile/user/collection",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "我的持有卡牌庫"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "cards-heading",
+              "role": "heading",
+              "locator": "#cards-heading"
+            },
+            {
+              "id": "add-card-button",
+              "role": "button",
+              "name": "收錄新卡"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-11",
+      "name": "Inventory／持有卡",
+      "kind": "page",
+      "component": "app/profile/user/(dashboard)/inventory/UserInventoryClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "member-inventory",
+          "path": "/profile/user/inventory",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "上架中"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "listings-heading",
+              "role": "heading",
+              "locator": "#listings-heading"
+            },
+            {
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
+            },
+            {
+              "id": "add-product",
+              "role": "button",
+              "pattern": "新增商品",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-12",
+      "name": "會員設定",
+      "kind": "page",
+      "component": "app/profile/user/settings/UserSettingsClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f01-member-auth-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "member-settings",
+          "path": "/profile/user/settings",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "個人資料"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "settings-heading",
+              "role": "text",
+              "name": "帳戶設定"
+            },
+            {
+              "id": "profile-section",
+              "role": "text",
+              "name": "個人資料"
+            },
+            {
+              "id": "save-changes",
+              "role": "button",
+              "name": "儲存更改"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-13",
+      "name": "即時對話",
+      "kind": "embedded",
+      "component": "app/components/chat/GlobalChatConsole.tsx",
+      "action": "app/actions/chat.ts",
+      "partnerSpecs": [
+        "e2e/partner/system/p-a07-chat-avatar-persona.spec.ts",
+        "e2e/partner/system/p-a08-inbox-unread-badge.spec.ts",
+        "e2e/partner/system/p-b05-chat-paid-order-cta.spec.ts",
+        "e2e/partner/system/p-c02-chat-session-isolation.spec.ts",
+        "e2e/partner/system/p-c03-chat-history-sync.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "chat-entry-trading",
+          "path": "/profile/user/trading",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#user-trading-heading"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            }
+          ]
+        }
+      ],
+      "note": "全站 overlay；L3 由 Partner chat specs 守衛"
+    },
+    {
+      "id": "F-M-14",
+      "name": "C2P 面交全鏈",
+      "kind": "embedded",
+      "component": "app/profile/user/(dashboard)/trading/UserTradingClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "member-trading",
+          "path": "/profile/user/trading",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#user-trading-heading"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            }
+          ]
+        }
+      ],
+      "note": "全鏈 L3：e2e/member-trading-p2p.spec.ts"
+    },
+    {
+      "id": "F-M-15",
+      "name": "議價 offer 往返",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "offer-marketplace",
+          "path": "/marketplace/product/{productId}",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#live-order-book-panel"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "order-book-panel",
+              "role": "text",
+              "locator": "#live-order-book-panel"
+            },
+            {
+              "id": "buy-now-button",
+              "role": "button",
+              "pattern": "立即購買",
+              "optional": true
+            }
+          ]
+        }
+      ],
+      "note": "L3：e2e/member-offer-negotiation.spec.ts"
+    },
+    {
+      "id": "F-M-16",
+      "name": "C2C 鑑定 escrow 全鏈",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-a05-c2c-auth-seller-invoice.spec.ts",
+        "e2e/partner/member/p-d01-member-auth-invoice-financial.spec.ts",
+        "e2e/partner/member/p-d01b-member-auth-invoice-buyer.spec.ts",
+        "e2e/partner/member/p-d02-trading-list-order-amount.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "auth-trading-list",
+          "path": "/profile/user/trading",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#user-trading-heading"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            }
+          ]
+        }
+      ],
+      "note": "L3：member-auth-escrow + Partner P-A05"
+    },
+    {
+      "id": "F-M-17",
+      "name": "訂單詳情（P2P／鑑定）",
+      "kind": "embedded",
+      "component": "app/components/user/MemberOrderDetailView.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-a03-b2c-auth-stepper-courier.spec.ts",
+        "e2e/partner/member/p-a04-b2c-auth-confirm-dialog.spec.ts",
+        "e2e/partner/member/p-a05-c2c-auth-seller-invoice.spec.ts",
+        "e2e/partner/member/p-d01-member-auth-invoice-financial.spec.ts",
+        "e2e/partner/member/p-d01b-member-auth-invoice-buyer.spec.ts",
+        "e2e/partner/member/p-d04-merchant-b2c-invoice-financial.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "order-detail-entry",
+          "path": "/profile/user/trading",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#user-trading-heading"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            }
+          ]
+        }
+      ],
+      "note": "動態 /profile/user/orderDetail/[id]；L3 Partner + nightly"
+    },
+    {
+      "id": "F-M-18",
+      "name": "交易列表／篩選 smoke",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/member/p-c01-trading-filter-counts.spec.ts",
+        "e2e/partner/member/p-d02-trading-list-order-amount.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "trading-filters",
+          "path": "/profile/user/trading",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "待處理"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#user-order-search"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            }
+          ],
+          "stateVariants": [
+            {
+              "id": "pending-tab",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "pattern": "待處理"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "pending-heading",
+                  "role": "heading",
+                  "pattern": "交易管理"
+                },
+                {
+                  "id": "pending-persona-buy",
+                  "role": "button",
+                  "pattern": "買單"
+                },
+                {
+                  "id": "pending-persona-sell",
+                  "role": "button",
+                  "pattern": "賣單"
+                }
+              ]
+            },
+            {
+              "id": "buy-persona",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "pattern": "買單"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "buy-persona-sell",
+                  "role": "button",
+                  "pattern": "賣單"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-19",
+      "name": "B2C checkout＋券",
+      "kind": "embedded",
+      "component": "app/checkout/[id]/CheckoutClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-b06-checkout-completed-guard.spec.ts",
+        "e2e/partner/member/p-b07-order-invoice-coupon.spec.ts",
+        "e2e/partner/member/p-d03-checkout-coupon-subsidy.spec.ts",
+        "e2e/partner/member/p-e08b-merchant-auth-checkout-breakdown.spec.ts",
+        "e2e/partner/member/p-e08c-merchant-direct-auth-breakdown.spec.ts",
+        "e2e/partner/member/p-e08d-merchant-direct-sf-breakdown.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "rewards-wallet",
+          "path": "/profile/user/rewards",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "帳戶總積分餘額"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "rewards-heading",
+              "role": "heading",
+              "name": "我的優惠劵"
+            },
+            {
+              "id": "campaigns-hub-link",
+              "role": "link",
+              "name": "前往限時搶券 · 積分商城"
+            },
+            {
+              "id": "coupon-tab-usable",
+              "role": "button",
+              "pattern": "^可使用"
+            }
+          ]
+        },
+        {
+          "id": "checkout-wizard",
+          "path": "/checkout/{orderId}",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "訂單確認"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "checkout-heading",
+              "role": "heading",
+              "pattern": "訂單確認|安全託管付款"
+            },
+            {
+              "id": "checkout-summary",
+              "role": "text",
+              "pattern": "訂單財務明細"
+            },
+            {
+              "id": "checkout-coupon",
+              "role": "button",
+              "locator": "#checkout-coupon",
+              "optional": true
+            }
+          ]
+        }
+      ],
+      "note": "動態 /checkout/[id]（`E2E_CHECKOUT_ORDER_ID`）；L3 rewards + Partner P-B06/07"
+    },
+    {
+      "id": "F-M-20",
+      "name": "C2C 鑑定 checkout＋Admin 券",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f03-member-rewards-moderation.spec.ts",
+        "e2e/partner/member/p-d03-checkout-coupon-subsidy.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-campaigns-coupon",
+          "path": "/admin/campaigns",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "積分與獎勵活動"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "campaigns-heading",
+              "role": "heading",
+              "name": "積分與獎勵活動"
+            },
+            {
+              "id": "check-in-tab",
+              "role": "tab",
+              "pattern": "^簽到計劃"
+            },
+            {
+              "id": "activities-tab",
+              "role": "tab",
+              "pattern": "^獎勵活動"
+            }
+          ]
+        }
+      ],
+      "note": "L3：member-auth-coupon-admin.spec.ts"
+    },
+    {
+      "id": "F-M-21",
+      "name": "積分／獎勵錢包兌換",
+      "kind": "page",
+      "component": "app/profile/user/rewards/page.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-e10-rewards-coupon.spec.ts",
+        "e2e/partner/member/p-f03-member-rewards-moderation.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "rewards",
+          "path": "/profile/user/rewards",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "可使用"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "rewards-heading",
+              "role": "heading",
+              "name": "我的優惠劵"
+            },
+            {
+              "id": "campaigns-hub-link",
+              "role": "link",
+              "name": "前往限時搶券 · 積分商城"
+            },
+            {
+              "id": "coupon-tab-usable",
+              "role": "button",
+              "pattern": "^可使用"
+            }
+          ]
+        },
+        {
+          "id": "member-campaigns",
+          "path": "/profile/user/campaigns",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "限時搶券"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "flash-tab",
+              "role": "button",
+              "name": "限時搶券"
+            },
+            {
+              "id": "catalog-tab",
+              "role": "button",
+              "name": "積分商城"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-22",
+      "name": "舉報用戶",
+      "kind": "embedded",
+      "component": "app/components/report/UserReportModal.tsx",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f03-member-rewards-moderation.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "report-profile",
+          "path": "/profile/{sellerId}",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "舉報此用戶"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "total-trades",
+              "role": "text",
+              "name": "完成交易"
+            },
+            {
+              "id": "report-user",
+              "role": "button",
+              "name": "舉報用戶"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-23",
+      "name": "舉報結果通知",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "disputes-inbox",
+          "path": "/admin/disputes",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "disputes-heading",
+              "role": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            },
+            {
+              "id": "case-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            }
+          ]
+        }
+      ],
+      "note": "L3：report-outcome-notification.spec.ts"
+    },
+    {
+      "id": "F-M-24",
+      "name": "公告列表（公開）",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "announcements",
+          "path": "/announcements",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "平台官方公告"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "announcements-heading",
+              "role": "heading",
+              "name": "平台官方公告"
+            },
+            {
+              "id": "active-events-tab",
+              "role": "button",
+              "pattern": "進行中活動"
+            },
+            {
+              "id": "past-announcements-tab",
+              "role": "button",
+              "pattern": "過往公告"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-25",
+      "name": "條款／私隱",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "terms",
+          "path": "/terms",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "article"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "terms-h1",
+              "role": "heading",
+              "pattern": "服務條款"
+            },
+            {
+              "id": "terms-body",
+              "role": "text",
+              "locator": "article"
+            }
+          ]
+        },
+        {
+          "id": "privacy",
+          "path": "/privacy",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "article"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "privacy-h1",
+              "role": "heading",
+              "pattern": "私隱政策"
+            },
+            {
+              "id": "privacy-body",
+              "role": "text",
+              "locator": "article"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-M-26",
+      "name": "賣家視角交易（member 做 seller）",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "member-seller-trading",
+          "path": "/profile/user/trading",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#user-trading-heading"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "locator": "#user-trading-heading"
+            },
+            {
+              "id": "orders-list",
+              "role": "text",
+              "locator": "#orders-list"
+            },
+            {
+              "id": "status-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "status-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "persona-sell",
+              "role": "button",
+              "pattern": "^賣單"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-01",
+      "name": "商戶 dashboard",
+      "kind": "page",
+      "component": "app/profile/merchant/(dashboard)/MerchantOverviewClient.tsx",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-dashboard",
+          "path": "/profile/merchant",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "待處理訂單"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "pending-orders-heading",
+              "role": "heading",
+              "name": "待處理訂單"
+            },
+            {
+              "id": "kyc-status",
+              "role": "text",
+              "pattern": "KYC 已驗證|審核中"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-02",
+      "name": "商戶 trading 收件",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-b04-raw-filter.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-trading",
+          "path": "/profile/merchant/trading",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "交易管理"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "pattern": "交易管理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#merchant-order-search"
+            }
+          ],
+          "stateVariants": [
+            {
+              "id": "pending-subfilters",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "name": "待處理"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "sub-payment",
+                  "role": "checkbox",
+                  "name": "待付款"
+                },
+                {
+                  "id": "sub-grading",
+                  "role": "checkbox",
+                  "name": "鑑定中"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-03",
+      "name": "庫存／listing 管理",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-a01-inventory-auth-marketplace.spec.ts",
+        "e2e/partner/member/p-b08-grading-long-label.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-inventory",
+          "path": "/profile/merchant/inventory",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "上架中"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "listings-heading",
+              "role": "heading",
+              "locator": "#listings-heading"
+            },
+            {
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
+            },
+            {
+              "id": "add-product",
+              "role": "button",
+              "pattern": "新增商品",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-04",
+      "name": "上架／商品詳情（賣家）",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-a01-inventory-auth-marketplace.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-inventory-list",
+          "path": "/profile/merchant/inventory",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "input[placeholder*=\"搜尋卡牌名稱\"]"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "listings-heading",
+              "role": "heading",
+              "locator": "#listings-heading"
+            },
+            {
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
+            },
+            {
+              "id": "add-product",
+              "role": "button",
+              "pattern": "新增商品",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-05",
+      "name": "商戶設定",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-settings",
+          "path": "/profile/merchant/settings",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "店舖資料"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "settings-heading",
+              "role": "heading",
+              "name": "店舖資料"
+            },
+            {
+              "id": "shop-profile-heading",
+              "role": "heading",
+              "name": "店舖資料"
+            },
+            {
+              "id": "security-heading",
+              "role": "heading",
+              "name": "安全設定"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-06",
+      "name": "商戶財務",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts",
+        "e2e/partner/merchant/p-f04b-merchant-finance-settlement-amount.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-finance",
+          "path": "/profile/merchant/finance",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "Stripe Connect 帳戶"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "monthly-payout",
+              "role": "text",
+              "name": "本月撥款收入（已結算）"
+            },
+            {
+              "id": "payout-history",
+              "role": "heading",
+              "pattern": "撥款記錄"
+            },
+            {
+              "id": "stripe-connect-heading",
+              "role": "heading",
+              "name": "Stripe Connect 帳戶"
+            },
+            {
+              "id": "finance-search",
+              "role": "searchbox",
+              "name": "訂單編號 / Transfer ID"
+            },
+            {
+              "id": "finance-apply-filter",
+              "role": "button",
+              "name": "套用篩選"
+            },
+            {
+              "id": "finance-status-all",
+              "role": "link",
+              "name": "全部"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-07",
+      "name": "Analytics／Performance",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-performance",
+          "path": "/profile/merchant/performance",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "[aria-label=\"店舖經營與業績分析\"]"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "performance-heading",
+              "role": "text",
+              "locator": "[aria-label=\"店舖經營與業績分析\"]"
+            },
+            {
+              "id": "total-revenue",
+              "role": "text",
+              "name": "歷史累計總營業額"
+            },
+            {
+              "id": "total-trades",
+              "role": "text",
+              "name": "歷史累計總成交次數"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-08",
+      "name": "商戶申請／KYC",
+      "kind": "page",
+      "component": "app/profile/user/merchant-apply/MerchantApplyClient.tsx",
+      "action": "app/actions/merchant-kyc.ts",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f04b-merchant-kyc-apply.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-apply",
+          "path": "/profile/user/merchant-apply",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "公司資料"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "kyc-heading",
+              "role": "text",
+              "name": "公司資料"
+            },
+            {
+              "id": "submit-apply",
+              "role": "button",
+              "pattern": "提交商戶入駐申請",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-09",
+      "name": "Stripe Connect 入驻",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-f04-merchant-shell.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "connect-finance",
+          "path": "/profile/merchant/finance",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "Stripe Connect"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "stripe-connect-heading",
+              "role": "heading",
+              "name": "Stripe Connect 帳戶"
+            },
+            {
+              "id": "connect-status",
+              "role": "text",
+              "pattern": "已連結 · Express 帳戶|待完成收款設定"
+            }
+          ]
+        }
+      ],
+      "note": "Onboard via /api/stripe/connect/*；UI 入口在 finance"
+    },
+    {
+      "id": "F-C-10",
+      "name": "B2C 鑑定 checkout（買家側）",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-a03-b2c-auth-stepper-courier.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "b2c-marketplace",
+          "path": "/marketplace/product/{productId}",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "#live-order-book-panel"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "order-book-panel",
+              "role": "text",
+              "locator": "#live-order-book-panel"
+            },
+            {
+              "id": "buy-now-button",
+              "role": "button",
+              "pattern": "立即購買",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-11",
+      "name": "商戶訂單詳情",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-a06-c2b-seller-invoice.spec.ts",
+        "e2e/partner/system/p-a02-pending-payment-expiry-ui.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "merchant-trading-orders",
+          "path": "/profile/merchant/trading",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "交易管理"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "pattern": "交易管理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#merchant-order-search"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-C-12",
+      "name": "圖片上傳",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/merchant/p-a01-inventory-auth-marketplace.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "upload-inventory",
+          "path": "/profile/merchant/inventory",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "input[placeholder*=\"搜尋卡牌名稱\"]"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "listings-heading",
+              "role": "heading",
+              "locator": "#listings-heading"
+            },
+            {
+              "id": "tab-active",
+              "role": "tab",
+              "name": "上架中"
+            },
+            {
+              "id": "add-product",
+              "role": "button",
+              "pattern": "新增商品",
+              "optional": true
+            },
+            {
+              "id": "inventory-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋卡牌名稱\"]"
+            }
+          ]
+        }
+      ],
+      "note": "L1：tc-m30/m31 upload routes"
+    },
+    {
+      "id": "F-C-13",
+      "name": "商戶鑑定 grading E2E",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "merchant-trading-grading",
+          "path": "/profile/merchant/trading",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "交易管理"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "pattern": "交易管理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#merchant-order-search"
+            },
+            {
+              "id": "raw-filter",
+              "role": "checkbox",
+              "name": "只顯示 RAW/裸卡"
+            }
+          ]
+        }
+      ],
+      "note": "L3：verify:merchant-grading-e2e + integration grading"
+    },
+    {
+      "id": "F-A-01",
+      "name": "Admin dashboard",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-dashboard",
+          "path": "/admin/dashboard",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "平台淨營收"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "net-revenue",
+              "role": "text",
+              "name": "平台淨營收"
+            },
+            {
+              "id": "dashboard-heading",
+              "role": "heading",
+              "name": "管理員控制台",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-02",
+      "name": "平台設定",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-settings",
+          "path": "/admin/settings",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "單張卡牌保管鑑定費"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "financials-heading",
+              "role": "heading",
+              "locator": "#financials-heading"
+            },
+            {
+              "id": "auth-fee-label",
+              "role": "text",
+              "name": "單張卡牌保管鑑定費"
+            },
+            {
+              "id": "terms-heading",
+              "role": "heading",
+              "locator": "#terms-heading"
+            },
+            {
+              "id": "auth-settings-heading",
+              "role": "heading",
+              "locator": "#auth-settings-heading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-03",
+      "name": "券／活動／wizard",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-campaigns",
+          "path": "/admin/campaigns",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "積分與獎勵活動"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "campaigns-heading",
+              "role": "heading",
+              "name": "積分與獎勵活動"
+            },
+            {
+              "id": "check-in-tab",
+              "role": "tab",
+              "pattern": "^簽到計劃"
+            },
+            {
+              "id": "activities-tab",
+              "role": "tab",
+              "pattern": "^獎勵活動"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-04",
+      "name": "簽到計劃",
+      "kind": "page",
+      "surfaces": [
+        {
+          "id": "admin-check-in",
+          "path": "/admin/campaigns?tab=check-in",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "簽到計劃"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "check-in-tab",
+              "role": "tab",
+              "pattern": "^簽到計劃"
+            },
+            {
+              "id": "check-in-heading",
+              "role": "heading",
+              "name": "基本設定",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-05",
+      "name": "爭議／moderation",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-disputes",
+          "path": "/admin/disputes",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "disputes-heading",
+              "role": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            },
+            {
+              "id": "case-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-05b",
+      "name": "Merchant 非鑑定售後退款",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "admin-disputes-refund",
+          "path": "/admin/disputes",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "disputes-heading",
+              "role": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            },
+            {
+              "id": "case-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            }
+          ]
+        }
+      ],
+      "note": "L3：phase-h-refund integration + I-H14"
+    },
+    {
+      "id": "F-A-06",
+      "name": "鑑定 grading 操作",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-grading",
+          "path": "/admin/grading",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "鑑定工作台"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "grading-heading",
+              "role": "heading",
+              "name": "鑑定工作台"
+            },
+            {
+              "id": "tab-awaiting-intake",
+              "role": "button",
+              "name": "待入庫"
+            },
+            {
+              "id": "tab-grading",
+              "role": "button",
+              "name": "鑑定中"
+            }
+          ],
+          "stateVariants": [
+            {
+              "id": "grading-tab-active",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "name": "鑑定中"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "grading-tab-col-product",
+                  "role": "columnheader",
+                  "name": "商品"
+                },
+                {
+                  "id": "grading-tab-col-refund",
+                  "role": "columnheader",
+                  "name": "退款"
+                }
+              ]
+            },
+            {
+              "id": "intake-tab-active",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "name": "待入庫"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "intake-col-inbound",
+                  "role": "columnheader",
+                  "name": "入庫"
+                }
+              ]
+            },
+            {
+              "id": "outbound-tab-active",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "name": "待出庫"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "outbound-col-outbound",
+                  "role": "columnheader",
+                  "name": "出庫"
+                }
+              ]
+            },
+            {
+              "id": "settlement-tab-active",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "name": "待追償／寄回"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "settlement-col-refund",
+                  "role": "columnheader",
+                  "name": "退款"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-07",
+      "name": "商戶／KYC 審核",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-merchants",
+          "path": "/admin/merchants",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "商戶與 KYC 審查"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "merchant-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋公司名\"]"
+            },
+            {
+              "id": "merchants-heading",
+              "role": "heading",
+              "name": "商戶管理",
+              "optional": true
+            }
+          ],
+          "stateVariants": [
+            {
+              "id": "approved-filter",
+              "setup": [
+                {
+                  "action": "click",
+                  "role": "button",
+                  "pattern": "已批准"
+                }
+              ],
+              "requiredElements": [
+                {
+                  "id": "filter-rejected",
+                  "role": "button",
+                  "pattern": "已拒絕"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-08",
+      "name": "用戶目錄 user control",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-user-control",
+          "path": "/admin/user_control",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "用戶管理"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "user-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋名稱\"]"
+            },
+            {
+              "id": "users-heading",
+              "role": "heading",
+              "name": "用戶管控",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-09",
+      "name": "商品目錄 catalog",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-catalog",
+          "path": "/admin/catalog",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "手動錄入"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "manual-catalog-button",
+              "role": "button",
+              "pattern": "手動錄入"
+            },
+            {
+              "id": "catalog-heading",
+              "role": "heading",
+              "name": "卡牌資料庫",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-10",
+      "name": "出款／FPS／Stripe 財務",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-payouts",
+          "path": "/admin/payouts",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "財務與結算管控台"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "payouts-heading",
+              "role": "heading",
+              "name": "財務與結算管控台"
+            },
+            {
+              "id": "fps-batch",
+              "role": "tab",
+              "pattern": "^FPS 批次"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-11",
+      "name": "公告管理",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/admin/p-f05-admin-ops-smoke.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "admin-announcements",
+          "path": "/admin/announcements",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "首頁活動與公告管理"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "new-announcement",
+              "role": "link",
+              "name": "新增公告"
+            },
+            {
+              "id": "announcements-admin-heading",
+              "role": "heading",
+              "name": "公告管理",
+              "optional": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-A-12",
+      "name": "會員訂單 admin",
+      "kind": "headless",
+      "action": "app/actions/admin-member-orders.ts",
+      "note": "無獨立 admin 列表頁；dev RPC + integration TC-M40"
+    },
+    {
+      "id": "F-A-13",
+      "name": "爭議凍結出款",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "admin-disputes-freeze",
+          "path": "/admin/disputes",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "disputes-heading",
+              "role": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            },
+            {
+              "id": "case-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            }
+          ]
+        }
+      ],
+      "note": "L3：admin-dispute-freeze.spec.ts"
+    },
+    {
+      "id": "F-A-14",
+      "name": "Admin 建 C2C 券 parity",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "admin-campaigns-c2c",
+          "path": "/admin/campaigns",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "積分與獎勵活動"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "campaigns-heading",
+              "role": "heading",
+              "name": "積分與獎勵活動"
+            },
+            {
+              "id": "check-in-tab",
+              "role": "tab",
+              "pattern": "^簽到計劃"
+            },
+            {
+              "id": "activities-tab",
+              "role": "tab",
+              "pattern": "^獎勵活動"
+            }
+          ]
+        }
+      ],
+      "note": "L3：member-auth-coupon-admin.spec.ts"
+    },
+    {
+      "id": "F-S-01",
+      "name": "Stripe webhook",
+      "kind": "headless",
+      "note": "app/api/stripe/webhook；Admin 反映於 payouts/dashboard"
+    },
+    {
+      "id": "F-S-02",
+      "name": "Cron HTTP",
+      "kind": "headless",
+      "note": "app/api/cron/*；integration cron-routes"
+    },
+    {
+      "id": "F-S-03",
+      "name": "鑑定費／佣金 DB 邏輯",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "admin-fee-settings",
+          "path": "/admin/settings",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "平台基本交易佣金率"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "financials-heading",
+              "role": "heading",
+              "locator": "#financials-heading"
+            },
+            {
+              "id": "auth-fee-label",
+              "role": "text",
+              "name": "單張卡牌保管鑑定費"
+            }
+          ]
+        }
+      ],
+      "note": "L1：auth-fee + commission-rate integration"
+    },
+    {
+      "id": "F-S-04",
+      "name": "FPS／Connect 出款 pipeline",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "admin-fps",
+          "path": "/admin/payouts",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "FPS 批次"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "payouts-heading",
+              "role": "heading",
+              "name": "財務與結算管控台"
+            },
+            {
+              "id": "fps-batch",
+              "role": "tab",
+              "pattern": "^FPS 批次"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-05",
+      "name": "P2P AML 限額",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "aml-terms",
+          "path": "/terms",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "平台不提供退款"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "terms-h1",
+              "role": "heading",
+              "pattern": "服務條款"
+            },
+            {
+              "id": "terms-body",
+              "role": "text",
+              "locator": "article"
+            }
+          ]
+        }
+      ],
+      "note": "L1：p2p-aml-limits integration；出價 UI 在 marketplace"
+    },
+    {
+      "id": "F-S-06",
+      "name": "券 FSM／安全／PBT",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-b07-order-invoice-coupon.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "coupon-rewards",
+          "path": "/profile/user/rewards",
+          "role": "buyer",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "我的優惠劵"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "coupon-center",
+              "role": "heading",
+              "name": "我的優惠劵"
+            },
+            {
+              "id": "redeemable-label",
+              "role": "text",
+              "pattern": "可使用"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-07",
+      "name": "Moderation 退款 FSM",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "moderation-disputes",
+          "path": "/admin/disputes",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "disputes-heading",
+              "role": "heading",
+              "name": "舉報與爭議仲裁工作台"
+            },
+            {
+              "id": "case-search",
+              "role": "text",
+              "locator": "input[placeholder*=\"搜尋案件\"]"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-08",
+      "name": "Auth grading FSM",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/member/p-a05-c2c-auth-seller-invoice.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "grading-workbench",
+          "path": "/admin/grading",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "heading",
+              "name": "鑑定工作台"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "grading-heading",
+              "role": "heading",
+              "name": "鑑定工作台"
+            },
+            {
+              "id": "tab-awaiting-intake",
+              "role": "button",
+              "name": "待入庫"
+            },
+            {
+              "id": "tab-grading",
+              "role": "button",
+              "name": "鑑定中"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-09",
+      "name": "Config Contract parity",
+      "kind": "embedded",
+      "surfaces": [
+        {
+          "id": "cc-settings",
+          "path": "/admin/settings",
+          "role": "admin",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "核心財務與費用"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "financials-heading",
+              "role": "heading",
+              "locator": "#financials-heading"
+            },
+            {
+              "id": "auth-fee-label",
+              "role": "text",
+              "name": "單張卡牌保管鑑定費"
+            }
+          ]
+        }
+      ],
+      "note": "L1：CC integration suites"
+    },
+    {
+      "id": "F-S-10",
+      "name": "Mutation 存活",
+      "kind": "headless",
+      "note": "Stryker mutation；certify only"
+    },
+    {
+      "id": "F-S-11",
+      "name": "Platform legal SSR",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "legal-terms",
+          "path": "/terms",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "locator",
+              "name": "article"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "terms-h1",
+              "role": "heading",
+              "pattern": "服務條款"
+            },
+            {
+              "id": "terms-body",
+              "role": "text",
+              "locator": "article"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-12",
+      "name": "商戶未付款過期",
+      "kind": "embedded",
+      "partnerSpecs": [
+        "e2e/partner/system/p-a02-pending-payment-expiry-ui.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "expiry-trading",
+          "path": "/profile/merchant/trading",
+          "role": "seller",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "交易管理"
+            }
+          ],
+          "l2": false,
+          "requiredElements": [
+            {
+              "id": "trading-heading",
+              "role": "heading",
+              "pattern": "交易管理"
+            },
+            {
+              "id": "tab-all",
+              "role": "button",
+              "pattern": "^全部"
+            },
+            {
+              "id": "tab-pending",
+              "role": "button",
+              "pattern": "^待處理"
+            },
+            {
+              "id": "order-search",
+              "role": "text",
+              "locator": "#merchant-order-search"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F-S-13",
+      "name": "P2P 面交永不平台退款",
+      "kind": "page",
+      "partnerSpecs": [
+        "e2e/partner/member/p-f02-member-discovery.spec.ts"
+      ],
+      "surfaces": [
+        {
+          "id": "policy-terms",
+          "path": "/terms",
+          "role": "guest",
+          "assertions": [
+            {
+              "type": "text",
+              "pattern": "平台不提供退款"
+            }
+          ],
+          "requiredElements": [
+            {
+              "id": "terms-h1",
+              "role": "heading",
+              "pattern": "服務條款"
+            },
+            {
+              "id": "terms-body",
+              "role": "text",
+              "locator": "article"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -23,6 +23,8 @@ export function PwaHeroInstallButton() {
     );
   }
 
+  if (promptState === "WAITING") return null;
+
   // State B: Browser cooling — muted hint text
   return (
     <span

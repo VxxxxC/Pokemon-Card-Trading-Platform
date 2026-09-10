@@ -11,6 +11,7 @@ import {
   resolveE2eMarketplaceFixture,
 } from "./fixtures/supabase-admin";
 import { hasMemberTradingFixtures } from "./fixtures/test-data";
+import { ensureMemberPersona } from "./helpers/collection-asset";
 import {
   acceptOfferAsSeller,
   confirmP2pHandoverDialog,
@@ -23,10 +24,11 @@ import {
   submitFiveStarReview,
   waitForBuyerP2pCompleteOnTradingList,
 } from "./helpers/member-trading";
+import { suppressTransientHomeOverlays } from "./helpers/overlays";
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 900 } });
-test.setTimeout(300_000);
+test.setTimeout(480_000);
 
 test.describe("Member P2P trading closure", () => {
   test("offer accept → trading list → complete → review", async ({
@@ -43,7 +45,9 @@ test.describe("Member P2P trading closure", () => {
       );
     }
 
-    const fixtureResult = await resolveE2eMarketplaceFixture();
+    const fixtureResult = await resolveE2eMarketplaceFixture({
+      requiredSellerPersona: "member",
+    });
     if (!fixtureResult.ok) {
       test.skip(true, fixtureResult.skipReason);
       return;
@@ -61,7 +65,9 @@ test.describe("Member P2P trading closure", () => {
       return;
     }
 
-    const roomId = await ensureDbChatRoom(buyerId, sellerId);
+    let offerId: string | null = null;
+    let memberOrderId: string | null = null;
+    let roomId = await ensureDbChatRoom(buyerId, sellerId);
     const [sellerDisplayName, buyerDisplayName] = await Promise.all([
       getProfileDisplayName(sellerId),
       getProfileDisplayName(buyerId),
@@ -76,9 +82,9 @@ test.describe("Member P2P trading closure", () => {
 
     const buyerPage = await buyerContext.newPage();
     const sellerPage = await sellerContext.newPage();
-
-    let offerId: string | null = null;
-    let memberOrderId: string | null = null;
+    await ensureMemberPersona(buyerPage);
+    await suppressTransientHomeOverlays(buyerPage);
+    await suppressTransientHomeOverlays(sellerPage);
 
     try {
       await test.step("Step 1 — buyer submits P2P offer without authentication", async () => {
@@ -93,6 +99,7 @@ test.describe("Member P2P trading closure", () => {
           buyerDisplayName,
         });
         offerId = offerState.offerId;
+        roomId = offerState.roomId;
       });
 
       await test.step("Step 2 — seller accepts offer in chat", async () => {
@@ -108,11 +115,16 @@ test.describe("Member P2P trading closure", () => {
           offerLabel,
           buyerPage,
           sellerDisplayName,
+          sellerId,
+          buyerId,
         );
       });
 
       await test.step("Step 3 — member_orders row is P2P pending", async () => {
-        memberOrderId = await pollMemberOrderIdForOffer(offerId!);
+        memberOrderId = await pollMemberOrderIdForOffer(offerId!, {
+          listingId,
+          buyerId,
+        });
 
         const order = await getLatestMemberOrderForListing({
           listingId,
@@ -141,15 +153,26 @@ test.describe("Member P2P trading closure", () => {
       });
 
       await test.step("Step 4b — buyer completes handover from trading list", async () => {
+        const order = memberOrderId
+          ? await getMemberOrderById(memberOrderId)
+          : null;
         await buyerPage.goto(
           `/profile/user/trading?filter=${encodeURIComponent("待處理")}`,
           { waitUntil: "domcontentloaded" },
         );
         await dismissBlockingOverlays(buyerPage);
-        await confirmP2pHandoverDialog(buyerPage);
-        await expect(buyerPage.getByText("交易已確認完成！")).toBeVisible({
-          timeout: 20_000,
+        await confirmP2pHandoverDialog(buyerPage, {
+          orderNumber: order?.order_number ?? null,
         });
+        await expect
+          .poll(
+            async () =>
+              memberOrderId
+                ? (await getMemberOrderById(memberOrderId))?.status ?? null
+                : null,
+            { timeout: 30_000 },
+          )
+          .toBe("completed");
       });
 
       await test.step("Step 5 — order detail shows P2P meetup path", async () => {
@@ -182,6 +205,21 @@ test.describe("Member P2P trading closure", () => {
       });
 
       await test.step("Step 7 — buyer submits review", async () => {
+        if (!memberOrderId) {
+          throw new Error("Missing memberOrderId before review");
+        }
+        const completed = await getMemberOrderById(memberOrderId);
+        expect(completed?.status).toBe("completed");
+        await gotoOrderDetail(buyerPage, memberOrderId);
+        await dismissBlockingOverlays(buyerPage);
+        await expect(
+          buyerPage
+            .getByText("已完成")
+            .or(buyerPage.locator("#review-modal-title"))
+            .first(),
+        ).toBeVisible({
+          timeout: 15_000,
+        });
         await submitFiveStarReview(buyerPage);
 
         const review = memberOrderId

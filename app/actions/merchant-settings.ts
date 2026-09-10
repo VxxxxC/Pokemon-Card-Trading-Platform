@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { mapMerchantShopFetchError, mapMerchantShopUpdateError } from "@/lib/merchant/errors";
 import {
+  parseShippingFeeInput,
+  PLATFORM_DEFAULT_COURIER_SHIPPING_FEE,
+} from "@/lib/merchant/shipping-fee";
+import {
   validateMerchantShopFields,
   type MerchantShopFormErrors,
 } from "@/lib/merchant/validation";
@@ -26,6 +30,7 @@ type MerchantShopSettingsRow = Pick<
   | "shop_description"
   | "shop_avatar_path"
   | "top_banner_path"
+  | "base_courier_shipping_fee"
 >;
 
 type MerchantShopUpdate =
@@ -36,6 +41,7 @@ export type MerchantSettingsData = {
   shopName: string;
   shopHandle: string;
   shopDescription: string;
+  baseCourierShippingFee: number;
   shopAvatarUrl: string;
   topBannerUrl: string | null;
   email: string;
@@ -121,7 +127,7 @@ export async function getMerchantSettings(): Promise<
   const { data: shop, error: shopError } = await supabase
     .from("merchant_shops")
     .select(
-      "merchant_id, shop_name, shop_handle, shop_description, shop_avatar_path, top_banner_path",
+      "merchant_id, shop_name, shop_handle, shop_description, shop_avatar_path, top_banner_path, base_courier_shipping_fee",
     )
     .eq("merchant_id", user.id)
     .maybeSingle<MerchantShopSettingsRow>();
@@ -142,6 +148,9 @@ export async function getMerchantSettings(): Promise<
       shopName: shop.shop_name?.trim() ?? "",
       shopHandle: shop.shop_handle?.trim() ?? "",
       shopDescription: shop.shop_description?.trim() ?? "",
+      baseCourierShippingFee: Number(
+        shop.base_courier_shipping_fee ?? PLATFORM_DEFAULT_COURIER_SHIPPING_FEE,
+      ),
       shopAvatarUrl: resolveAvatarUrl(shop.shop_avatar_path),
       topBannerUrl: resolveOptionalMediaUrl(shop.top_banner_path),
       email: user.email ?? "",
@@ -174,6 +183,9 @@ export async function updateMerchantShopProfile(
     shopHandle: ((formData.get("shopHandle") as string | null) ?? "").trim(),
     shopDescription: (
       (formData.get("shopDescription") as string | null) ?? ""
+    ).trim(),
+    baseCourierShippingFee: (
+      (formData.get("baseCourierShippingFee") as string | null) ?? ""
     ).trim(),
   };
 
@@ -243,10 +255,16 @@ export async function updateMerchantShopProfile(
       }
     }
 
+    const parsedBaseFee = parseShippingFeeInput(fields.baseCourierShippingFee);
+    if (!parsedBaseFee.ok) {
+      return { baseCourierShippingFee: parsedBaseFee.error };
+    }
+
     const payload: MerchantShopUpdate = {
       shop_name: fields.shopName,
       shop_handle: normalizedHandle,
       shop_description: fields.shopDescription || null,
+      base_courier_shipping_fee: parsedBaseFee.amount,
       updated_at: new Date().toISOString(),
     };
 

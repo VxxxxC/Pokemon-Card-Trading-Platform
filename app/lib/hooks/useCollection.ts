@@ -28,7 +28,7 @@ const SEARCH_DEBOUNCE_MS = 350;
 export const COLLECTION_FILTER_LABELS: Record<string, CollectionListFilter> = {
   全部: "all",
   已鑑定: "graded",
-  未鑑定: "raw",
+  裸卡: "raw",
   密封盒組: "sealed",
   已上架: "listed",
   已售出: "sold",
@@ -94,6 +94,8 @@ export function useCollection(options: UseCollectionOptions = {}): UseCollection
   const mountLoggedRef = useRef(false);
   const [initialListKey] = useState(() => `all::${pageSize}`);
   const didInitialBootstrapRef = useRef(hasInitialBootstrap);
+  const consumedInitialEntriesRef = useRef(false);
+  const initialPageRef = useRef(options.initialData?.page?.page ?? 1);
 
   const debouncedQueryRef = useRef(query);
   const [debouncedQuery, setDebouncedQuery] = useState(query);
@@ -226,7 +228,13 @@ export function useCollection(options: UseCollectionOptions = {}): UseCollection
       return;
     }
 
-    if (hasInitialBootstrap && isInitialListKey) {
+    if (
+      hasInitialBootstrap &&
+      !consumedInitialEntriesRef.current &&
+      isInitialListKey &&
+      page === initialPageRef.current
+    ) {
+      consumedInitialEntriesRef.current = true;
       return;
     }
 

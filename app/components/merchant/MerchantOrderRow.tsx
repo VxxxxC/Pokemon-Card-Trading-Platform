@@ -12,9 +12,16 @@ import { ESCROW_STEPS } from "@/app/lib/types/rbac";
 
 interface MerchantOrderRowProps {
   order: SaleOrder;
+  variant?: "default" | "embedded";
 }
 
-function OrderStatusBadge({ status }: { status: OrderStatus }) {
+function OrderStatusBadge({
+  status,
+  labelOverride,
+}: {
+  status: OrderStatus;
+  labelOverride?: string;
+}) {
   const stepIdx =
     STATUS_STEP_INDEX[status as Exclude<OrderStatus, "cancelled">];
   const step = stepIdx !== undefined ? ESCROW_STEPS[stepIdx] : null;
@@ -34,13 +41,50 @@ function OrderStatusBadge({ status }: { status: OrderStatus }) {
         colorMap[status] ?? "text-text-disabled bg-bg-elevated",
       )}
     >
-      {status === "cancelled" ? "已取消" : (step?.label ?? status)}
+      {status === "cancelled"
+        ? "已取消"
+        : (labelOverride ?? step?.label ?? status)}
     </span>
   );
 }
 
-export function MerchantOrderRow({ order }: MerchantOrderRowProps) {
+export function MerchantOrderRow({
+  order,
+  variant = "default",
+}: MerchantOrderRowProps) {
   const router = useRouter();
+
+  if (variant === "embedded") {
+    return (
+      <div
+        onClick={() => router.push("/profile/merchant/orderDetail/" + order.id)}
+        className="flex items-center gap-2.5 py-2.5 px-3 cursor-pointer transition-colors hover:bg-bg-elevated/40 border-b border-[rgba(237,232,224,0.06)] last:border-b-0 animate-fadeIn"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <OrderStatusBadge
+              status={order.status}
+              labelOverride={order.statusLabelOverride}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 min-w-0 mt-1">
+            <span className="text-[13px] font-semibold text-text-primary truncate">
+              {order.cardName}
+            </span>
+            <span className="font-sans text-[9px] font-bold text-brand bg-brand/5 border border-brand/20 px-1 py-0.5 rounded shrink-0">
+              {order.grade}
+            </span>
+          </div>
+          <p className="font-mono text-[10px] text-text-disabled truncate mt-0.5">
+            買家：{order.buyerName} · #{order.orderNumber ?? order.id}
+          </p>
+        </div>
+        <span className="font-mono text-[13px] font-bold text-brand shrink-0 tabular-nums">
+          HK$ {order.amount.toLocaleString("zh-TW")}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -53,7 +97,10 @@ export function MerchantOrderRow({ order }: MerchantOrderRowProps) {
           <h3 className="text-[14.5px] font-bold text-text-primary truncate max-w-[160px] sm:max-w-xs md:max-w-md">
             {order.cardName}
           </h3>
-          <OrderStatusBadge status={order.status} />
+          <OrderStatusBadge
+            status={order.status}
+            labelOverride={order.statusLabelOverride}
+          />
           <span className="font-sans text-[10px] font-black text-brand bg-brand/5 border border-brand/20 px-1.5 py-0.5 rounded">
             {order.grade}
           </span>
